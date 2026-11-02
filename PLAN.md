@@ -178,6 +178,30 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
   - Bài mới hoàn toàn "Nơi này có anh" (`FN7ALfpGxiI`, 278 giây), tính cả thời gian chờ khóa GPU do agent khác: tải 9,6 s, tách nguồn 178 s (Roformer 58 s + Demucs 47 s chạy thật, chờ khóa 57 s), bắt nhịp 17 s, hợp âm 6,8 s, tổng 211 s. VRAM đỉnh 1,6 GB (Roformer).
   - "Let It Be" khi đã có stem: tổng 44 s, phần lớn là bắt nhịp (27 s, gồm cả chờ khóa và nạp model).
   - `audio-separator` chạy được khi không có mạng: nạp BS-Roformer thẳng từ ckpt và yaml trong `data/models/audio-separator`, không đọc `download_checks.json`.
+- [x] **Kết quả analysis** (bước 5 và 9, `chordtrack/analysis.py`, 2026-11-03). Chấm bằng `python -m eval.eval_analysis` trên nhãn chuẩn Isophonics (chordlab làm đầu vào, keylab và seglab làm đáp án; script tự tải keylab và seglab). Chỉ dùng CPU: 180 bài mất khoảng 4 giây.
+  - Giọng: so phân bố cao độ của hợp âm với profile Temperley, cộng điểm cho hợp âm chủ (thời lượng, đầu và cuối bài) và quãng V–I. Giọng chuẩn là giọng chiếm thời lượng lớn nhất trong keylab (178 bài, bỏ 2 bài "modal" hoặc thiếu nhãn).
+
+    | Đầu vào | Số bài | weighted (`mir_eval.key`) | Đúng tuyệt đối | Quãng 5 | Tương đối | Song song | Khác |
+    |---|---|---|---|---|---|---|---|
+    | chordlab | 178 | **0.870** | **84.8%** | 5 | 2 | 4 | 16 |
+    | ChordMini BTC-PL (31 bài có audio) | 31 | 0.819 | 80.6% | 0 | 0 | 2 | 4 |
+    | chordlab, cùng 31 bài | 31 | 0.819 | 80.6% | 0 | 0 | 2 | 4 |
+
+    Trên 31 bài, giọng đoán từ hợp âm của ChordMini đúng y như từ nhãn chuẩn. Lỗi còn lại chủ yếu là: bài mixolydian hoặc blues bị nhận thành giọng bậc IV (Drive My Car, Get Back, The Word), và vài bài có nhãn hợp âm lệch nửa cung so với keylab (Yellow Submarine, Ob-La-Di, Piggies, Across the Universe), có thể do bản thu bị lệch cao độ. Trọng số được chỉnh bằng dò lưới trên chính bộ này, mặt điểm khá phẳng (0.84–0.87) nên ít nguy cơ overfit.
+  - Đoạn: structure features (Serrà và cộng sự, 2012) trên chuỗi hợp âm theo phách, ranh giới kéo về điểm đổi hợp âm gần nhất, gom nhãn A/B/C theo độ giống chuỗi hợp âm. Chấm `mir_eval.segment`, detection có `trim=True` (không tính ranh giới đầu và cuối bài). Đánh giá dùng lưới cố định 0,5 s vì không có phách (bộ dữ liệu không có audio cho phần lớn bài).
+
+    | Đầu vào | F@0.5 | P@3 | R@3 | **F@3** | **pair F** | S_F (NCE) | Số đoạn đoán / chuẩn |
+    |---|---|---|---|---|---|---|---|
+    | chordlab, 180 bài | 0.217 | 0.512 | 0.510 | **0.495** | **0.583** | 0.604 | 10.7 / 10.0 |
+    | Baseline chia đều 15 s | 0.047 | 0.298 | 0.303 | 0.292 | 0.355 | 0.526 | 10.8 / 10.0 |
+    | ChordMini BTC-PL, 31 bài | 0.207 | 0.494 | 0.462 | 0.466 | 0.568 | 0.610 | 10.8 / 10.7 |
+    | chordlab, cùng 31 bài | 0.237 | 0.508 | 0.487 | 0.481 | 0.580 | 0.617 | 10.7 / 10.7 |
+
+    - ⚠️ Cửa sổ so sánh nhìn về phía trước làm ranh giới sớm hơn đáp án 2–3 s một cách hệ thống. Đã dời ma trận lặp nửa cửa sổ, F@3 tăng từ 0.445 lên 0.495.
+    - Chỉ dùng hợp âm nên không tách được intro với verse khi chúng cùng vòng (ví dụ "Let It Be"). Muốn tốt hơn phải thêm đặc trưng âm thanh (năng lượng, âm sắc, có giọng hát hay không).
+    - Tên đoạn (intro, verse, chorus, bridge, outro) là heuristic, `mir_eval` không chấm phần này. Đoạn không đặt tên được thì giữ chữ cái.
+  - Vòng hợp âm: n-gram 2–8 hợp âm (đã rút gọn về hợp âm ba và bỏ hợp âm trùng liên tiếp), đếm gộp trên mọi đoạn cùng nhãn, phải phủ ít nhất 60% chuỗi. Bậc La Mã: hợp âm đảo ghi theo bậc bass của Harte (`I/5`), không dùng figured bass.
+  - "Let It Be": chordlab cho giọng C major, verse `I – V – vi – IVmaj7 – I – V – IV`. Nhãn của ChordMini trên audio thật kèm phách beat_this cũng ra C major, verse `I – V – vi – IV – I`, analysis mất 16 ms.
 
 ## Nguồn tham khảo
 

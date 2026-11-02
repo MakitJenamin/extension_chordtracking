@@ -104,7 +104,7 @@ def test_analyze_order_stems_and_schema(fake_env):
                                 "url": "https://www.youtube.com/watch?v=abcdefghijk"}
     assert result["duration"] == pytest.approx(DURATION)
     assert result["tempo"] == 120.0
-    assert result["key"] is None  # analysis còn là khung
+    assert result["key"]["tonic"] == "C" and result["key"]["mode"] == "major"
     assert [c["symbol"] for c in result["chords"]] == ["N.C.", "C", "G", "Am7", "F/A", "N.C."]
     by_symbol = {c["symbol"]: c for c in result["chords"]}
     assert by_symbol["G"]["uncertain"] is True and by_symbol["C"]["uncertain"] is False
@@ -193,6 +193,7 @@ def test_key_roman_and_sections(fake_env, monkeypatch):
 
 
 def test_sections_roman_null_without_key(fake_env, monkeypatch):
+    monkeypatch.setattr(pipeline.analysis, "estimate_key", lambda segs: None)
     monkeypatch.setattr(pipeline.analysis, "analyze_structure", lambda segs, beats, dur, k: [
         Section(0.0, DURATION, "A", ["C:maj"], [])])
     result = pipeline.analyze("abcdefghijk")
