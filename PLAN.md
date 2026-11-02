@@ -1,7 +1,7 @@
 # Kế hoạch: Extension nhận diện hợp âm cho YouTube
 
 Cập nhật lần cuối: 2026-11-03
-Trạng thái: **đã chốt kế hoạch, chưa bắt đầu code.** Việc tiếp theo là cài môi trường rồi làm bước 1.
+Trạng thái: **bản đầu tiên đã hoàn thiện, đang dùng được (2026-11-03).** Pipeline local (ChordMini + Chord-CNN-LSTM, không tách nguồn mặc định, khoảng 10 giây mỗi bài), backend FastAPI ở 127.0.0.1:8765, extension Chrome đã thử trên YouTube thật (PR #1–#24). Việc để sau: xem mục 9 bước 6.
 
 ---
 
