@@ -6,6 +6,8 @@ Weights tải về `data/models/beat_this/` ở lần chạy đầu.
 """
 from __future__ import annotations
 
+import functools
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +33,30 @@ def _checkpoint_path() -> Path:
         torch.hub.download_url_to_file(f"{CHECKPOINT_URL}/{CHECKPOINT_NAME}.ckpt", str(tmp))
         tmp.replace(path)
     return path
+
+
+_MODEL_LOCK = threading.Lock()
+
+
+@functools.lru_cache(maxsize=1)
+def _load_model():
+    """Audio2Beats nạp một lần cho cả tiến trình (server không nạp lại mỗi bài), giữ trên CPU.
+    `track_beats` chỉ chuyển lên GPU khi đang giữ `gpu_lock()`."""
+    from beat_this.inference import Audio2Beats
+
+    return Audio2Beats(checkpoint_path=str(_checkpoint_path()), device="cpu", float16=False, dbn=False)
+
+
+def _move(model, dev) -> None:
+    """Chuyển Audio2Beats sang thiết bị `dev`: model, bộ tính mel và thuộc tính `device` mà
+    `signal2spect` dùng để tạo tensor đầu vào."""
+    model.device = dev
+    model.model.to(dev)
+    model.spect.to(dev)
+
+
+def clear_model_cache() -> None:
+    _load_model.cache_clear()
 
 
 def _load_audio(audio_path: Path, max_duration: float | None) -> tuple[np.ndarray, int]:
@@ -60,18 +86,17 @@ def _snap_downbeats(beats: np.ndarray, downbeats: np.ndarray) -> np.ndarray:
 
 def track_beats(audio_path: Path, max_duration: float | None = None) -> BeatGrid:
     """Bắt phách và phách mạnh của cả file (hoặc `max_duration` giây đầu)."""
+    import torch
+
     signal, sr = _load_audio(Path(audio_path), max_duration)
-    ckpt = str(_checkpoint_path())
-
-    from beat_this.inference import Audio2Beats
-
-    with gpu_lock():
-        dev = device()
-        model = Audio2Beats(checkpoint_path=ckpt, device=dev, float16=False, dbn=False)
-        try:
-            beats, downbeats = model(signal, sr)
-        finally:
-            del model
+    with _MODEL_LOCK:
+        model = _load_model()
+        with gpu_lock():
+            try:
+                _move(model, torch.device(device()))
+                beats, downbeats = model(signal, sr)
+            finally:
+                _move(model, torch.device("cpu"))
 
     beats = np.sort(np.asarray(beats, dtype=np.float64))
     downbeats = _snap_downbeats(beats, np.asarray(downbeats, dtype=np.float64))

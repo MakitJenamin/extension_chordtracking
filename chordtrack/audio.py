@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -134,8 +135,28 @@ def _youtube_source(video_id: str, audio_dir: Path | None = None) -> AudioSource
     )
 
 
+COOKIES_ENV = "CHORDTRACK_YT_COOKIES"
+
+
+def cookies_file() -> Path | None:
+    """File cookie YouTube (định dạng Netscape) từ biến môi trường `CHORDTRACK_YT_COOKIES`.
+
+    Dùng khi YouTube đòi xác minh "Sign in to confirm you're not a bot". Chỉ truyền đường dẫn
+    cho yt-dlp, không đọc hay log nội dung. Biến đặt mà file không tồn tại thì báo lỗi rõ ràng."""
+    value = os.environ.get(COOKIES_ENV, "").strip().strip('"')
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"{COOKIES_ENV} trỏ tới file không tồn tại: {path}")
+    return path
+
+
 def _ydl_opts(extra: dict | None = None) -> dict:
     opts = {"quiet": True, "no_warnings": True, "noprogress": True, "noplaylist": True}
+    cookies = cookies_file()
+    if cookies is not None:
+        opts["cookiefile"] = str(cookies)
     opts.update(extra or {})
     return opts
 

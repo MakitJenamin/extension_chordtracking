@@ -19,6 +19,7 @@ với nhãn khung trước bước lọc đa số.
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +41,38 @@ OVERLAP_RATIO = 0.5          # --use_overlap không kèm --overlap_ratio
 MIN_SEGMENT_DURATION = 0.5
 BATCH_SIZE = 16
 N_CLASSES = 170
+
+
+# Model đã nạp, giữ trên CPU suốt tiến trình (server không nạp lại mỗi bài). Chỉ chuyển lên
+# GPU khi đang giữ `gpu_lock()` rồi trả về CPU, để không chiếm VRAM của agent/tiến trình khác.
+_MODEL_CACHE: dict[str, tuple] = {}
+_MODEL_CACHE_LOCK = threading.Lock()
+
+
+def _load_model_cached(variant: str):
+    """(model trên CPU, mean, std, seq_len của checkpoint hoặc None, config) của `variant`, nạp một lần."""
+    with _MODEL_CACHE_LOCK:
+        if variant not in _MODEL_CACHE:
+            import torch
+            from src.models import load_model
+            from src.utils import HParams, extract_normalization_stats
+
+            model_type, ckpt_name = CHECKPOINTS[variant]
+            ckpt_path = CHORDMINI_DIR / "checkpoints" / ckpt_name
+            config = HParams.load(str(CHORDMINI_DIR / "config" / "ChordMini.yaml"))
+            checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            mean, std = extract_normalization_stats(checkpoint)
+            ckpt_seq_len = checkpoint.get("timestep") if isinstance(checkpoint, dict) else None
+            del checkpoint
+            model, _, _ = load_model(str(ckpt_path), model_type, config, torch.device("cpu"))
+            model.eval()
+            _MODEL_CACHE[variant] = (model, mean, std, ckpt_seq_len, config)
+        return _MODEL_CACHE[variant]
+
+
+def clear_model_cache() -> None:
+    with _MODEL_CACHE_LOCK:
+        _MODEL_CACHE.clear()
 
 
 def _ensure_import_path() -> None:
@@ -149,9 +182,7 @@ def _segments_from_predictions(
 def run_chordmini(audio_path: str | Path, variant: str = "btc") -> ChordModelOutput:
     if variant not in CHECKPOINTS:
         raise ValueError(f"variant phải là một trong {sorted(CHECKPOINTS)}, nhận được {variant!r}")
-    model_type, ckpt_name = CHECKPOINTS[variant]
-    ckpt_path = CHORDMINI_DIR / "checkpoints" / ckpt_name
-    config_path = CHORDMINI_DIR / "config" / "ChordMini.yaml"
+    ckpt_path = CHORDMINI_DIR / "checkpoints" / CHECKPOINTS[variant][1]
     if not ckpt_path.exists():
         raise FileNotFoundError(ckpt_path)
 
@@ -159,10 +190,9 @@ def run_chordmini(audio_path: str | Path, variant: str = "btc") -> ChordModelOut
     import librosa
     import torch
     from src.evaluation.utils.common import extract_song_features, majority_filter_indices
-    from src.models import load_model
-    from src.utils import HParams, extract_normalization_stats, get_config_value
+    from src.utils import get_config_value
 
-    config = HParams.load(str(config_path))
+    model, mean, std, ckpt_seq_len, config = _load_model_cached(variant)
     vocab = vocabulary()
 
     # Tiền xử lý chạy trên CPU, để ngoài khóa GPU.
@@ -174,31 +204,25 @@ def run_chordmini(audio_path: str | Path, variant: str = "btc") -> ChordModelOut
         y, sr = librosa.load(str(audio_path), sr=get_config_value(config, "mp3", "song_hz", 22050))
         song_duration = len(y) / float(sr)
 
-    checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    mean, std = extract_normalization_stats(checkpoint)
-    ckpt_seq_len = checkpoint.get("timestep") if isinstance(checkpoint, dict) else None
-    del checkpoint
+    # Thứ tự ưu tiên giống `_resolve_seq_len`: checkpoint > thuộc tính model > config > 108.
+    seq_len = ckpt_seq_len
+    if seq_len is None:
+        seq_len = getattr(model, "timestep", None)
+    if seq_len is None:
+        seq_len = get_config_value(config, "model", "seq_len", get_config_value(config, "model", "timestep", 108))
+    try:
+        seq_len = int(seq_len)
+    except (TypeError, ValueError):
+        seq_len = 108
+    if seq_len <= 0:
+        seq_len = 108
 
     with gpu_lock():
-        dev = torch.device(_device_name())
-        model, _, _ = load_model(str(ckpt_path), model_type, config, dev)
-        model.eval()
-        # Thứ tự ưu tiên giống `_resolve_seq_len`: checkpoint > thuộc tính model > config > 108.
-        seq_len = ckpt_seq_len
-        if seq_len is None:
-            seq_len = getattr(model, "timestep", None)
-        if seq_len is None:
-            seq_len = get_config_value(config, "model", "seq_len", get_config_value(config, "model", "timestep", 108))
         try:
-            seq_len = int(seq_len)
-        except (TypeError, ValueError):
-            seq_len = 108
-        if seq_len <= 0:
-            seq_len = 108
-        try:
+            model.to(torch.device(_device_name()))
             mean_logits = _sliding_window_logits(model, features, mean, std, seq_len)
         finally:
-            del model
+            model.to("cpu")
 
     preds = np.argmax(mean_logits, axis=1).astype(np.int64)
     # Khung không có cửa sổ nào phủ (không xảy ra với stride hiện tại) để nhãn 0 như gốc.
