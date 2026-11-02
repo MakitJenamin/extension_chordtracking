@@ -4,8 +4,7 @@ Hiện hợp âm chạy theo video YouTube: dải hợp âm trượt ngang kiể
 ở cột phải, và chính dải đó đè lên video khi toàn màn hình. Phân tích chạy bằng backend local trên máy bạn.
 
 ## Cài vào Chrome thật (chế độ nhà phát triển)
-1. Chạy backend (để cửa sổ này mở):
-   `powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1`
+1. Chạy backend: `powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background` (chạy ẩn), hoặc bỏ `-Background` để giữ cửa sổ.
    Kiểm tra: mở http://127.0.0.1:8765/health, phải thấy `"status": "ok"`.
 2. Mở `chrome://extensions`, bật **Developer mode** (góc phải trên).
 3. Bấm **Load unpacked**, chọn thư mục `extension/` của repo này.

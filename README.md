@@ -1,15 +1,25 @@
 # extension_chordtracking
 
-Chrome extension hiện hợp âm chạy theo video YouTube. Phần phân tích AI (tách giọng, tách bass, bắt nhịp, nhận diện hợp âm, tìm vòng hợp âm) chạy hoàn toàn local trên GPU.
+Chrome extension hiện hợp âm chạy theo video YouTube. Phần phân tích AI (bắt nhịp, nhận diện hợp âm và hợp âm đảo, giọng theo vùng, chia đoạn, vòng hợp âm) chạy hoàn toàn local trên GPU. Tách giọng và tách bass vẫn có nhưng tắt mặc định (`--separation`).
 
-Trạng thái: đang ở giai đoạn lên kế hoạch. Xem chi tiết ở [PLAN.md](PLAN.md).
+Trạng thái: **bản đầu tiên dùng được.** Kế hoạch, quyết định và số đo chất lượng: [PLAN.md](PLAN.md).
+
+## Dùng nhanh
+
+1. Bật backend chạy nền (mỗi lần mở máy):
+   `powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background`
+2. Nạp extension một lần: `chrome://extensions` → bật Developer mode → Load unpacked → chọn thư mục `extension/`.
+3. Mở video YouTube bất kỳ. Bài mới mất khoảng 10–20 giây để phân tích, lần sau hiện ngay.
+
+Hướng dẫn chi tiết các nút, chế độ 🎹 Phím trắng, metronome và toàn màn hình: [extension/README.md](extension/README.md).
 
 ## Chạy backend local
 
 Backend là server FastAPI, chỉ lắng nghe `127.0.0.1`. Extension gọi vào server này.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1            # cổng mặc định 8765
+powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1            # cổng mặc định 8765, giữ cửa sổ mở
+powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background # chạy ẩn ở nền, log ở data\cache\server.log
 powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Port 8766
 powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Cookies C:\duong\dan\cookies.txt
 ```

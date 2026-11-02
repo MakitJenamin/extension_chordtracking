@@ -18,7 +18,9 @@ param(
     [int]$Port = 8765,
     # File cookie YouTube (định dạng Netscape), dùng khi YouTube đòi xác minh "not a bot".
     [string]$Cookies = "",
-    [string]$LogLevel = "info"
+    [string]$LogLevel = "info",
+    # Chạy ẩn ở nền, không giữ cửa sổ PowerShell (log ở data\cache\server.log)
+    [switch]$Background
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,7 +56,26 @@ foreach ($tool in @("ffmpeg", "deno")) {
 
 $env:PYTHONIOENCODING = "utf-8"
 Set-Location $RepoRoot
+$ServerArgs = @("-m", "chordtrack.server", "--port", "$Port", "--log-level", $LogLevel)
+
+if ($Background) {
+    # Chạy ẩn, tách khỏi cửa sổ này; log ghi vào data/cache/server.log
+    $logDir = Join-Path $RepoRoot "data\cache"
+    New-Item -ItemType Directory -Force $logDir | Out-Null
+    $p = Start-Process -FilePath $Python -ArgumentList $ServerArgs -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput (Join-Path $logDir "server.out.log") -RedirectStandardError (Join-Path $logDir "server.log")
+    for ($i = 0; $i -lt 40; $i++) {
+        try { Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec 2 | Out-Null; break } catch { Start-Sleep -Milliseconds 750 }
+    }
+    Write-Host "Server chạy nền (PID $($p.Id)): http://127.0.0.1:$Port  — log: $logDir\server.log"
+    Write-Host "Tắt: Stop-Process -Id $($p.Id)"
+    exit 0
+}
+
 Write-Host "Venv: $Venv"
 Write-Host "Server: http://127.0.0.1:$Port  (Ctrl+C để dừng)"
-& $Python -m chordtrack.server --port $Port --log-level $LogLevel
+# Uvicorn ghi log ra stderr. Với "Stop", PowerShell 5.1 coi mỗi dòng stderr của lệnh native
+# (khi output bị chuyển hướng) là lỗi và dừng script, làm server tắt ngay sau dòng log đầu.
+$ErrorActionPreference = "Continue"
+& $Python @ServerArgs
 exit $LASTEXITCODE
