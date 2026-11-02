@@ -391,6 +391,19 @@ def window_mask(mask: np.ndarray, start: float, end: float, hop_s: float) -> np.
     return out
 
 
+MIN_WINDOW_FRAMES = 200     # khoảng 5 s có hợp âm; ít hơn thì không đủ để đo độ lệch riêng một vùng
+
+
+def window_offset(ach: np.ndarray, lch: np.ndarray, wmask: np.ndarray, max_lag: int, fallback: float) -> float:
+    """Độ lệch (giây) chỉ tính trên các khung của `wmask`. Vùng không đủ khung dùng được (toàn N, hoặc
+    sát cuối audio nên bị best_offset bỏ) thì trả về `fallback` (độ lệch chung), để không báo trôi giả."""
+    t = np.nonzero(wmask)[0]
+    usable = int(((t - max_lag >= 0) & (t + max_lag < len(ach))).sum())
+    if usable < MIN_WINDOW_FRAMES:
+        return fallback
+    return best_offset(ach, lch, wmask, max_lag)[0] * ALIGN_HOP / ALIGN_SR
+
+
 def check_alignment(diff: float, lag: int, max_lag: int, score: float, head: float, tail: float) -> str:
     """Lý do loại bài, hoặc "" nếu đạt. Không xét độ dài (đuôi fade-out khác nhau là chuyện thường),
     mà xét độ lệch có căn được không, chroma có khớp không, và độ lệch ở cuối bài có trùng đầu bài không."""
@@ -425,9 +438,9 @@ def align_song(name: str, lab_path: Path, audio_path: Path) -> tuple[AlignResult
 
     # Vùng chung (theo thời gian của nhãn): nhãn [0, label_dur] và audio [-offset, audio_dur - offset].
     common_end_label = min(label_dur, audio_dur - offset)
-    head_lag = best_offset(ach, lch, window_mask(mask, 0.0, DRIFT_WINDOW, hop_s), max_lag)[0]
-    tail_lag = best_offset(ach, lch, window_mask(mask, common_end_label - DRIFT_WINDOW, common_end_label, hop_s), max_lag)[0]
-    head, tail = head_lag * hop_s, tail_lag * hop_s
+    head = window_offset(ach, lch, window_mask(mask, 0.0, DRIFT_WINDOW, hop_s), max_lag, offset)
+    tail = window_offset(ach, lch, window_mask(mask, common_end_label - DRIFT_WINDOW, common_end_label, hop_s),
+                         max_lag, offset)
 
     reason = check_alignment(diff, lag, max_lag, score, head, tail)
     if abs(offset) < MIN_SHIFT:

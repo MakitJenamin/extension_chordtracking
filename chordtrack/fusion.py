@@ -41,13 +41,14 @@ EPS = 1e-6
 SEMITONE_TO_DEGREE = {1: "b2", 2: "2", 3: "b3", 4: "3", 5: "4", 6: "b5", 7: "5", 8: "#5", 9: "6", 10: "b7", 11: "7"}
 
 # Rút gọn loại hợp âm của CNN-LSTM về loại có trong từ vựng ChordMini.
-QUALITY_REDUCTION = {"maj9": "maj7", "min9": "min7", "9": "7", "11": "7", "13": "7", "sus4(b7)": "sus4"}
+QUALITY_REDUCTION = {"maj9": "maj7", "min9": "min7", "9": "7", "11": "7", "13": "7",
+                     "min11": "min7", "min13": "min7", "maj11": "maj7", "maj13": "maj7"}
 
 
 @dataclass(frozen=True)
 class FusionParams:
     cnn_weight: float = 0.35         # trọng số CNN-LSTM khi trộn xác suất hợp âm (0 = chỉ ChordMini)
-    mix_level: str = "full"          # "full": trộn trên cả 170 nhãn; "family": chỉ trộn phân bố (gốc, họ
+    mix_level: str = "family"        # "full": trộn trên cả 170 nhãn; "family": chỉ trộn phân bố (gốc, họ
                                      # maj/min/dim/aug/sus), giữ phân bố loại hợp âm 7, 6 trong họ của ChordMini
     smoothing: str = "hmm"           # "frame" | "beat" | "hmm" | "beat_hmm"
     self_prob: float = 0.8           # HMM: xác suất giữ nguyên hợp âm sang khung/phách sau
@@ -89,8 +90,7 @@ def fuse(
         stem_chroma = resample_probs(*bass_chroma(Path(bass_audio)), times)
     cnn_bass = None
     if "cnnlstm" in models and "bass_probs" in models["cnnlstm"].extras and p.bass_source in ("cnn", "both"):
-        b = models["cnnlstm"].extras["bass_probs"]
-        cnn_bass = _normalize(resample_probs(models["cnnlstm"].frame_times, b[:, 1:], times))
+        cnn_bass = cnnlstm_bass(models["cnnlstm"], times)
     return fuse_probs(probs, vocab, times, beats, duration, p, cnn_bass=cnn_bass, stem_chroma=stem_chroma)
 
 
@@ -182,11 +182,21 @@ def _mapping_matrix(src_vocab: tuple[str, ...], dst_vocab: tuple[str, ...]) -> n
         q = QUALITY_REDUCTION.get(q, q)
         j = dst_index.get((r, q))
         if j is None and r >= 0:
-            j = dst_index.get((r, "maj"))
+            j = dst_index.get((r, _triad_family(lab)))
         if j is None:
             j = dst_index.get((-1, "N"), 0)
         m[i, j] = 1.0
     return m
+
+
+def _triad_family(label: str) -> str:
+    """Họ bộ ba của nhãn lạ, theo các nốt: có b3 mà không có 3 -> min (b5 nữa thì dim), còn lại maj."""
+    import mir_eval
+
+    _root, bitmap, _bass = mir_eval.chord.encode(label)
+    if bitmap[3] and not bitmap[4]:
+        return "dim" if bitmap[6] and not bitmap[7] else "min"
+    return "maj"
 
 
 def cnnlstm_to_chordmini(probs: np.ndarray, src_vocab: list[str], dst_vocab: list[str]) -> np.ndarray:
@@ -195,7 +205,7 @@ def cnnlstm_to_chordmini(probs: np.ndarray, src_vocab: list[str], dst_vocab: lis
 
 
 def chord_probs(models: dict[str, ChordModelOutput], times: np.ndarray, cnn_weight: float,
-                mix_level: str = "family") -> tuple[np.ndarray, list[str]]:
+                mix_level: str = "full") -> tuple[np.ndarray, list[str]]:
     """Xác suất hợp âm đã kết hợp (T, V) trên lưới `times`, cùng từ vựng V.
 
     Có ChordMini: từ vựng ChordMini, trộn log với CNN-LSTM đã ánh xạ. Chỉ có CNN-LSTM: dùng thẳng
@@ -208,8 +218,30 @@ def chord_probs(models: dict[str, ChordModelOutput], times: np.ndarray, cnn_weig
     p_cm = _normalize(resample_probs(cm.frame_times, cm.frame_probs, times))
     if cn is None or cn.frame_probs is None or cnn_weight <= 0:
         return p_cm, list(cm.vocabulary)
-    p_cn = _normalize(resample_probs(cn.frame_times, cnnlstm_to_chordmini(cn.frame_probs, cn.vocabulary, cm.vocabulary), times))
+    p_cn = cnnlstm_on_chordmini(cn, cm, times, p_cm)
     return mix_models(p_cm, p_cn, list(cm.vocabulary), cnn_weight, mix_level), list(cm.vocabulary)
+
+
+def cnnlstm_on_chordmini(cn: ChordModelOutput, cm: ChordModelOutput, times: np.ndarray, p_cm: np.ndarray) -> np.ndarray:
+    """Xác suất CNN-LSTM trên từ vựng ChordMini, trên lưới `times`.
+
+    Nhãn ChordMini mà CNN-LSTM không có (maj6, min6, minmaj7, X với từ điển "submission") thì CNN-LSTM
+    "không có ý kiến": cột đó lấy đúng xác suất của ChordMini, các cột còn lại co lại cho tổng bằng 1.
+    Nếu không, log(0) khi trộn sẽ loại hẳn các nhãn đó."""
+    m = _mapping_matrix(tuple(cn.vocabulary), tuple(cm.vocabulary))
+    covered = m.sum(axis=0) > 0
+    p_cn = _normalize(resample_probs(cn.frame_times, np.asarray(cn.frame_probs, dtype=np.float64) @ m, times))
+    if (~covered).any():
+        rest = p_cm[:, ~covered].sum(axis=1, keepdims=True)
+        p_cn = p_cn * (1 - rest)
+        p_cn[:, ~covered] = p_cm[:, ~covered]
+    return p_cn
+
+
+def cnnlstm_bass(cn: ChordModelOutput, times: np.ndarray) -> np.ndarray:
+    """Xác suất 12 nốt bass của CNN-LSTM trên lưới `times`. Bỏ cột "không có bass" nhưng **không**
+    chuẩn hóa lại: tổng mỗi hàng là 1 − P(không có bass), nên ngưỡng bass vẫn lọc được khung không chắc."""
+    return resample_probs(cn.frame_times, np.asarray(cn.extras["bass_probs"], dtype=np.float64)[:, 1:], times)
 
 
 # Họ hợp âm (theo bộ ba nốt): loại hợp âm -> họ. Loại không có trong bảng là họ của chính nó.
@@ -219,8 +251,8 @@ FAMILY = {"maj": "maj", "maj6": "maj", "maj7": "maj", "7": "maj",
 
 
 @lru_cache(maxsize=8)
-def _family_matrix(vocab: tuple[str, ...]) -> tuple[np.ndarray, int | None]:
-    """Ma trận (V, số họ) gán mỗi nhãn vào họ (gốc, họ), và cột của "X" nếu có."""
+def _family_matrix(vocab: tuple[str, ...]) -> np.ndarray:
+    """Ma trận (V, số họ) gán mỗi nhãn vào họ (gốc, họ)."""
     keys: dict[tuple, int] = {}
     rows = []
     for lab in vocab:
@@ -228,20 +260,17 @@ def _family_matrix(vocab: tuple[str, ...]) -> tuple[np.ndarray, int | None]:
         rows.append(keys.setdefault((r, FAMILY.get(q, q)), len(keys)))
     m = np.zeros((len(vocab), len(keys)))
     m[np.arange(len(vocab)), rows] = 1.0
-    return m, keys.get((-1, "X"))
+    return m
 
 
-def mix_models(p_cm: np.ndarray, p_cn: np.ndarray, vocab: list[str], w: float, level: str = "family") -> np.ndarray:
+def mix_models(p_cm: np.ndarray, p_cn: np.ndarray, vocab: list[str], w: float, level: str = "full") -> np.ndarray:
     """Trộn xác suất ChordMini với CNN-LSTM (đã ánh xạ về cùng từ vựng), trọng số `w` cho CNN-LSTM."""
     if level == "full":
         return mix_log(p_cm, p_cn, w)
     if level != "family":
         raise ValueError(f"mix_level không hợp lệ: {level!r}")
-    a, x_col = _family_matrix(tuple(vocab))
+    a = _family_matrix(tuple(vocab))
     fam_cm, fam_cn = p_cm @ a, p_cn @ a
-    if x_col is not None:  # CNN-LSTM không có nhãn "X": giữ nguyên niềm tin của ChordMini cho X
-        fam_cn[:, x_col] = fam_cm[:, x_col]
-        fam_cn = _normalize(fam_cn)
     fam = mix_log(fam_cm, fam_cn, w)
     within = p_cm / np.maximum(fam_cm @ a.T, 1e-12)   # P(nhãn | họ) theo ChordMini
     return _normalize(within * (fam @ a.T))
@@ -261,7 +290,9 @@ def _beat_intervals(beats: BeatGrid | None, duration: float) -> list[tuple[float
         return None
     from chordtrack.beats import beat_synchronous_segments
 
-    return beat_synchronous_segments(beats, duration)
+    intervals = beat_synchronous_segments(beats, duration)
+    # Không có phách nào nằm trong bài (ví dụ chỉ có phách ở 0): coi như không có phách.
+    return intervals if len(intervals) >= 2 else None
 
 
 def _interval_frames(intervals: list[tuple[float, float]], times: np.ndarray) -> list[np.ndarray]:
@@ -463,6 +494,8 @@ def stem_bass_probs(chroma: np.ndarray, power: float = 2.0, silence: float = 0.0
 
 def bass_distribution(cnn_bass: np.ndarray | None, stem_chroma: np.ndarray | None, p: FusionParams) -> np.ndarray | None:
     """Phân bố 12 nốt bass theo khung từ các nguồn được chọn. `stem_chroma` là chroma chưa chuẩn hóa."""
+    if p.bass_source not in ("none", "cnn", "stem", "both"):
+        raise ValueError(f"bass_source không hợp lệ: {p.bass_source!r}")
     stem = stem_bass_probs(stem_chroma) if stem_chroma is not None else None
     if p.bass_source == "none":
         return None

@@ -249,3 +249,45 @@ def test_fuse_with_bass_stem_file(tmp_path):
     out = F.fuse(models, None, tmp_path / "bass.wav", 8.0, params=p)
     _covers(out, 8.0)
     assert [s.label for s in out] == ["C:maj/5", "G:maj"]
+
+
+# ---------------------------------------------------------------- các lỗi đã sửa sau review
+
+def test_cnnlstm_abstains_on_labels_it_cannot_produce():
+    cm_vocab = ["N", "C:maj", "C:maj6", "X"]
+    cm = _model("chordmini_btc", [0.05], [[0.0, 0.2, 0.7, 0.1]], cm_vocab)
+    cn = _model("cnnlstm", [0.05], [[0.0, 1.0]], ["N", "C:maj"])
+    p_cn = F.cnnlstm_on_chordmini(cn, cm, np.array([0.05]), cm.frame_probs)
+    np.testing.assert_allclose(p_cn, [[0.0, 0.2, 0.7, 0.1]])
+    mixed = F.mix_models(cm.frame_probs, p_cn, cm_vocab, 0.35, "full")
+    assert np.argmax(mixed[0]) == 2   # C:maj6 không bị loại vì CNN-LSTM không có nhãn này
+
+
+def test_cnnlstm_bass_keeps_no_bass_mass():
+    bass = np.zeros((1, 13))
+    bass[0, 0], bass[0, 1 + 7] = 0.9, 0.1
+    cn = _model("cnnlstm", [0.05], [[1.0]], ["N"], {"bass_probs": bass})
+    b = F.cnnlstm_bass(cn, np.array([0.05]))
+    assert b[0, 7] == pytest.approx(0.1)
+    assert F.pick_bass(b[0], "C:maj", 0.4) == "C:maj"   # model nói không có bass -> không thêm /5
+
+
+def test_mapping_unknown_minor_quality_stays_minor():
+    out = F.cnnlstm_to_chordmini(np.array([[1.0]]), ["A:min11"], ["A:maj", "A:min", "A:min7"])
+    np.testing.assert_allclose(out, [[0.0, 0.0, 1.0]])
+    out = F.cnnlstm_to_chordmini(np.array([[1.0]]), ["A:min(9)"], ["A:maj", "A:min"])
+    np.testing.assert_allclose(out, [[0.0, 1.0]])
+
+
+def test_beats_outside_song_fall_back_to_frames():
+    probs = np.full((40, 2), 0.1)
+    probs[:20, 0] = probs[20:, 1] = 0.9
+    times = (np.arange(40) + 0.5) * 0.1
+    beats = BeatGrid(np.array([0.0]), np.array([0.0]), 60.0)
+    labels = F.decode(probs, times, beats, 4.0, F.FusionParams(smoothing="beat"))
+    assert labels[0] == 0 and labels[-1] == 1
+
+
+def test_invalid_bass_source_raises():
+    with pytest.raises(ValueError):
+        F.bass_distribution(None, None, F.FusionParams(bass_source="stems"))

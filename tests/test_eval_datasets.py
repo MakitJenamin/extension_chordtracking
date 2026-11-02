@@ -94,3 +94,10 @@ def test_shift_segments_trims_to_common_end():
     segs = [ChordSegment(0.0, 5.0, "C:maj"), ChordSegment(5.0, 10.0, "G:maj")]
     out = D.shift_segments(segs, 0.0, 7.0)
     assert out[-1].end == 7.0 and len(out) == 2
+
+
+def test_window_offset_falls_back_when_window_is_empty():
+    ach = np.ones((1000, 12)) / np.sqrt(12)
+    lch = np.ones((1000, 12))
+    empty = np.zeros(1000, dtype=bool)
+    assert D.window_offset(ach, lch, empty, 87, 0.8) == 0.8

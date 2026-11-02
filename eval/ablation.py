@@ -73,12 +73,12 @@ class Song:
     def cn_probs(self, src: str) -> np.ndarray:
         key = ("cn", src)
         if key not in self._cache:
-            m, cm = self.model("cnnlstm", src), self.model("chordmini", src)
-            mapped = F.cnnlstm_to_chordmini(m.frame_probs, m.vocabulary, cm.vocabulary)
-            self._cache[key] = F._normalize(F.resample_probs(m.frame_times, mapped, self.times))
+            self._cache[key] = F.cnnlstm_on_chordmini(self.model("cnnlstm", src), self.model("chordmini", src),
+                                                       self.times, self.cm_probs(src))
         return self._cache[key]
 
     def chord(self, src: str, w: float, level: str) -> np.ndarray:
+        """Giống `fusion.chord_probs` (dùng chung các hàm của fusion), nhớ phần đã tính để chạy nhanh."""
         if w <= 0:
             return self.cm_probs(src)
         return F.mix_models(self.cm_probs(src), self.cn_probs(src), self.vocab(src), w, level)
@@ -86,8 +86,7 @@ class Song:
     def cnn_bass(self, src: str) -> np.ndarray:
         key = ("bass", src)
         if key not in self._cache:
-            m = self.model("cnnlstm", src)
-            self._cache[key] = F._normalize(F.resample_probs(m.frame_times, m.extras["bass_probs"][:, 1:], self.times))
+            self._cache[key] = F.cnnlstm_bass(self.model("cnnlstm", src), self.times)
         return self._cache[key]
 
     def stem_chroma(self) -> np.ndarray:
@@ -98,7 +97,10 @@ class Song:
                 t, c = d["times"], d["chroma"]
             else:
                 t, c = F.bass_chroma(self.stems_dir / "bass.wav")
-                np.savez_compressed(path, times=t, chroma=c.astype(np.float32))
+                c = c.astype(np.float32)  # dùng đúng giá trị như khi đọc lại từ cache
+                tmp = path.with_name(path.stem + ".part.npz")
+                np.savez_compressed(tmp, times=t, chroma=c)
+                tmp.replace(path)
             self._cache["stem"] = F.resample_probs(t, c, self.times)
         return self._cache["stem"]
 
