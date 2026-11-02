@@ -1,0 +1,212 @@
+"""Test pipeline không cần GPU: thay các bước model bằng hàm giả."""
+import json
+
+import numpy as np
+import pytest
+import soundfile as sf
+
+from chordtrack import cli, paths, pipeline
+from chordtrack.audio import AudioSource
+from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstimate, Section, Stems
+
+DURATION = 8.0
+SR = 8000
+ALL_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm"]
+
+
+def check_schema(result: dict) -> None:
+    """Dạng JSON mà extension sẽ đọc."""
+    assert set(result) == {"version", "song_id", "source", "duration", "tempo", "key", "beats", "downbeats",
+                           "chords", "sections", "timing", "pipeline"}
+    assert result["version"] == 1
+    assert isinstance(result["song_id"], str)
+    assert {"type", "title", "url"} <= set(result["source"])
+    assert isinstance(result["duration"], float)
+    assert result["key"] is None or set(result["key"]) == {"tonic", "mode", "confidence"}
+    assert all(isinstance(t, float) for t in result["beats"] + result["downbeats"])
+    assert set(result["downbeats"]) <= set(result["beats"])
+    chords = result["chords"]
+    assert chords and chords[0]["start"] == 0.0 and chords[-1]["end"] == pytest.approx(result["duration"], abs=1e-3)
+    for a, b in zip(chords, chords[1:]):
+        assert a["end"] == pytest.approx(b["start"])
+    for c in chords:
+        assert set(c) == {"start", "end", "label", "symbol", "roman", "confidence", "uncertain"}
+        assert isinstance(c["uncertain"], bool)
+        if result["key"] is None:
+            assert c["roman"] is None
+    for s in result["sections"]:
+        assert set(s) == {"start", "end", "label", "progression", "roman"}
+    assert set(result["timing"]) == set(pipeline.TIMING_KEYS)
+    assert {"separation_model", "bass_model", "chord_models"} <= set(result["pipeline"])
+    json.dumps(result)  # phải ghi ra JSON được
+
+
+@pytest.fixture
+def fake_env(tmp_path, monkeypatch):
+    """Thay mọi bước nặng bằng hàm giả, ghi lại thứ tự và đối số."""
+    monkeypatch.setattr(paths, "CACHE_DIR", tmp_path / "cache")
+    wav = tmp_path / "song.wav"
+    sf.write(wav, np.zeros((int(DURATION * SR), 2)), SR)
+    calls = []
+
+    def write(p):
+        sf.write(p, np.zeros((int(DURATION * SR), 2)), SR)
+
+    def fake_fetch(source):
+        calls.append(("fetch", source))
+        return AudioSource(song_id="abcdefghijk", path=wav, type="youtube", video_id="abcdefghijk",
+                           url="https://www.youtube.com/watch?v=abcdefghijk", title="Bài thử")
+
+    def fake_separate(audio_path, out_dir):
+        calls.append(("separate", out_dir.name))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stems = Stems(*(out_dir / f"{n}.wav" for n in pipeline.STEM_NAMES))
+        for n in pipeline.STEM_NAMES:
+            write(getattr(stems, n))
+        return stems
+
+    def fake_normalize(src, dst):
+        calls.append(("normalize", dst.name))
+        write(dst)
+
+    def fake_beats(path):
+        calls.append(("beats", path.name))
+        beats = np.arange(0.5, DURATION, 0.5)
+        return BeatGrid(beats=beats, downbeats=beats[::4], tempo=120.0)
+
+    def fake_chordmini(path):
+        calls.append(("chordmini", path.name))
+        segs = [ChordSegment(0.5, 2.0, "C:maj", 0.9), ChordSegment(2.0, 4.0, "G:maj", 0.4),
+                ChordSegment(4.0, 6.0, "A:min7", 0.8), ChordSegment(6.0, 7.5, "F:maj/3", 0.7)]
+        return ChordModelOutput("chordmini_btc", segs)
+
+    def fake_cnnlstm(path):
+        calls.append(("cnnlstm", path.name))
+        return ChordModelOutput("cnnlstm_submission", [ChordSegment(0.0, DURATION, "C:maj", 0.5)])
+
+    monkeypatch.setattr(pipeline.audio_mod, "fetch", fake_fetch)
+    monkeypatch.setattr(pipeline.separation, "separate", fake_separate)
+    monkeypatch.setattr(pipeline.separation, "normalize_audio", fake_normalize)
+    monkeypatch.setattr(pipeline, "track_beats", fake_beats)
+    monkeypatch.setattr(pipeline, "run_chordmini", fake_chordmini)
+    monkeypatch.setattr(pipeline, "run_cnnlstm", fake_cnnlstm)
+    return calls
+
+
+def test_analyze_order_stems_and_schema(fake_env):
+    result = pipeline.analyze("abcdefghijk")
+    assert [c[0] for c in fake_env] == ALL_STEPS
+    assert ("beats", "mix.wav") in fake_env
+    assert ("chordmini", "instrumental.wav") in fake_env and ("cnnlstm", "instrumental.wav") in fake_env
+    check_schema(result)
+    assert result["song_id"] == "abcdefghijk"
+    assert result["source"] == {"type": "youtube", "video_id": "abcdefghijk", "title": "Bài thử",
+                                "url": "https://www.youtube.com/watch?v=abcdefghijk"}
+    assert result["duration"] == pytest.approx(DURATION)
+    assert result["tempo"] == 120.0
+    assert result["key"] is None  # analysis còn là khung
+    assert [c["symbol"] for c in result["chords"]] == ["N.C.", "C", "G", "Am7", "F/A", "N.C."]
+    by_symbol = {c["symbol"]: c for c in result["chords"]}
+    assert by_symbol["G"]["uncertain"] is True and by_symbol["C"]["uncertain"] is False
+    assert result["pipeline"]["separation_model"] == "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+    assert result["pipeline"]["bass_model"] == "htdemucs_ft"
+    assert result["pipeline"]["chord_models"] == ["chordmini-btc", "cnnlstm"]
+    assert result["timing"]["total"] >= result["timing"]["beats"]
+    assert (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
+
+
+def test_result_cache_and_force(fake_env):
+    first = pipeline.analyze("abcdefghijk")
+    fake_env.clear()
+    again = pipeline.analyze("abcdefghijk")
+    assert fake_env == []  # có cache: không chạy bước nào, kể cả fetch
+    assert again == first
+    fake_env.clear()
+    pipeline.analyze("abcdefghijk", force=True)
+    assert [c[0] for c in fake_env] == ALL_STEPS
+
+
+def test_youtube_cache_checked_before_fetch(fake_env):
+    pipeline.analyze("abcdefghijk")
+    fake_env.clear()
+    pipeline.analyze("https://youtu.be/abcdefghijk")
+    assert fake_env == []  # không gọi fetch (không cần mạng)
+
+
+def test_cache_invalidated_when_code_changes(fake_env, monkeypatch):
+    pipeline.analyze("abcdefghijk")
+    monkeypatch.setattr(pipeline, "code_revision", lambda: "khac")
+    fake_env.clear()
+    result = pipeline.analyze("abcdefghijk")
+    assert [c[0] for c in fake_env] == ALL_STEPS
+    assert result["pipeline"]["code_revision"] == "khac"
+
+
+def test_separation_vram_only_when_step_ran(fake_env, monkeypatch):
+    stats = {"roformer": {"peak_vram_mb": 1600.0, "seconds": 50.0}}
+    fake = pipeline.separation.separate
+
+    def separate_writing_stats(audio_path, out_dir):
+        stems = fake(audio_path, out_dir)
+        (out_dir / pipeline.separation.STATS_FILE).write_text(json.dumps(stats), encoding="utf-8")
+        return stems
+
+    monkeypatch.setattr(pipeline.separation, "separate", separate_writing_stats)
+    first = pipeline.analyze("abcdefghijk")
+    assert first["pipeline"]["peak_vram_mb"]["roformer"] == 1600.0
+    again = pipeline.analyze("abcdefghijk", force=True)  # stats không đổi = stem lấy từ cache
+    assert again["pipeline"]["peak_vram_mb"]["roformer"] is None
+
+
+def test_no_separation_runs_everything_on_mix(fake_env):
+    result = pipeline.analyze("abcdefghijk", use_separation=False)
+    assert [c[0] for c in fake_env] == ["fetch", "normalize", "beats", "chordmini", "cnnlstm"]
+    assert all(c[1] == "mix.wav" for c in fake_env[1:])
+    check_schema(result)
+    assert result["pipeline"]["separation_model"] is None
+    assert result["pipeline"]["chord_stem"] == "mix"
+    # cache riêng, không ghi đè kết quả mặc định
+    assert not (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
+    assert list((paths.CACHE_DIR / "abcdefghijk").glob("result-*.json"))
+
+
+def test_chord_stem_parameter(fake_env):
+    pipeline.analyze("abcdefghijk", chord_stem="no_bass", beat_stem="instrumental")
+    assert ("chordmini", "no_bass.wav") in fake_env and ("beats", "instrumental.wav") in fake_env
+    with pytest.raises(ValueError):
+        pipeline.analyze("abcdefghijk", chord_stem="drums")
+
+
+def test_key_roman_and_sections(fake_env, monkeypatch):
+    key = KeyEstimate("C", "major", 0.9)
+    romans = {"C:maj": "I", "G:maj": "V", "A:min7": "vi7", "F:maj/3": "IV6"}
+    monkeypatch.setattr(pipeline.analysis, "estimate_key", lambda segs: key)
+    monkeypatch.setattr(pipeline.analysis, "to_roman", lambda label, k: romans[label])
+    monkeypatch.setattr(pipeline.analysis, "analyze_structure", lambda segs, beats, dur, k: [
+        Section(0.0, DURATION, "verse", ["C:maj", "G:maj/3", "A:min", "F:maj"], ["I", "V6", "vi", "IV"])])
+    result = pipeline.analyze("abcdefghijk")
+    check_schema(result)
+    assert result["key"] == {"tonic": "C", "mode": "major", "confidence": 0.9}
+    assert [c["roman"] for c in result["chords"]] == [None, "I", "V", "vi7", "IV6", None]
+    assert result["sections"] == [{"start": 0.0, "end": DURATION, "label": "verse",
+                                   "progression": ["C", "G/B", "Am", "F"], "roman": ["I", "V6", "vi", "IV"]}]
+
+
+def test_sections_roman_null_without_key(fake_env, monkeypatch):
+    monkeypatch.setattr(pipeline.analysis, "analyze_structure", lambda segs, beats, dur, k: [
+        Section(0.0, DURATION, "A", ["C:maj"], [])])
+    result = pipeline.analyze("abcdefghijk")
+    assert result["sections"][0]["roman"] is None and result["sections"][0]["progression"] == ["C"]
+
+
+@pytest.mark.parametrize("t, s", [(0, "0:00.00"), (59.999, "1:00.00"), (61.5, "1:01.50"), (243.03, "4:03.03")])
+def test_cli_fmt_time(t, s):
+    assert cli._fmt_time(t) == s
+
+
+def test_cli_writes_json_and_summary(fake_env, tmp_path, capsys):
+    out = tmp_path / "out" / "r.json"
+    assert cli.main(["abcdefghijk", "-o", str(out)]) == 0
+    check_schema(json.loads(out.read_text(encoding="utf-8")))
+    text = capsys.readouterr().out
+    assert "Bài thử" in text and "Am7" in text and "Thời gian" in text

@@ -1,3 +1,7 @@
+import os
+import subprocess
+import sys
+
 import mir_eval
 import numpy as np
 import pytest
@@ -36,11 +40,44 @@ def test_invalid_chord_dict():
         cnnlstm.run_cnnlstm(SAMPLE_AUDIO, chord_dict="xyz")
 
 
+def test_temporary_cwd_restores_on_error(tmp_path):
+    before = os.getcwd()
+    with pytest.raises(RuntimeError):
+        with cnnlstm._temporary_cwd(tmp_path):
+            assert os.path.samefile(os.getcwd(), tmp_path)
+            raise RuntimeError("lỗi giữa chừng")
+    assert os.getcwd() == before
+
+
+def test_import_keeps_cwd(tmp_path):
+    """Import mã gốc trong tiến trình mới (chưa có cache import), cwd phải giữ nguyên."""
+    if not CNNLSTM_DIR.exists():
+        pytest.skip("thiếu chord-cnn-lstm-model")
+    code = (
+        "import os, sys\n"
+        "before = os.getcwd()\n"
+        "from chordtrack.chords import cnnlstm\n"
+        "cnnlstm._import_modules()\n"
+        "import mir.common, mir.nn.train\n"
+        "assert os.getcwd() == before, (before, os.getcwd())\n"
+        "assert mir.common.WORKING_PATH == str(cnnlstm.CNNLSTM_DIR), mir.common.WORKING_PATH\n"
+        "assert mir.nn.train.WORKING_PATH == str(cnnlstm.CNNLSTM_DIR)\n"
+        "assert str(cnnlstm.CNNLSTM_DIR) not in sys.path\n"
+    )
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = {**os.environ, "PYTHONPATH": repo}
+    r = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
 @pytest.fixture(scope="module")
 def output():
     if not SAMPLE_AUDIO.exists() or not CNNLSTM_DIR.exists():
         pytest.skip("thiếu audio thử hoặc chord-cnn-lstm-model")
-    return cnnlstm.run_cnnlstm(SAMPLE_AUDIO)
+    before = os.getcwd()
+    out = cnnlstm.run_cnnlstm(SAMPLE_AUDIO)
+    assert os.getcwd() == before, "run_cnnlstm làm đổi cwd của tiến trình"
+    return out
 
 
 @pytest.mark.gpu

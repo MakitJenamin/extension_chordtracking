@@ -39,32 +39,44 @@ MODEL_FILES = [
 N_BIAS = 0.5
 
 
+@contextlib.contextmanager
+def _temporary_cwd(path: str | Path):
+    """Đặt cwd tạm thành `path`, luôn trả lại cwd cũ khi ra khỏi khối (kể cả khi có lỗi)."""
+    old = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(old)
+
+
 @functools.lru_cache(maxsize=1)
 def _import_modules():
-    """Import mã gốc một lần cho cả tiến trình.
+    """Import mã gốc một lần cho cả tiến trình. cwd của tiến trình giữ nguyên sau khi import.
 
-    `train_eval_test_split` (import gián tiếp) đọc file theo đường dẫn tương đối ngay lúc
-    import, nên phải chdir vào repo trong lúc import (chdir có tác dụng cho cả tiến trình,
-    nhưng chỉ xảy ra một lần ở đây). Sau đó gỡ repo khỏi `sys.path` để các tên chung chung
+    Mã gốc đọc file theo đường dẫn tương đối ngay lúc import (`train_eval_test_split` đọc
+    `data/all_1217.csv`; `mir.common.WORKING_PATH = os.getcwd()`), nên cwd chỉ được đặt tạm
+    vào repo trong lúc import rồi trả lại. Sau khi import, mọi đường dẫn mã gốc cần lúc chạy
+    đều được vá thành tuyệt đối (`WORKING_PATH`; file từ điển hợp âm truyền tuyệt đối), nên
+    lúc chạy không cần đổi cwd. Repo cũng được gỡ khỏi `sys.path` để các tên chung chung
     trong đó (`datasets`, `settings`, ...) không che gói thật về sau. Module đã import vẫn
     nằm trong `sys.modules`.
     """
     root = str(CNNLSTM_DIR)
-    old_cwd = os.getcwd()
     sys.path.insert(0, root)
-    os.chdir(root)
     # import đó còn gọi np.random.seed; giữ nguyên trạng thái RNG của người gọi.
     state = np.random.get_state()
     try:
-        with contextlib.redirect_stdout(io.StringIO()):
+        with _temporary_cwd(root), contextlib.redirect_stdout(io.StringIO()):
+            import mir.common as mir_common
             import mir.nn.train as mir_train
             from chordnet_ismir_naive import ChordNet
             from extractors.xhmm_ismir import XHMMDecoder
     finally:
         np.random.set_state(state)
-        os.chdir(old_cwd)
         sys.path.remove(root)
     # NetworkInterface tìm weights theo WORKING_PATH (= cwd lúc import mir); đặt tuyệt đối.
+    mir_common.WORKING_PATH = root
     mir_train.WORKING_PATH = root
     return mir_train.NetworkInterface, ChordNet, XHMMDecoder
 
