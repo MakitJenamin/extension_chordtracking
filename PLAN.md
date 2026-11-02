@@ -158,7 +158,19 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 - [x] Kiểm tra BS-Roformer-Viperx-1297 chạy vừa 8 GB VRAM (qua `audio-separator`). Trên "Let It Be" (243 giây): BS-Roformer 50 giây, VRAM đỉnh 1,6 GB; `htdemucs_ft` trên instrumental 29 giây, VRAM đỉnh 0,55 GB (`torch.cuda.max_memory_allocated`).
   - `audio-separator` từ 0.31 đòi numpy 2, nên ghim **0.30.2**. Bản này ghi file theo cwd, bỏ qua `output_dir`, nên phải truyền đường dẫn tuyệt đối trong `custom_output_names`.
   - `no_bass.wav` = drums + other của HTDemucs, bỏ stem vocals (giọng còn sót sau Roformer).
-- [ ] Tìm nguồn dữ liệu đánh giá: file nhãn hợp âm cùng audio tương ứng.
+- [x] Tìm nguồn dữ liệu đánh giá: file nhãn hợp âm cùng audio tương ứng. Chi tiết ở `eval/README.md`.
+  - Nhãn **Isophonics The Beatles** (180 bài) cộng audio "Remastered 2009" tải từ YouTube. Bảng ánh xạ ở `eval/isophonics_youtube.csv` (43 bài).
+  - **Phải căn thời gian.** Audio YouTube lệch nhãn tới 0.8 s ở vài bài. Không căn thì điểm majmin của ChordMini tụt từ 86.3 xuống 80.9, riêng "Eight Days a Week" tụt 31 điểm. Căn bằng tương quan chroma CENS giữa nhãn và audio.
+  - Đạt **31 bài** (88 phút). Loại 12 bài vì độ dài lệch quá 2 s, phần lớn do đuôi fade-out khác nhau.
+- [x] **Baseline ChordMini BTC-PL** trên 31 bài Isophonics (2026-11-02), chạy `python -m eval.run_chordmini`, WCSR gia quyền theo thời lượng (%):
+
+  | root | majmin | majmin_inv | thirds | triads | sevenths | sevenths_inv | tetrads | mirex | seg |
+  |---|---|---|---|---|---|---|---|---|---|
+  | 86.80 | 86.31 | 81.37 | 85.17 | 83.15 | 79.28 | 76.28 | 74.21 | 86.66 | 82.03 |
+
+  - Chạy 31 bài trong 14 s trên GPU, kể cả lúc nạp model. VRAM của cả GPU tăng từ 1.1 GB lên 1.4 GB.
+  - Mức có hợp âm đảo thấp hơn mức không đảo 5 điểm (majmin 86.3, majmin_inv 81.4), do BTC-PL không đoán nốt bass. Đây là phần Chord-CNN-LSTM và tách bass cần bù.
+  - ⚠️ Beatles có thể nằm trong dữ liệu huấn luyện của ChordMini, nên điểm này có thể cao hơn thực tế. Dùng để so sánh giữa các biến thể, không dùng làm điểm tuyệt đối.
 - [x] Bắt nhịp bằng beat_this (checkpoint `final0`, hậu xử lý minimal, không cần madmom) chạy được trên Windows, Python 3.11, numpy 1.26. "Let It Be": 279 phách, 78 phách mạnh (tỉ lệ 0,28), tempo trung vị 69,8 BPM, khoảng 1 giây trên GPU, VRAM đỉnh khoảng 270 MB.
   - Tempo trôi từ khoảng 73 BPM (phút đầu) xuống khoảng 68 BPM (cuối bài). Đầu ra theo khung 50 fps nên khoảng cách phách bị lượng tử 20 ms, tempo lệch theo bước khoảng 1,5 BPM.
   - ⚠️ Đoạn 95–118 giây, beat_this đặt phách mạnh cách 2 phách thay vì 4. Bước hậu xử lý hợp âm không nên tin tuyệt đối vào phách mạnh, có thể ép lại chu kỳ 4 phách.
