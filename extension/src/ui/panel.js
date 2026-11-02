@@ -123,6 +123,8 @@
         h("button", { type: "button", class: "ct-btn ct-sq", title: `Nâng nửa cung (${sc("ArrowUp")})`, onclick: () => stepTranspose(1) }, "+"));
       this.collapseBtn = h("button", { type: "button", class: "ct-btn ct-icon", onclick: () => CT.setSettings({ panelCollapsed: !CT.settings.panelCollapsed }) });
       this.miniEl = h("span", { class: "ct-mini" });
+      this.helpBtn = h("button", { type: "button", class: "ct-btn ct-icon ct-help-btn", title: "Chú thích và phím tắt",
+        "aria-expanded": "false", onclick: () => this.toggleHelp() }, "?");
 
       this.head = h("div", { class: "ct-head" },
         h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, "ChordTrack"),
@@ -131,7 +133,7 @@
         this.tempoEl, this.meterEl, this.dots.el, this.soonEl,
         h("span", { class: "ct-grow" }),
         h("span", { class: "ct-metro" }, this.metroBtn, this.volEl),
-        this.collapseBtn);
+        this.helpBtn, this.collapseBtn);
 
       this.tval = h("span", { class: "ct-tval" });
       this.tkey = h("span", { class: "ct-tkey" });
@@ -148,13 +150,29 @@
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C")));
-      const legend = h("div", { class: "ct-legend" },
-        "⚠ model không chắc, nên nghe lại · vạch cao: phách 1 (kèm số ô nhịp) · vạch vàng: đổi giọng · bấm hợp âm để tua · phím tắt Alt+Shift+1/2/3, ↑/↓, M, H");
-      this.body = h("div", { class: "ct-body" }, this.opts, this.tbox, this.slot, this.fsNote, legend);
+      // Chú thích và phím tắt: gom vào nút "?" (trước đây là một dòng chữ dài dưới dải).
+      const item = (sw, text) => h("li", {}, h("span", { class: "ct-sw " + sw }), text);
+      this.help = h("div", { class: "ct-help", hidden: true },
+        h("ul", { class: "ct-help-list" },
+          item("ct-sw-cur", "Ô sáng: hợp âm đang chơi; thanh đỏ ở đáy ô là tiến độ"),
+          item("ct-sw-bar", "Vạch cao kèm số: phách 1 của ô nhịp"),
+          item("ct-sw-mod", "Vạch vàng: đổi giọng"),
+          item("ct-sw-unc", "⚠ Model không chắc, nên nghe lại"),
+          h("li", {}, h("span", { class: "ct-sw" }), "Bấm vào hợp âm hoặc đoạn để tua tới đó")),
+        h("ul", { class: "ct-help-keys" },
+          ...SHORTCUTS.map((x) => h("li", {}, h("kbd", {}, "Alt+Shift+" + x.key), x.label))));
+      this.body = h("div", { class: "ct-body" }, this.opts, this.tbox, this.help, this.slot, this.fsNote);
       this.status = h("div", { class: "ct-status" });
       this.el = h("div", { id: "ct-panel", class: "ct-root ct-panel", hidden: true }, this.head, this.status, this.body);
       this.slot.append(CT.ui.strip.el);
       this.applySettings(CT.settings);
+    },
+
+    toggleHelp(force) {
+      const open = force ?? this.help.hidden;
+      this.help.hidden = !open;
+      this.helpBtn.classList.toggle("ct-on", open);
+      this.helpBtn.setAttribute("aria-expanded", String(open));
     },
 
     show(state) {

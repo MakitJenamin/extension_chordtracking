@@ -26,6 +26,8 @@ html[dark] .ct-root {
   --ct-layer: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.2));
   --ct-accent: var(--yt-spec-call-to-action, #3ea6ff);
   --ct-mod: #ffd54a;
+  /* Ô hợp âm hiện tại trên theme tối: xám sáng thay vì trắng chói, chữ vẫn tương phản ~13:1. */
+  --ct-cur-bg: #dedede; --ct-cur-fg: #0f0f0f;
 }
 .ct-root *, .ct-root *::before, .ct-root *::after { box-sizing: border-box; }
 .ct-root [hidden] { display: none !important; }
@@ -103,7 +105,24 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-opts { display: inline-flex; flex-wrap: wrap; gap: 6px 16px; }
 .ct-opts label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--ct-text); font-size: 13px; }
 .ct-opts input { accent-color: var(--ct-text); margin: 0; }
-.ct-legend { margin-top: 8px; font-size: 12px; line-height: 16px; color: var(--ct-text2); }
+/* Nút "?" và bảng chú thích */
+.ct-btn.ct-help-btn { width: 28px; height: 28px; font-size: 14px; font-weight: 700; background: var(--ct-layer); }
+.ct-btn.ct-help-btn.ct-on { background: var(--ct-text); color: var(--ct-inverse); }
+.ct-help {
+  display: flex; flex-wrap: wrap; gap: 6px 32px; margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--ct-bg); font-size: 13px; line-height: 18px; color: var(--ct-text2);
+}
+.ct-help ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.ct-help li { display: flex; align-items: center; gap: 8px; }
+.ct-help kbd {
+  min-width: 92px; padding: 0 6px; border-radius: 4px; background: var(--ct-layer); color: var(--ct-text);
+  font: 500 12px/18px "Roboto Mono", Consolas, monospace;
+}
+.ct-sw { flex: none; width: 14px; height: 14px; border-radius: 3px; text-align: center; font-size: 11px; line-height: 14px; }
+.ct-sw-cur { background: var(--ct-text); box-shadow: inset 0 -3px 0 var(--ct-red); }
+.ct-sw-bar { width: 2px; margin: 0 6px; background: color-mix(in srgb, var(--ct-text) 35%, transparent); }
+.ct-sw-mod { width: 0; margin: 0 6px; border-left: 2px dashed var(--ct-mod); }
+.ct-sw-unc { display: none; }
 
 /* Thu gọn */
 .ct-mini { display: none; font-size: 18px; font-weight: 700; }
@@ -150,7 +169,14 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
   background: var(--ct-bg); user-select: none; contain: layout paint;
 }
 .ct-strip { position: absolute; top: 0; left: 0; height: 100%; will-change: transform; }
-.ct-playhead { position: absolute; top: 0; bottom: 0; left: 28%; width: 2px; margin-left: -1px; background: var(--ct-red); z-index: 3; pointer-events: none; }
+/* Vạch đỏ chỉ vẽ ở làn trên (mũi tên) và làn thước phách, để trống làn hợp âm: không bao giờ cắt ngang
+ * chữ. (.ct-strip có will-change: transform nên là stacking context riêng, không thể đặt vạch "dưới" ô
+ * hiện tại bằng z-index.) Trong làn hợp âm, tiến độ hiện bằng thanh đỏ ở đáy ô hiện tại (--ct-p). */
+.ct-playhead {
+  position: absolute; top: 0; bottom: 0; left: 28%; width: 2px; margin-left: -1px; z-index: 3; pointer-events: none;
+  background: linear-gradient(to bottom, var(--ct-red) 0 var(--ct-lane-top), transparent var(--ct-lane-top) calc(100% - var(--ct-lane-bottom)),
+    var(--ct-red) calc(100% - var(--ct-lane-bottom)));
+}
 .ct-playhead::before {
   content: ""; position: absolute; top: 0; left: -4px; border: 5px solid transparent; border-top-color: var(--ct-red);
 }
@@ -162,17 +188,25 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
   border-radius: 6px;
 }
 .ct-chord:hover:not(.ct-cur) { background: var(--ct-layer); }
-.ct-lbl { display: inline-block; will-change: transform; }
+.ct-lbl { display: inline-block; vertical-align: top; }
 .ct-sym { font-size: 26px; font-weight: 700; line-height: 32px; letter-spacing: -0.3px; }
 .ct-rn { font-size: 13px; line-height: 16px; color: var(--ct-text2); }
-.ct-chord.ct-cur { background: var(--ct-text); color: var(--ct-inverse); border-left-color: transparent; z-index: 2; }
+.ct-chord.ct-cur { background: var(--ct-cur-bg, var(--ct-text)); color: var(--ct-cur-fg, var(--ct-inverse)); border-left-color: transparent; z-index: 3; }
+.ct-chord.ct-cur::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--ct-p, 0) * 100%);
+  background: var(--ct-red); border-radius: 0 2px 2px 0; pointer-events: none;
+}
 .ct-chord.ct-cur .ct-rn { color: inherit; opacity: 0.75; }
 .ct-chord.ct-past { opacity: 0.38; }
 .ct-chord.ct-nc .ct-sym { font-size: 15px; font-weight: 500; color: var(--ct-text2); }
 .ct-chord.ct-cur.ct-nc .ct-sym { color: inherit; }
-.ct-chord.ct-narrow { padding: 4px 2px 0; }
-.ct-chord.ct-narrow .ct-sym { font-size: 14px; }
-.ct-chord.ct-narrow .ct-rn, .ct-chord.ct-narrow .ct-unc { display: none; }
+/* Hợp âm ngắn (strip.js đo chữ thật): chữ nhỏ lại; vẫn thiếu chỗ thì bỏ bậc và cắt bằng mép ô
+ * (overflow hidden), nên chữ không bao giờ tràn sang hợp âm kế. */
+.ct-chord.ct-narrow { padding: 4px 3px 0; }
+.ct-chord.ct-narrow .ct-sym { font-size: 16px; line-height: 32px; letter-spacing: -0.5px; }
+.ct-chord.ct-narrow .ct-unc { display: none; }
+.ct-chord.ct-tight { padding: 4px 1px 0; }
+.ct-chord.ct-tight .ct-rn { display: none; }
 .ct-unc { position: absolute; top: 3px; right: 5px; font-size: 12px; line-height: 14px; color: #e09400; }
 .ct-chord.ct-cur .ct-unc { color: #ffb300; }
 
@@ -216,22 +250,27 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-sec-legend { margin-top: 8px; font-size: 12px; color: var(--ct-text2); }
 
 /* ---------------- Toàn màn hình ---------------- */
-.ct-fs {
-  /* Trên video luôn là chữ sáng trên nền tối, không phụ thuộc theme. */
+.ct-root.ct-fs, html[dark] .ct-root.ct-fs {
+  /* Trên video luôn là chữ sáng trên nền tối, không phụ thuộc theme (phải thắng html[dark] .ct-root).
+   * Ô hiện tại: nền trắng đặc, chữ đen. */
   --ct-text: #fff; --ct-text2: rgba(255, 255, 255, 0.75); --ct-inverse: #0f0f0f;
   --ct-layer: rgba(255, 255, 255, 0.22); --ct-bg: rgba(0, 0, 0, 0.62); --ct-mod: #ffd54a;
+  --ct-cur-bg: #ececec; --ct-cur-fg: #0f0f0f;
+}
+.ct-fs {
   position: absolute; left: 24px; right: 24px; bottom: var(--ct-fs-bottom, 72px); z-index: 45;
   pointer-events: none; transition: bottom 0.25s ease;
 }
-.ct-fs.ct-lowered { bottom: 20px; --ct-bg: rgba(0, 0, 0, 0.5); }
+.ct-root.ct-fs.ct-lowered, html[dark] .ct-root.ct-fs.ct-lowered { bottom: 20px; --ct-bg: rgba(0, 0, 0, 0.5); }
 .ct-ov-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 16px; font-weight: 500; text-shadow: 0 1px 3px #000; }
 .ct-ov-row .ct-chip.ct-warn { text-shadow: none; }
 .ct-fs .ct-strip-wrap { height: 128px; margin: 0; pointer-events: auto; border-radius: 12px; --ct-lane-top: 20px; --ct-lane-bottom: 18px; }
 .ct-fs .ct-sym { font-size: 36px; line-height: 44px; }
 .ct-fs .ct-rn { font-size: 15px; line-height: 18px; }
-.ct-fs .ct-chord.ct-narrow .ct-sym { font-size: 18px; }
+.ct-fs .ct-chord.ct-narrow .ct-sym { font-size: 22px; line-height: 44px; }
 .ct-fs .ct-chord.ct-past { opacity: 0.35; }
 .ct-fs .ct-beat span { font-size: 11px; }
 /* Đẩy phụ đề YouTube lên trên lớp phủ. */
-#movie_player.ct-fs-on .ytp-caption-window-bottom { margin-bottom: 170px !important; }
-#movie_player.ct-fs-on.ct-fs-controls .ytp-caption-window-bottom { margin-bottom: 120px !important; }
+/* --ct-cap do fullscreen.js tính theo vị trí thật của lớp phủ. */
+#movie_player.ct-fs-on .ytp-caption-window-bottom { margin-bottom: var(--ct-cap, 170px) !important; }
+.ct-collapsed .ct-help-btn, .ct-panel[data-state="loading"] .ct-help-btn, .ct-panel[data-state="error"] .ct-help-btn { display: none !important; }

@@ -328,6 +328,12 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   - ⚠️ Trình duyệt Claude in Chrome trên máy này không vào được `127.0.0.1` của shell (ERR_CONNECTION_REFUSED), phải
     phục vụ trang thử qua IP LAN và proxy `/api/` tới backend. Extension thật không bị ảnh hưởng.
 - [x] Extension lõi (2026-11-03): dải karaoke, 3 chế độ, toàn màn hình, bảng cấu trúc chạy trên harness `extension/dev/`. Đồng bộ: hợp âm đổi lệch 6,8 ms trung bình, tối đa 17 ms (1×), 25,7 ms (1.5×). Lưu ý: dải 46 px/s quá chật với nhạc Kajiura (hợp âm ~1 s bị cắt chữ), nên panel nhân 1,5 và toàn màn hình nhân 2. Claude in Chrome trên máy này không vào được 127.0.0.1 và bị bóp `requestAnimationFrame` (1–3 khung/giây): harness phục vụ qua IP LAN, đo với `&measure=1`. Chưa thử trên trang YouTube thật (selector `#below`, `#secondary`, `ytp-autohide`, phần tử fullscreen) vì không được dùng tab YouTube của người dùng.
+- [x] Thử extension trên YouTube thật (2026-11-03). Toàn màn hình mới của YouTube có cụm nút like/bình luận/chia sẻ
+  (`.ytp-fullscreen-quick-actions`) ngay trên thanh tua, đè lên dải: lớp phủ giờ đo và nằm trên cả cụm này. Vạch đỏ
+  không thể nằm "dưới" ô hiện tại bằng z-index (`.ct-strip` có `will-change: transform` là stacking context riêng), nên
+  vạch chỉ vẽ ở làn trên và làn thước phách, tiến độ trong ô hiện bằng thanh đỏ ở đáy ô. Chrome bản chính thức
+  (137+) bỏ `--load-extension`, Playwright `--channel chrome` không nạp được extension. Người dùng chốt: kiểm thử
+  trình duyệt chỉ bằng Claude in Chrome; nạp lại bản mới bằng `window.postMessage({type:"ct:dev-reload"})` (README).
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
