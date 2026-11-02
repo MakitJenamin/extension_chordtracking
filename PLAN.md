@@ -319,8 +319,10 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     đồng bộ dùng `AudioContext.getOutputTimestamp()` (đồng hồ của mẫu đang ra loa, đã gồm `outputLatency`).
   - Đo bằng `extension/dev/metronome_test.html` ("Let It Be", Chrome, 48 kHz, baseLatency 10 ms, outputLatency 40 ms),
     độ lệch giữa lúc tiếng gõ được lên lịch và phách trong JSON, theo đường khớp đồng hồ media (|lệch| TB / max):
-    1×: 1,4 / 4,4 ms (20 tiếng); 0,75×: 3,9 / 11,4 ms (15); 1× sau khi tua tới 120 s: 3,0 / 9,4 ms (18);
-    0,75× sau khi tua lùi tới 60 s: 2,2 / 6,0 ms (14). Đạt mục tiêu < 15 ms. ⚠️ Cách đo này không thấy được độ trễ
+    1×: 0,6 / 6,5 ms (20 tiếng, max là tiếng đầu chặng); 0,75×: 0,05 / 0,14 ms (15); 1× sau khi tua tới 120 s:
+    0,05 / 0,10 ms (18); 0,75× sau khi tua lùi tới 60 s: 0,03 / 0,05 ms (14). Đạt mục tiêu < 15 ms. (Bản đầu chưa
+    giới hạn bước chỉnh mốc mỗi khung hình: max 4–11 ms.)
+  - Kết quả cũ (`X-Chordtrack-Stale`) không có `meter`: phía extension dùng `result.meter ?? 4`. ⚠️ Cách đo này không thấy được độ trễ
     khác nhau giữa trình phát video và AudioContext trên thiết bị thật; muốn chắc cần thu loopback.
   - Popup: trạng thái `/health`, bật/tắt, chế độ mặc định, âm lượng metronome, địa chỉ server, danh sách `/songs`.
   - ⚠️ Trình duyệt Claude in Chrome trên máy này không vào được `127.0.0.1` của shell (ERR_CONNECTION_REFUSED), phải

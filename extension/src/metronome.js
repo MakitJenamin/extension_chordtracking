@@ -17,6 +17,7 @@
   const TICK_MS = 25;         // chu kỳ bộ lên lịch
   const JITTER = 0.012;       // lệch dưới mức này thì giữ mốc (chỉ kéo nhẹ)
   const RESYNC = 0.05;        // lệch trên mức này thì coi như tua: hủy tiếng đã lên lịch
+  const MAX_STEP = 0.004;     // giây video: mốc dịch tối đa mỗi sự kiện "time"
   const LATE = 0.005;         // phách trễ hơn mức này so với audio hiện tại thì bỏ, không phát dồn
   const STALE_MS = 300;       // không có "time" lâu hơn (tab ẩn, rAF dừng) thì đọc thẳng video
 
@@ -99,9 +100,8 @@
       master.connect(ctx.destination);
     }
     if (ctx.state === "suspended") {
-      ctx.resume().catch(() => {});
-      // Bật lúc tải trang (cài đặt đã lưu) thì chưa có thao tác người dùng: chờ cú bấm đầu tiên.
-      if (ctx.state === "suspended") armGestureResume();
+      // Bật lúc tải trang (cài đặt đã lưu) thì chưa có thao tác người dùng, resume() không chạy: chờ cú bấm đầu tiên.
+      ctx.resume().then(() => { if (ctx.state === "suspended") armGestureResume(); }, armGestureResume);
     }
     return true;
   }
@@ -120,11 +120,14 @@
     window.addEventListener("keydown", resume, true);
   }
 
+  /** Hủy các tiếng chưa phát. Tiếng đang kêu dở thì để nó tắt tự nhiên (cắt ngang nghe như tiếng "bụp"). */
   function cancelPending() {
+    const now = ctx ? ctx.currentTime : Infinity;
     for (const p of pending) {
+      if (p.when <= now) continue;
       for (const n of p.nodes) { try { n.stop(); n.disconnect(); } catch {} }
     }
-    pending = [];
+    pending = pending.filter((p) => p.when <= now);
   }
 
   /** Chỉ số phách đầu tiên có thời điểm >= t (tìm nhị phân). */
@@ -160,8 +163,9 @@
     const err = t - videoTimeAt(heardNow());
     if (Math.abs(err) > RESYNC) { resync(t, rate); return; }
     // Kéo mốc dần về số đo mới: lọc nhiễu của currentTime nhưng vẫn theo kịp trôi đồng hồ.
-    if (Math.abs(err) > JITTER) anchor.v += err * 0.5;
-    else anchor.v += err * 0.05;
+    // Mỗi khung hình dịch tối đa MAX_STEP để phách sắp tới không bị đẩy lùi quá mốc "trễ" rồi bị bỏ.
+    const step = Math.abs(err) > JITTER ? err * 0.5 : err * 0.05;
+    anchor.v += Math.max(-MAX_STEP, Math.min(MAX_STEP, step));
   }
 
   function tick() {
@@ -239,8 +243,9 @@
   CT.bus.on("song:ready", ({ result }) => setResult(result));
   CT.bus.on("song:none", () => setResult(null));
   CT.bus.on("settings", (s) => {
-    if (s.metronome && !on) start();
-    else if (!s.metronome && on) stop();
+    const want = !!s.metronome && s.enabled !== false;   // tắt ChordTrack trên YouTube thì metronome cũng tắt
+    if (want && !on) start();
+    else if (!want && on) stop();
     if (ctx && master) master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.01);
   });
   if (CT.state.result) setResult(CT.state.result);

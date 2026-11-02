@@ -24,7 +24,7 @@
   }
 
   async function direct(path) {
-    const base = String(CT.settings.serverUrl || CT.DEFAULTS.serverUrl).replace(/\/+$/, "");
+    const base = serverBase();
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), DIRECT_TIMEOUT_MS);
     try {
@@ -112,14 +112,18 @@
   };
 
   function showSongsMessage(msg) {
+    songsReq++;
     $("songs").replaceChildren();
     $("songCount").textContent = "";
     $("songsEmpty").hidden = false;
     $("songsEmpty").textContent = msg;
   }
 
+  let songsReq = 0;
   async function loadSongs() {
+    const my = ++songsReq;
     const res = await api("/songs");
+    if (my !== songsReq) return;     // đã có lần tải mới hơn (bấm ↻ hoặc đổi server)
     if (!res.ok) { showSongsMessage("Không tải được danh sách bài."); return; }
     const songs = (res.data && res.data.songs) || [];
     if (!songs.length) { showSongsMessage("Chưa có bài nào. Mở một video YouTube để phân tích."); return; }
@@ -148,13 +152,6 @@
       yt.textContent = "▶";
       yt.setAttribute("aria-hidden", "true");
       row.querySelector(".t").prepend(yt);
-      row.addEventListener("click", (e) => {
-        if (hasExt && chrome.tabs?.create) {
-          e.preventDefault();
-          chrome.tabs.create({ url });
-          window.close();
-        }
-      });
     } else {
       row.title = `${title} (file local, không có trên YouTube)`;
     }
@@ -208,8 +205,13 @@
 
   async function saveServer(url) {
     url = url.trim().replace(/\/+$/, "");
+    // Server chỉ nhận Host 127.0.0.1/localhost (chống DNS rebinding) và manifest chỉ xin quyền 127.0.0.1:
+    // địa chỉ khác lưu được cũng không gọi được, nên chỉ cho đổi cổng.
     let ok = false;
-    try { ok = /^https?:$/.test(new URL(url).protocol); } catch {}
+    try {
+      const u = new URL(url);
+      ok = u.protocol === "http:" && (u.hostname === "127.0.0.1" || u.hostname === "localhost");
+    } catch {}
     $("server").setAttribute("aria-invalid", String(!ok));
     $("serverErr").hidden = ok;
     if (!ok) return;
