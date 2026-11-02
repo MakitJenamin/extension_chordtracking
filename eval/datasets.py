@@ -12,7 +12,7 @@ Bảng ánh xạ bài sang videoId nằm ở `eval/isophonics_youtube.csv` (có 
 
 Các lệnh:
     python -m eval.datasets labels   # tải và giải nén nhãn
-    python -m eval.datasets search   # tìm videoId cho các bài trong CANDIDATES, in CSV (dùng khi dựng bảng)
+    python -m eval.datasets search   # tìm videoId cho CANDIDATES, ghi EVAL_DIR/isophonics/youtube_candidates.csv
     python -m eval.datasets audio    # tải audio theo CSV
     python -m eval.datasets align    # kiểm tra độ dài, ước lượng độ lệch đầu bài, ghi ref/
     python -m eval.datasets all      # labels + audio + align
@@ -36,6 +36,7 @@ import numpy as np
 
 from chordtrack.paths import EVAL_DIR
 from chordtrack.types import ChordSegment, lab_to_segments, segments_to_lab
+from eval.evaluate import _utf8_console
 
 ISO_URL = "http://isophonics.net/files/annotations/The%20Beatles%20Annotations.tar.gz"
 ISO_DIR = EVAL_DIR / "isophonics"
@@ -45,6 +46,8 @@ REF_DIR = ISO_DIR / "ref"
 REPORT_PATH = ISO_DIR / "alignment.json"
 MAPPING_CSV = Path(__file__).with_name("isophonics_youtube.csv")
 CSV_FIELDS = ("name", "title", "lab_file", "video_id", "yt_title")
+SEARCH_OUT = ISO_DIR / "youtube_candidates.csv"   # lệnh `search` ghi ra đây, không ghi đè bảng đã commit
+N_LABELS = 180                                    # số file chordlab trong bộ Isophonics The Beatles
 
 # Ngưỡng căn thời gian (xem README).
 MAX_DURATION_DIFF = 2.0     # |độ dài audio - độ dài nhãn| lớn hơn thì loại bài
@@ -120,8 +123,11 @@ def read_mapping(path: Path = MAPPING_CSV) -> list[dict]:
 
 def download_labels(force: bool = False) -> int:
     """Tải bộ nhãn Isophonics, chỉ giữ các file chordlab/*.lab. Trả về số file."""
-    if CHORDLAB_DIR.exists() and any(CHORDLAB_DIR.rglob("*.lab")) and not force:
-        return len(list(CHORDLAB_DIR.rglob("*.lab")))
+    have = len(list(CHORDLAB_DIR.rglob("*.lab"))) if CHORDLAB_DIR.exists() else 0
+    if have >= N_LABELS and not force:
+        return have
+    if CHORDLAB_DIR.exists():  # lần trước tải dở hoặc force: xóa rồi tải lại
+        shutil.rmtree(CHORDLAB_DIR)
     CHORDLAB_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tgz = Path(tmp) / "beatles.tar.gz"
@@ -143,6 +149,8 @@ def download_labels(force: bool = False) -> int:
                 assert src is not None
                 dst.write_bytes(src.read())
                 n += 1
+    if n < N_LABELS:
+        raise RuntimeError(f"Chỉ giải nén được {n}/{N_LABELS} file nhãn từ {ISO_URL}")
     return n
 
 
@@ -166,16 +174,23 @@ def _core_title(yt_title: str) -> str:
 def search_video(title: str, label_dur: float, n: int = 8) -> dict | None:
     """Tìm bản audio chính thức gần độ dài nhãn nhất. Ưu tiên tiêu đề có 'Remastered 2009'."""
     q = f"ytsearch{n}:The Beatles {title} Remastered 2009"
-    out = subprocess.run(
+    res = subprocess.run(
         _yt_dlp() + ["--flat-playlist", "--no-warnings", "--print", "%(id)s\t%(duration)s\t%(channel)s\t%(title)s", q],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-    ).stdout
+    )
+    if res.returncode != 0:
+        raise RuntimeError(f"yt-dlp lỗi khi tìm '{title}': {res.stderr.strip()[-500:]}")
+    out = res.stdout
     best, best_key = None, None
     for line in out.splitlines():
         parts = line.split("\t")
-        if len(parts) != 4 or parts[1] in ("NA", ""):
+        if len(parts) != 4:
             continue
-        vid, dur, channel, yt_title = parts[0], float(parts[1]), parts[2], parts[3]
+        try:
+            dur = float(parts[1])
+        except ValueError:  # "NA", "None": không biết độ dài
+            continue
+        vid, channel, yt_title = parts[0], parts[2], parts[3]
         low = yt_title.lower()
         if any(bad in low for bad in ("live", "cover", "karaoke", "instrumental", "lyrics", "mono", "demo", "take ")):
             continue
@@ -204,6 +219,9 @@ def build_mapping(out_csv: Path) -> None:
         print(f"{title:40s} nhãn {label_dur:6.1f}s  yt {hit['yt_duration']:6.1f}s  {hit['video_id']}  {hit['yt_title']}")
         rows.append({"name": song_name(lab_file), "title": title, "lab_file": lab_file,
                      "video_id": hit["video_id"], "yt_title": hit["yt_title"]})
+    if not rows:
+        raise RuntimeError("Không tìm được bài nào, không ghi CSV")
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         w.writeheader()
@@ -279,10 +297,11 @@ def best_offset(ach: np.ndarray, lch: np.ndarray, mask: np.ndarray, max_lag: int
     Trả về (lag, điểm ở lag tốt nhất, điểm ở lag 0). Điểm là cosine trung bình trên các khung có hợp âm.
     """
     lnorm = lch / (np.linalg.norm(lch, axis=1, keepdims=True) + 1e-9)
-    frames = np.nonzero(mask)[0]
+    # Chỉ dùng các khung hợp lệ ở MỌI lag, để điểm giữa các lag so trên cùng một tập khung.
+    t = np.nonzero(mask)[0]
+    t = t[(t - max_lag >= 0) & (t + max_lag < len(ach))]
     scores = {}
     for lag in range(-max_lag, max_lag + 1):
-        t = frames[(frames + lag >= 0) & (frames + lag < len(ach))]
         scores[lag] = float(np.mean(np.sum(ach[t + lag] * lnorm[t], axis=1))) if len(t) else -1.0
     lag = max(scores, key=lambda k: (scores[k], -abs(k)))
     return lag, scores[lag], scores[0]
@@ -336,6 +355,8 @@ def align_song(name: str, lab_path: Path, audio_path: Path) -> tuple[AlignResult
     reason = ""
     if abs(diff) > MAX_DURATION_DIFF:
         reason = f"độ dài lệch {diff:+.2f}s (> {MAX_DURATION_DIFF}s): có thể là bản khác (mono, remix, single...)"
+    elif abs(diff - offset) > MAX_DURATION_DIFF:
+        reason = f"sau khi dịch {offset:+.2f}s, cuối nhãn lệch cuối audio {diff - offset:+.2f}s (> {MAX_DURATION_DIFF}s)"
     elif abs(lag) >= max_lag:  # đỉnh nằm ở biên: độ lệch thật có thể còn lớn hơn
         reason = f"độ lệch tốt nhất chạm biên ±{MAX_OFFSET}s: không căn được"
     elif score < MIN_ALIGN_SCORE:
@@ -361,7 +382,11 @@ def align_all(rows: list[dict]) -> list[AlignResult]:
             missing = "audio" if not audio.exists() else "nhãn"
             results.append(AlignResult(row["name"], "rejected", f"thiếu {missing}", 0, 0, 0, 0, 0, 0))
             continue
-        res, segs = align_song(row["name"], lab, audio)
+        try:
+            res, segs = align_song(row["name"], lab, audio)
+        except Exception as ex:  # file wav hỏng, nhãn rỗng...: loại bài, ghi lý do, chạy tiếp
+            results.append(AlignResult(row["name"], "rejected", f"lỗi khi căn: {ex!r}", 0, 0, 0, 0, 0, 0))
+            continue
         if segs is not None:
             segments_to_lab(segs, REF_DIR / f"{row['name']}.lab")
         results.append(res)
@@ -379,15 +404,6 @@ def print_report(results: list[AlignResult]) -> None:
     print(f"\nĐạt: {len(ok)} bài. Bị loại: {len(bad)} bài. Nhãn đã căn ở {REF_DIR}")
 
 
-def _utf8_console() -> None:
-    """Console Windows mặc định là cp1252, không in được tiếng Việt."""
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Dựng bộ đánh giá Isophonics The Beatles")
     ap.add_argument("cmd", choices=["labels", "search", "audio", "align", "all"])
@@ -401,7 +417,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd in ("labels", "all", "search"):
         print(f"Nhãn: {download_labels()} file trong {CHORDLAB_DIR}")
     if args.cmd == "search":
-        build_mapping(args.csv)
+        out = args.csv if args.csv != MAPPING_CSV else SEARCH_OUT
+        build_mapping(out)
+        print(f"Đã ghi {out}. Kiểm tra rồi chép vào {MAPPING_CSV} nếu muốn đổi bảng ánh xạ.")
         return 0
     rows = read_mapping(args.csv)
     if args.cmd in ("audio", "all"):

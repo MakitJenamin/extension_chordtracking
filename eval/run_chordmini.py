@@ -21,8 +21,8 @@ from pathlib import Path
 
 from chordtrack.gpu import gpu_lock
 from chordtrack.paths import CHORDMINI_DIR, EVAL_DIR
-from eval.datasets import AUDIO_DIR, REF_DIR, _utf8_console
-from eval.evaluate import aggregate, evaluate_pair, format_table
+from eval.datasets import AUDIO_DIR, REF_DIR
+from eval.evaluate import _nan_to_none, _utf8_console, aggregate, evaluate_pair, format_table
 
 CHORDMINI_FLAGS = [
     "--model_type", "BTC",
@@ -36,26 +36,29 @@ CHORDMINI_FLAGS = [
 
 
 class VramMonitor:
-    """Đọc VRAM đã dùng (MiB) bằng nvidia-smi mỗi 0.5 giây. Là số của cả GPU, không riêng tiến trình."""
+    """Đọc VRAM đã dùng (MiB) bằng nvidia-smi mỗi 0.5 giây. Là số của cả GPU, không riêng tiến trình.
+    Không đọc được (không có nvidia-smi) thì `peak` và `baseline` là None."""
 
     def __init__(self) -> None:
-        self.peak = 0
+        self.peak: int | None = None
         self.baseline = self._read()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     @staticmethod
-    def _read() -> int:
+    def _read() -> int | None:
         try:
             out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
                                  capture_output=True, text=True, timeout=10).stdout
             return int(out.split()[0])
         except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
-            return 0
+            return None
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self.peak = max(self.peak, self._read())
+            v = self._read()
+            if v is not None:
+                self.peak = v if self.peak is None else max(self.peak, v)
             self._stop.wait(0.5)
 
     def __enter__(self) -> "VramMonitor":
@@ -90,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--checkpoint", default="btc_model_best.pth")
     args = ap.parse_args(argv)
     _utf8_console()
+    # test.py chạy với cwd=CHORDMINI_DIR, nên đường dẫn truyền vào phải là tuyệt đối.
+    args.out_dir = args.out_dir.resolve()
 
     refs = sorted(REF_DIR.glob("*.lab"))
     if not refs:
@@ -115,13 +120,14 @@ def main(argv: list[str] | None = None) -> int:
     audio_seconds = agg["duration"]
     print(f"\n{len(results)}/{len(refs)} bài, {audio_seconds / 60:.1f} phút audio. "
           f"Thời gian chạy {stats['seconds']:.1f}s ({stats['seconds'] / max(1, len(results)):.1f}s/bài), "
-          f"VRAM đỉnh {stats['vram_peak_mib']} MiB (trước khi chạy {stats['vram_before_mib']} MiB)")
+          f"VRAM đỉnh {stats['vram_peak_mib'] or 'không đo được'} MiB "
+          f"(trước khi chạy {stats['vram_before_mib'] or 'không đo được'} MiB)")
     for e in stats["errors"]:
         print(e, file=sys.stderr)
-    (args.out_dir / "results.json").write_text(json.dumps({
+    (args.out_dir / "results.json").write_text(json.dumps(_nan_to_none({
         "checkpoint": args.checkpoint, "flags": CHORDMINI_FLAGS, "run": stats, "mean": agg,
         "files": {k: {m: v[m] for m in v if m not in ("weights", "correct")} for k, v in results.items()},
-    }, indent=2, ensure_ascii=False), encoding="utf-8")
+    }), indent=2, ensure_ascii=False), encoding="utf-8")
     return 0 if len(results) == len(refs) else 2
 
 

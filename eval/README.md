@@ -40,7 +40,7 @@ Bảng ánh xạ `isophonics_youtube.csv` (có commit) gồm: `name, title, lab_
 Bảng được dựng bằng `python -m eval.datasets search`: với mỗi bài trong `CANDIDATES`, tìm trên YouTube
 `The Beatles <tên bài> Remastered 2009`, chỉ nhận video có tên bài khớp đúng, rồi xếp hạng theo:
 có "Remastered 2009" > không phải bản remix mới (2015/2019/2026 Mix) > kênh chính thức > lệch độ dài ít nhất.
-Lệnh này ghi đè CSV, nên chỉ chạy khi muốn dựng lại bảng.
+Lệnh này ghi ra `EVAL_DIR/isophonics/youtube_candidates.csv`, không ghi đè bảng đã commit. Kiểm tra xong mới chép sang.
 
 ### Căn thời gian
 
@@ -52,7 +52,8 @@ nhau, đuôi fade-out dài ngắn khác nhau, đôi khi là bản mix khác hẳ
    bằng 1 ở các nốt của hợp âm, giải mã bằng `mir_eval.chord.encode`), tính chroma CENS của audio
    (22050 Hz, hop 512 ≈ 23 ms), rồi trượt nhãn trong khoảng ±2 s, chọn độ lệch có cosine trung bình
    cao nhất trên các khung có hợp âm. Cách này không phụ thuộc khoảng lặng hay tiếng đếm nhịp ở đầu bài.
-3. **Loại bài không căn được:** đỉnh nằm ở biên ±2 s, hoặc cosine tốt nhất < 0.5.
+3. **Loại bài không căn được:** đỉnh nằm ở biên ±2 s, cosine tốt nhất < 0.5, hoặc sau khi dịch thì cuối nhãn
+   lệch cuối audio quá 2 s. Mọi lag được chấm trên cùng một tập khung, để lag lớn không được lợi vì bỏ bớt khung.
 4. **Dịch nhãn** theo độ lệch tìm được (bỏ qua nếu < 0.03 s), cắt về `[0, độ dài audio]`, lấp đầu bài
    bằng `N`, ghi vào `ref/`.
 
@@ -65,6 +66,7 @@ Kiểm chứng (2026-11-02, 31 bài đạt): với mỗi bài, quét độ lệc
 làm điểm majmin của ChordMini cao nhất ("oracle"; chỉ để kiểm tra, không dùng để căn).
 - Độ lệch chroma khớp oracle trong ±0.15 s ở 28/31 bài.
 - majmin trung bình: không căn 80.9, căn bằng chroma 86.3, oracle 87.2.
+- Thử bỏ qua độ lệch nhỏ (chỉ dịch khi cosine tăng ≥ 0.01): điểm còn 85.7 và chỉ 24/31 bài khớp oracle, nên không dùng.
 - Độ lệch lớn nhất: "Eight Days a Week" +0.72 s, "Yellow Submarine" +0.77 s,
   "While My Guitar Gently Weeps" +0.67 s. Không căn thì điểm các bài này tụt 20–30 điểm.
 

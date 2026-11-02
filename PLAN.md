@@ -166,7 +166,7 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 
   | root | majmin | majmin_inv | thirds | triads | sevenths | sevenths_inv | tetrads | mirex | seg |
   |---|---|---|---|---|---|---|---|---|---|
-  | 86.80 | 86.31 | 81.37 | 85.17 | 83.15 | 79.28 | 76.28 | 74.21 | 86.66 | 82.03 |
+  | 86.79 | 86.30 | 81.35 | 85.15 | 83.14 | 79.27 | 76.26 | 74.20 | 86.64 | 82.02 |
 
   - Chạy 31 bài trong 14 s trên GPU, kể cả lúc nạp model. VRAM của cả GPU tăng từ 1.1 GB lên 1.4 GB.
   - Mức có hợp âm đảo thấp hơn mức không đảo 5 điểm (majmin 86.3, majmin_inv 81.4), do BTC-PL không đoán nốt bass. Đây là phần Chord-CNN-LSTM và tách bass cần bù.
