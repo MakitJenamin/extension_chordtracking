@@ -61,7 +61,7 @@ def code_revision() -> str:
 @dataclass(frozen=True)
 class PipelineConfig:
     use_separation: bool = True
-    chord_stem: str = "instrumental"   # stem chạy model hợp âm
+    chord_stem: str = "mix"            # stem chạy model hợp âm. Mix tốt hơn instrumental (PLAN.md, kết quả đợt 2)
     beat_stem: str = "mix"             # stem chạy bắt nhịp
 
     def __post_init__(self):
@@ -87,7 +87,7 @@ def analyze(
     *,
     force: bool = False,
     use_separation: bool = True,
-    chord_stem: str = "instrumental",
+    chord_stem: str = "mix",
     beat_stem: str = "mix",
 ) -> dict:
     """Phân tích một bài, trả về dict JSON (xem `build_result`)."""
