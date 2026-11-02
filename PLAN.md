@@ -123,7 +123,7 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - **Phím trắng:** ô "Đặt transpose đàn: +k" theo vùng giọng đang phát. Báo trước 8 giây khi sắp đổi giọng. Trên dải hợp âm có vạch "⬆ transpose +a → +b".
 - **Nhịp:** hiện số chỉ nhịp (ví dụ "Nhịp 4/4", suy ra từ số phách giữa các phách mạnh) và các chấm 1-2-3-4 sáng theo phách, phách 1 đỏ và to hơn. Trên dải hợp âm có **vạch dọc ở mỗi phách**: vạch cao kèm số ô nhịp ở phách mạnh, vạch thấp ở phách nhẹ. Backend nên trả thêm `meter` (số phách mỗi ô nhịp) trong JSON.
 - **Metronome:** tiếng phách đồng bộ với `beats` của video. Phách mạnh cao và to hơn. Có nút bật/tắt và **thanh chỉnh âm lượng**. Tiếng tạo bằng Web Audio. Phải theo đúng tốc độ phát của video (0.5×, 0.75×…) và khi tua.
-- **Toàn màn hình:** khi video YouTube ở chế độ toàn màn hình, hiện **lớp hợp âm đè lên video** ở phía dưới: hợp âm hiện tại (chữ lớn), 3 hợp âm kế tiếp, chấm phách, và giọng hoặc transpose. Phải gắn vào phần tử fullscreen của YouTube để còn hiện được.
+- **Toàn màn hình:** khi video YouTube ở chế độ toàn màn hình, đưa **chính dải hợp âm karaoke như lúc bình thường** (cùng vạch phách, vạch đổi giọng, vạch đỏ đang phát) đè lên phía dưới video, nền bán trong suốt. Phía trên dải có chấm phách, giọng hoặc transpose, và cảnh báo sắp đổi giọng. Phải gắn vào phần tử fullscreen của YouTube thì mới hiện được.
 - ⚠ đánh dấu hợp âm có `uncertain = true`.
 
 ## 8. Đo chất lượng (quan trọng nhất)
