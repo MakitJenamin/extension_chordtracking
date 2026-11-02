@@ -88,6 +88,22 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 | Hàng đợi job và trạng thái tiến độ | Mỗi bài mất khoảng 1 phút nên không xử lý trực tiếp trong request. Local: SQLite. Cloud: Redis kèm RQ hoặc Celery |
 | Cache theo `videoId` | Mỗi bài chỉ phân tích một lần. Local: SQLite. Cloud: Postgres |
 
+**Đã làm (2026-11-03):** `chordtrack/server.py` (FastAPI, `python -m chordtrack.server` hoặc
+`scripts/start_server.ps1`) và `chordtrack/jobs.py`. Cách dùng ở `README.md`.
+
+- Chỉ bind `127.0.0.1:8765`. Chỉ nhận Host `127.0.0.1`/`localhost` (chống DNS rebinding). CORS chỉ cho
+  `chrome-extension://<id>` và `https://www.youtube.com`, có `Access-Control-Allow-Private-Network` cho Chrome.
+  `POST /analyze` bắt buộc JSON, nên trang web lạ không tạo được job.
+- Endpoint: `GET /health`, `POST /analyze`, `GET /jobs/{id}`, `GET /result/{song_id}`, `GET /songs`.
+  Chỉ nhận videoId/URL YouTube, không nhận đường dẫn file.
+- Cache kết quả vẫn là file `data/cache/<song_id>/result.json` (đúng `code_revision`). SQLite
+  (`data/cache/jobs.sqlite`) chỉ lưu job và thời gian từng bước, dùng ước tính `progress` và `eta_seconds`.
+- Một worker thread. Job `running` khi server tắt thì quay về `queued` lúc khởi động lại. Lỗi được đổi thành
+  câu tiếng Việt (`jobs.friendly_error`): đòi cookie, video không tồn tại, thiếu Deno/ffmpeg, hết VRAM…
+- Model hợp âm và beat_this nạp một lần mỗi tiến trình. Model giữ trên CPU, chỉ chuyển lên GPU trong
+  `gpu_lock()` rồi trả về CPU, nên server không chiếm VRAM lúc rảnh. Riêng tách nguồn (audio-separator,
+  HTDemucs) vẫn nạp lại mỗi bài.
+
 ## 7. Extension (Chrome Manifest V3)
 
 | Phần | Mục đích |
@@ -267,6 +283,14 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
     Beatles), trong khi tách nguồn chiếm 84 trên 89 giây xử lý mỗi bài. Đề xuất tắt tách nguồn mặc định.
   - Trên Kajiura, CNN-LSTM một mình tốt hơn `fuse()` mặc định (sevenths +3.9). Bộ tham số chọn trên Beatles
     có thể đã thiên về ChordMini (Beatles có thể nằm trong dữ liệu huấn luyện của ChordMini).
+
+- [x] **Backend local** (bước 3 của mục 9, 2026-11-03). "Let It Be" khi đã có stem: lần đầu trong tiến trình
+  16,5 s (hợp âm 13,0 s, gồm nạp model), lần sau 7,6 s (hợp âm 4,6 s, bắt nhịp 1,3 s). Bài mới "akeboshi" (273 s,
+  có tách nguồn): 112 s, trong đó tách nguồn 93 s. VRAM đỉnh 1,6 GB (Roformer), CNN-LSTM 0,58 GB.
+  - ⚠️ YouTube vẫn đòi xác minh "not a bot" khi tải bằng yt-dlp từ máy này, nên cần cookie
+    (`CHORDTRACK_YT_COOKIES`) để extension phân tích bài mới.
+  - `eta_seconds` lấy trung bình 20 lần chạy gần nhất của từng bước, chưa tính độ dài bài. Bật hay tắt tách nguồn
+    làm bước `separation` dao động từ 0 đến 100 s, nên ETA cần vài bài để ổn định.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

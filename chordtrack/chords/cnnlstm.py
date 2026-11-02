@@ -20,6 +20,7 @@ import functools
 import io
 import os
 import sys
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -92,24 +93,49 @@ def _compute_cqt(audio_path: str | Path) -> np.ndarray:
     return np.abs(cqt).astype(np.float32)
 
 
+_ENSEMBLE_LOCK = threading.Lock()
+
+
+@functools.lru_cache(maxsize=1)
+def _load_ensemble(NetworkInterface, ChordNet) -> tuple:
+    """Nạp 5 model một lần cho cả tiến trình (server không nạp lại mỗi bài), giữ trên CPU.
+    `_run_ensemble` chỉ chuyển lên GPU khi đang giữ `gpu_lock()`."""
+    ifaces = []
+    for name in MODEL_FILES:
+        weight_path = CNNLSTM_DIR / "cache_data" / f"{name}.sdict"
+        if not weight_path.exists():
+            # NetworkInterface lặng lẽ dùng weights ngẫu nhiên nếu không thấy file.
+            raise FileNotFoundError(weight_path)
+        net = ChordNet(None)
+        net.use_gpu = False   # nạp weights lên CPU; lúc chạy mới đặt lại theo thiết bị
+        with contextlib.redirect_stdout(io.StringIO()):
+            iface = NetworkInterface(net, name, load_checkpoint=False)
+        if not iface.finalized:
+            raise RuntimeError(f"Không nạp được weights {weight_path}")
+        ifaces.append(iface)
+    return tuple(ifaces)
+
+
 def _run_ensemble(cqt: np.ndarray, NetworkInterface, ChordNet) -> list[np.ndarray]:
     use_gpu = _device_name() == "cuda"
     all_probs = []
-    with gpu_lock():
-        for name in MODEL_FILES:
-            weight_path = CNNLSTM_DIR / "cache_data" / f"{name}.sdict"
-            if not weight_path.exists():
-                # NetworkInterface lặng lẽ dùng weights ngẫu nhiên nếu không thấy file.
-                raise FileNotFoundError(weight_path)
-            net = ChordNet(None)
-            net.use_gpu = use_gpu
-            with contextlib.redirect_stdout(io.StringIO()):
-                iface = NetworkInterface(net, name, load_checkpoint=False)
-            if not iface.finalized:
-                raise RuntimeError(f"Không nạp được weights {weight_path}")
-            all_probs.append(iface.inference(cqt))
-            del iface, net
+    with _ENSEMBLE_LOCK:
+        ifaces = _load_ensemble(NetworkInterface, ChordNet)
+        with gpu_lock():
+            try:
+                for iface in ifaces:
+                    # `inference` gọi `init_settings`, tự `.cuda()` khi use_gpu.
+                    iface.net.use_gpu = use_gpu
+                    all_probs.append(iface.inference(cqt))
+            finally:
+                for iface in ifaces:
+                    iface.net.use_gpu = False
+                    iface.net.cpu()
     return [np.mean([p[i] for p in all_probs], axis=0) for i in range(len(all_probs[0]))]
+
+
+def clear_model_cache() -> None:
+    _load_ensemble.cache_clear()
 
 
 def _root_probs(triad: np.ndarray) -> np.ndarray:

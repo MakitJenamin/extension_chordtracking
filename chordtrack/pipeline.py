@@ -18,7 +18,7 @@ import logging
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import soundfile as sf
 
@@ -89,8 +89,14 @@ def analyze(
     use_separation: bool = True,
     chord_stem: str = "mix",
     beat_stem: str = "mix",
+    progress: Callable[[str, float], None] | None = None,
 ) -> dict:
-    """Phân tích một bài, trả về dict JSON (xem `build_result`)."""
+    """Phân tích một bài, trả về dict JSON (xem `build_result`).
+
+    `progress(step, fraction)`: nếu có, được gọi ở đầu (0.0) và cuối (1.0) mỗi bước
+    ("fetch", "separation", "beats", "chords", "fusion", "analysis"). Có cache thì không gọi.
+    """
+    report = progress or (lambda step, fraction: None)
     config = PipelineConfig(use_separation, chord_stem, beat_stem).effective()
     timing: dict[str, float] = {}
     vram: dict[str, float | None] = {}
@@ -103,9 +109,11 @@ def analyze(
         if cached is not None:
             return cached
 
+    report("fetch", 0.0)
     t0 = time.perf_counter()
     src = audio_mod.fetch(source)
     timing["fetch"] = time.perf_counter() - t0
+    report("fetch", 1.0)
 
     cache_dir = paths.CACHE_DIR / src.song_id
     result_path = cache_dir / config.result_filename()
@@ -115,6 +123,7 @@ def analyze(
             return cached
 
     # Tách nguồn (hoặc chỉ chuẩn hóa audio khi không tách)
+    report("separation", 0.0)
     t0 = time.perf_counter()
     stats_path = cache_dir / separation.STATS_FILE
     stats_before = read_json(stats_path) or {}
@@ -127,14 +136,18 @@ def analyze(
             ran = stats_after.get(step) is not None and stats_after.get(step) != stats_before.get(step)
             vram[step] = stats_after[step].get("peak_vram_mb") if ran else None
     free_vram()
+    report("separation", 1.0)
 
     duration = float(sf.info(str(stems.mix)).duration)
 
+    report("beats", 0.0)
     t0 = time.perf_counter()
     grid, vram["beats"] = _measure_vram(track_beats, getattr(stems, config.beat_stem))
     timing["beats"] = time.perf_counter() - t0
     free_vram()
+    report("beats", 1.0)
 
+    report("chords", 0.0)
     t0 = time.perf_counter()
     chord_audio = getattr(stems, config.chord_stem)
     models: dict[str, ChordModelOutput] = {}
@@ -143,18 +156,23 @@ def analyze(
     models["cnnlstm"], vram["cnnlstm"] = _measure_vram(run_cnnlstm, chord_audio)
     free_vram()
     timing["chords"] = time.perf_counter() - t0
+    report("chords", 1.0)
 
+    report("fusion", 0.0)
     t0 = time.perf_counter()
     bass_audio = stems.bass if config.use_separation else None
     segments = fusion.fuse(models, grid, bass_audio, duration)
     timing["fusion"] = time.perf_counter() - t0
+    report("fusion", 1.0)
 
+    report("analysis", 0.0)
     t0 = time.perf_counter()
     key = analysis.estimate_key(segments)
     sections = analysis.analyze_structure(segments, grid, duration, key)
     regions = analysis.estimate_key_regions(segments, grid, duration, [s.start for s in sections[1:]])
     key = main_key(key, regions)
     timing["analysis"] = time.perf_counter() - t0
+    report("analysis", 1.0)
     timing["total"] = time.perf_counter() - t_start
 
     result = build_result(

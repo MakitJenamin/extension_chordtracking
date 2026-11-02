@@ -9,3 +9,4 @@
 -r requirements/separation.txt
 -r requirements/beats.txt
 -r requirements/eval.txt
+-r requirements/server.txt
