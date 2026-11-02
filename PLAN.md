@@ -174,6 +174,10 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 - [x] Bắt nhịp bằng beat_this (checkpoint `final0`, hậu xử lý minimal, không cần madmom) chạy được trên Windows, Python 3.11, numpy 1.26. "Let It Be": 279 phách, 78 phách mạnh (tỉ lệ 0,28), tempo trung vị 69,8 BPM, khoảng 1 giây trên GPU, VRAM đỉnh khoảng 270 MB.
   - Tempo trôi từ khoảng 73 BPM (phút đầu) xuống khoảng 68 BPM (cuối bài). Đầu ra theo khung 50 fps nên khoảng cách phách bị lượng tử 20 ms, tempo lệch theo bước khoảng 1,5 BPM.
   - ⚠️ Đoạn 95–118 giây, beat_this đặt phách mạnh cách 2 phách thay vì 4. Bước hậu xử lý hợp âm không nên tin tuyệt đối vào phách mạnh, có thể ép lại chu kỳ 4 phách.
+- [x] Pipeline end-to-end và CLI (2026-11-03): `python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--no-separation] [--chord-stem ...] [--beat-stem ...]`. Kết quả cache ở `data/cache/<song_id>/result.json`; dạng JSON kiểm tra trong `tests/test_pipeline.py::check_schema`.
+  - Bài mới hoàn toàn "Nơi này có anh" (`FN7ALfpGxiI`, 278 giây), tính cả thời gian chờ khóa GPU do agent khác: tải 9,6 s, tách nguồn 178 s (Roformer 58 s + Demucs 47 s chạy thật, chờ khóa 57 s), bắt nhịp 17 s, hợp âm 6,8 s, tổng 211 s. VRAM đỉnh 1,6 GB (Roformer).
+  - "Let It Be" khi đã có stem: tổng 44 s, phần lớn là bắt nhịp (27 s, gồm cả chờ khóa và nạp model).
+  - `audio-separator` chạy được khi không có mạng: nạp BS-Roformer thẳng từ ckpt và yaml trong `data/models/audio-separator`, không đọc `download_checks.json`.
 
 ## Nguồn tham khảo
 

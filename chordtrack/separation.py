@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 44100
 ROFORMER_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"  # BS-Roformer-Viperx-1297
+ROFORMER_FRIENDLY_NAME = "Roformer Model: BS-Roformer-Viperx-1297"
 DEMUCS_MODEL = "htdemucs_ft"
 DEMUCS_SEGMENT = None  # None = độ dài mặc định của model (7.8 s), vừa 8 GB VRAM
 STATS_FILE = "separation_stats.json"
@@ -111,6 +112,7 @@ def _run_roformer(mix: Path, vocals: Path, instrumental: Path) -> dict:
             mdxc_params={"segment_size": 256, "override_model_segment_size": False,
                          "batch_size": 1, "overlap": 8, "pitch_shift": 0},
         )
+        use_local_model_files(sep)
         sep.download_model_files(ROFORMER_MODEL)  # tải weights (nếu chưa có) trước khi lấy khóa GPU
 
         def run():
@@ -130,6 +132,29 @@ def _run_roformer(mix: Path, vocals: Path, instrumental: Path) -> dict:
         shutil.move(str(tmp / vocals.name), vocals)
         shutil.move(str(tmp / instrumental.name), instrumental)
     return {**stats, "model": ROFORMER_MODEL}
+
+
+def use_local_model_files(sep) -> None:
+    """Cho `Separator` nạp BS-Roformer thẳng từ file ckpt và yaml trong `model_file_dir`.
+
+    Bản gốc `download_model_files` luôn đọc danh sách model (`download_checks.json`, tải từ
+    GitHub nếu chưa có) để biết loại model, rồi mới kiểm tra file. Khi cả ckpt và yaml đã có
+    thì hàm thay thế trả luôn thông tin model mà không đọc danh sách hay gọi mạng. Thiếu file
+    thì quay về hàm gốc để tải.
+    """
+    original = sep.download_model_files
+
+    def download_model_files(model_filename):
+        if model_filename == ROFORMER_MODEL:
+            ckpt = Path(sep.model_file_dir) / ROFORMER_MODEL
+            yaml_name = Path(ROFORMER_MODEL).with_suffix(".yaml").name
+            if ckpt.is_file() and (ckpt.parent / yaml_name).is_file():
+                sep.model_is_uvr_vip = False
+                sep.model_friendly_name = ROFORMER_FRIENDLY_NAME
+                return ROFORMER_MODEL, "MDXC", ROFORMER_FRIENDLY_NAME, str(ckpt), yaml_name
+        return original(model_filename)
+
+    sep.download_model_files = download_model_files
 
 
 def load_demucs(name: str = DEMUCS_MODEL):

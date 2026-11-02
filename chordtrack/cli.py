@@ -1,0 +1,93 @@
+"""CLI: python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--no-separation]
+
+In bảng tóm tắt (giọng, tempo, 20 hợp âm đầu, các đoạn, thời gian từng bước) và ghi JSON.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+from pathlib import Path
+
+from chordtrack.pipeline import STEM_NAMES, analyze
+
+N_CHORDS_SHOWN = 20
+
+
+def _fmt_time(t: float) -> str:
+    m, s = divmod(float(t), 60)
+    return f"{int(m)}:{s:05.2f}"
+
+
+def summarize(result: dict, n_chords: int = N_CHORDS_SHOWN) -> str:
+    lines = []
+    src = result.get("source") or {}
+    title = src.get("title") or result["song_id"]
+    lines.append(f"Bài: {title}  [{result['song_id']}]  dài {_fmt_time(result['duration'])}")
+    key = result.get("key")
+    key_s = f"{key['tonic']} {key['mode']}" + (f" (tin cậy {key['confidence']:.2f})" if key.get("confidence") is not None else "") if key else "chưa có"
+    tempo = result.get("tempo")
+    lines.append(f"Giọng: {key_s}   Tempo: {tempo if tempo is not None else '?'} BPM   "
+                 f"Phách: {len(result['beats'])}   Phách mạnh: {len(result['downbeats'])}")
+
+    chords = result["chords"]
+    lines.append("")
+    lines.append(f"{min(n_chords, len(chords))} hợp âm đầu (trên tổng {len(chords)}):")
+    lines.append(f"  {'bắt đầu':>8}  {'kết thúc':>8}  {'hợp âm':<9} {'bậc':<6} {'tin cậy':>7}  nhãn Harte")
+    for c in chords[:n_chords]:
+        conf = "" if c["confidence"] is None else f"{c['confidence']:.2f}"
+        flag = " ?" if c["uncertain"] else ""
+        lines.append(f"  {_fmt_time(c['start']):>8}  {_fmt_time(c['end']):>8}  {c['symbol']:<9} "
+                     f"{(c['roman'] or ''):<6} {conf:>7}{flag:<2} {c['label']}")
+
+    lines.append("")
+    if result["sections"]:
+        lines.append("Các đoạn:")
+        for s in result["sections"]:
+            prog = " – ".join(s["progression"])
+            roman = f"  ({'–'.join(s['roman'])})" if s.get("roman") else ""
+            lines.append(f"  {_fmt_time(s['start']):>8}–{_fmt_time(s['end']):<8} {s['label']:<8} {prog}{roman}")
+    else:
+        lines.append("Các đoạn: chưa có")
+
+    lines.append("")
+    timing = result["timing"]
+    lines.append("Thời gian (giây): " + ", ".join(f"{k} {v:.2f}" for k, v in timing.items()))
+    vram = (result.get("pipeline") or {}).get("peak_vram_mb") or {}
+    if any(v is not None for v in vram.values()):
+        lines.append("VRAM đỉnh (MiB): " + ", ".join(f"{k} {v}" for k, v in vram.items() if v is not None))
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m chordtrack.cli", description="Nhận diện hợp âm cho một bài hát.")
+    parser.add_argument("source", help="videoId, URL YouTube hoặc đường dẫn file audio")
+    parser.add_argument("-o", "--output", type=Path, help="ghi JSON ra file này")
+    parser.add_argument("--force", action="store_true", help="bỏ qua kết quả đã cache, chạy lại")
+    parser.add_argument("--no-separation", action="store_true", help="không tách nguồn, chạy mọi model trên mix")
+    parser.add_argument("--chord-stem", default="instrumental", choices=STEM_NAMES, help="stem chạy model hợp âm")
+    parser.add_argument("--beat-stem", default="mix", choices=STEM_NAMES, help="stem chạy bắt nhịp")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args(argv)
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    result = analyze(args.source, force=args.force, use_separation=not args.no_separation,
+                     chord_stem=args.chord_stem, beat_stem=args.beat_stem)
+    print(summarize(result))
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"\nĐã ghi {args.output}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

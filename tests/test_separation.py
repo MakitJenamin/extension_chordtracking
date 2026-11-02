@@ -1,3 +1,4 @@
+import logging
 import shutil
 import subprocess
 
@@ -104,15 +105,62 @@ def test_different_source_redoes_everything(tmp_path, monkeypatch):
     assert abs(sf.info(out / "mix.wav").duration - 2.0) < 0.01
 
 
+def _block_network(monkeypatch):
+    """Chặn mạng: proxy giả cho mọi request, và requests/urllib báo lỗi nếu bị gọi."""
+    import urllib.request
+
+    import requests
+
+    for var in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+        monkeypatch.setenv(var, "http://127.0.0.1:9")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    def no_network(*a, **k):
+        raise AssertionError(f"không được gọi mạng: {a[1:3]}")
+
+    monkeypatch.setattr(requests.Session, "request", no_network)
+    monkeypatch.setattr(urllib.request, "urlopen", no_network)
+
+
+def test_roformer_loads_from_local_files_without_model_list(tmp_path, monkeypatch):
+    """Có sẵn ckpt và yaml thì không cần download_checks.json hay mạng."""
+    from audio_separator.separator import Separator
+
+    _block_network(monkeypatch)
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    sep = Separator(log_level=logging.WARNING, model_file_dir=str(model_dir), output_dir=str(tmp_path))
+    separation.use_local_model_files(sep)
+
+    # Thiếu file: quay về hàm gốc, hàm gốc cần tải danh sách model -> bị chặn
+    with pytest.raises(AssertionError, match="không được gọi mạng"):
+        sep.download_model_files(separation.ROFORMER_MODEL)
+
+    (model_dir / separation.ROFORMER_MODEL).write_bytes(b"")
+    (model_dir / "model_bs_roformer_ep_317_sdr_12.9755.yaml").write_text("a: 1\n")
+    name, model_type, friendly, path, yaml_name = sep.download_model_files(separation.ROFORMER_MODEL)
+    assert (name, model_type) == (separation.ROFORMER_MODEL, "MDXC")
+    assert path == str(model_dir / separation.ROFORMER_MODEL)
+    assert yaml_name == "model_bs_roformer_ep_317_sdr_12.9755.yaml"
+    assert not (model_dir / "download_checks.json").exists()
+    # yaml có "roformer" trong tên -> audio-separator dựng kiến trúc Roformer
+    assert sep.load_model_data_from_yaml(yaml_name)["is_roformer"] is True
+
+
 @pytest.mark.gpu
 @needs_ffmpeg
-def test_separate_first_20s_of_sample(tmp_path):
+def test_separate_first_20s_of_sample(tmp_path, monkeypatch):
+    """Chạy khi không có mạng (model phải có sẵn trong MODELS_DIR)."""
     if not paths.SAMPLE_AUDIO.exists():
         pytest.skip(f"thiếu {paths.SAMPLE_AUDIO}")
+    if not (paths.MODELS_DIR / "audio-separator" / separation.ROFORMER_MODEL).exists():
+        pytest.skip("chưa tải model BS-Roformer")
     clip = tmp_path / "clip.wav"
     subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(paths.SAMPLE_AUDIO),
                     "-t", "20", str(clip)], check=True)
 
+    _block_network(monkeypatch)
     # separate() tự lấy gpu_lock() cho từng model
     stems = separate(clip, tmp_path / "out")
 
