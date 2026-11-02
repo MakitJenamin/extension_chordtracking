@@ -57,15 +57,17 @@ def _compact(out: ChordModelOutput) -> ChordModelOutput:
     )
 
 
-def extract(name: str, audio: Path) -> dict:
+def extract(name: str, audio: Path, stems_out: Path | None = None) -> dict:
+    """stems_out: thư mục stem (mặc định `stem_dir(name)`); bộ Kajiura dùng `CACHE_DIR/kajiura_<tên>`."""
     from chordtrack.beats import track_beats
     from chordtrack.chords.chordmini import run_chordmini
     from chordtrack.chords.cnnlstm import run_cnnlstm
     from chordtrack.separation import separate
 
+    out_dir = Path(stems_out) if stems_out is not None else stem_dir(name)
     timings: dict[str, float] = {}
     t = time.perf_counter()
-    stems = separate(audio, stem_dir(name))
+    stems = separate(audio, out_dir)
     timings["separate"] = time.perf_counter() - t
 
     t = time.perf_counter()
@@ -87,7 +89,7 @@ def extract(name: str, audio: Path) -> dict:
         "version": FEATURES_VERSION,
         "name": name,
         "duration": info.frames / info.samplerate,
-        "stems_dir": str(stem_dir(name)),
+        "stems_dir": str(out_dir),
         "beats": beats,
         "models": models,
         "timings": timings,

@@ -1,3 +1,6 @@
 # Đánh giá
 mir_eval==0.8.2
 # Dùng thêm librosa, soundfile, yt-dlp, filelock: đã có trong base.txt
+# eval/ablation_kajiura.py dùng scipy (Wilcoxon), đã có sẵn qua librosa.
+# Tải YouTube cho bộ Kajiura: yt-dlp bản mới cần yt-dlp[default] (có yt-dlp-ejs) và Deno (cài ngoài pip).
+yt-dlp-ejs==0.8.0
