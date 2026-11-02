@@ -136,3 +136,32 @@ def test_relate_sections_half_step_up_read_as_relative_minor():
     info = A.relate_sections_to_keys(secs, regs)
     assert info[1]["transposed_from"] == 0 and info[1]["semitones"] == 1
     assert info[1]["roman"] == ["iv", "i", "VI", "VII7"]
+
+
+def _key(tonic, mode="major"):
+    return KeyEstimate(tonic=tonic, mode=mode, confidence=1.0)
+
+
+def test_merge_weak_regions_short_or_one_chord():
+    # Kiểu "Nơi này có anh": intro chỉ một hợp âm Ab (9,6 s) trước cả bài C trưởng -> một vùng C
+    segs, _, dur = _song([(["Ab:maj"], 4), (POP, 6)])
+    regions = [KeyRegion(0.0, 8.0, _key("Ab")), KeyRegion(8.0, dur, _key("C"))]
+    out = A._merge_weak_regions(segs, regions)
+    assert [(r.start, r.end, r.key.tonic) for r in out] == [(0.0, dur, "C")]
+
+
+def test_merge_weak_regions_keeps_real_modulation_and_joins_same_key():
+    up = [transpose_label(lab, 2) for lab in POP]
+    segs, _, dur = _song([(POP, 3), (["Eb:maj", "Bb:maj"], 1), (POP, 1), (up, 3)])
+    # vùng Eb ngắn (4 s) kẹp giữa hai vùng C: gộp vào C, rồi nối hai vùng C liền nhau; vùng D (24 s) giữ nguyên
+    regions = [KeyRegion(0.0, 24.0, _key("C")), KeyRegion(24.0, 28.0, _key("Eb")),
+               KeyRegion(28.0, 36.0 + 0.0, _key("C")), KeyRegion(36.0, dur, _key("D"))]
+    out = A._merge_weak_regions(segs, regions)
+    assert [(r.start, r.key.tonic) for r in out] == [(0.0, "C"), (36.0, "D")]
+    assert out[-1].end == dur
+
+
+def test_merge_weak_regions_single_region_untouched():
+    segs, _, dur = _song([(["C:maj"], 2)])
+    regions = [KeyRegion(0.0, dur, _key("C"))]
+    assert A._merge_weak_regions(segs, regions) == regions
