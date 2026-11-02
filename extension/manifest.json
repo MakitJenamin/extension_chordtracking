@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "ChordTrack – hợp âm theo video YouTube",
+  "short_name": "ChordTrack",
+  "version": "0.1.0",
+  "description": "Hiện hợp âm, nhịp và vòng hợp âm chạy theo video YouTube. Phân tích bằng AI chạy local trên máy bạn.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1:8765/*", "https://www.youtube.com/*"],
+  "background": { "service_worker": "src/background.js" },
+  "action": { "default_popup": "popup/popup.html", "default_title": "ChordTrack" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": [
+        "src/core.js",
+        "src/api.js",
+        "src/theory.js",
+        "src/sync.js",
+        "src/metronome.js",
+        "src/ui/strip.js",
+        "src/ui/panel.js",
+        "src/ui/sections.js",
+        "src/ui/fullscreen.js",
+        "src/content.js"
+      ],
+      "css": ["src/ui/styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
