@@ -7,6 +7,7 @@
  */
 (() => {
   const PLAYHEAD = 0.28;
+  const PAD = 16; // đệm trái 8 + đệm phải 8 của .ct-chord (styles.css): khe tối thiểu giữa hai nhãn
   const T = () => CT.theory;
   const el = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -116,19 +117,25 @@
       this.update(this.t, true);
     }
 
-    /** Hợp âm không đủ chỗ cho chữ thì thu nhỏ chữ (ct-narrow), vẫn thiếu thì cắt (ct-tight, bỏ bậc).
+    /** Một cỡ chữ cho mọi ô (không co chữ, trông lộn xộn). Ô không đủ chỗ cho cả nhãn:
+     *  - ct-clip: bỏ dòng bậc, tên hợp âm cắt bằng "…" (tooltip vẫn có tên đầy đủ);
+     *  - ct-hide: hẹp tới mức không hiện nổi một ký tự kèm "…" thì ẩn nhãn, chỉ còn ô.
+     * Mỗi ô có đệm phải (CSS) nên giữa hai nhãn luôn có khe tối thiểu.
      * Đo chữ thật (một lượt đọc layout cho cả bài) nên đúng với mọi chế độ, cỡ chữ và độ phóng.
      * Dải đang ẩn (bề rộng 0) thì bỏ qua; ResizeObserver gọi lại khi dải hiện ra. */
     fitLabels() {
       const s = this.song;
       if (!s || !this.width) return;
       const els = this.chordEls;
-      for (const e of els) e.classList.remove("ct-narrow", "ct-tight");
-      const need = els.map((e) => e.firstChild.offsetWidth + 14);       // chữ + padding 8 + khe 6
-      const room = s.chords.map((c) => (c.end - c.start) * this.px);
-      els.forEach((e, i) => { if (need[i] > room[i]) e.classList.add("ct-narrow"); });
-      const need2 = els.map((e, i) => (need[i] > room[i] ? e.firstChild.offsetWidth + 6 : 0));
-      els.forEach((e, i) => { if (need2[i] > room[i]) e.classList.add("ct-tight"); });
+      for (const e of els) e.classList.remove("ct-clip", "ct-hide");
+      const lbl = els.map((e) => e.firstChild.offsetWidth);
+      const sym = els.map((e) => e.firstChild.firstChild.offsetWidth);
+      const minSym = sym.length ? Math.min(...sym.filter((w) => w > 0)) : 0; // ~ bề rộng tên 1 ký tự
+      els.forEach((e, i) => {
+        const room = (s.chords[i].end - s.chords[i].start) * this.px - PAD;
+        if (lbl[i] <= room) return;
+        e.classList.add(room < Math.max(18, minSym * 0.9) ? "ct-hide" : "ct-clip");
+      });
       this.fitWidth = this.width;
       this.fitScale = this.scale;
     }
@@ -147,7 +154,8 @@
       });
       s.modulations.forEach((m, i) => {
         const to = T().parseKeyText(m.to);
-        const arrow = m.semitones > 0 ? "⬆" : m.semitones < 0 ? "⬇" : "⇄";
+        // ↑ ↓ → có trong Roboto; ⬆ ⬇ ⇄ không có nên toàn màn hình hiện thành ký tự lạ.
+        const arrow = m.semitones > 0 ? "↑" : m.semitones < 0 ? "↓" : "→";
         const label = st.mode === "white"
           ? `${arrow} ${T().keyName(to)} · transpose ${T().signed(m.transpose_from)} → ${T().signed(m.transpose_to)}`
           : `${arrow} ${T().keyName(to)}${m.semitones ? ` (${T().signed(m.semitones)})` : ""}`;
