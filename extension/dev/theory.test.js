@@ -107,8 +107,10 @@ test("Magia: phím trắng dùng white_key_symbol, vùng giọng, chỗ đổi g
   assert.equal(T.keyAt(song, 60).tonic, "D");
   assert.equal(T.keyAt(song, 60).white_key_transpose, 5);
   const m = T.nextModulation(song, 45);
-  assert.equal(m.time, 50.991);
+  // Khớp phách (mặc định): chỗ đổi giọng đi theo mép hợp âm đã kéo về phách gần nhất.
+  assert.ok(song.beats.includes(m.time) && Math.abs(m.time - 50.991) < 0.15, `mod ${m.time}`);
   assert.equal(m.transpose_to, 5);
+  assert.equal(T.nextModulation(T.buildSong(magia, { snapToBeats: false }), 45).time, 50.991);
   // Bảng cấu trúc ở chế độ phím trắng: vòng hợp âm chỉ còn phím trắng (không có # hay b) với hợp âm trong giọng
   for (const sec of song.sections) {
     const L = T.sectionLabels(song, sec, white);
@@ -136,4 +138,35 @@ test("Let It Be: C – G – Am – F, ẩn hợp âm đảo", { skip: !letItBe 
   }
   const up = T.sectionLabels(song, song.sections[0], { mode: "orig", transpose: 2 });
   assert.deepEqual(up.main.slice(0, 4), ["D", "A", "Bm", "G"]);
+});
+
+test("snapChords: kéo mép hợp âm về phách, giữ thứ tự, không mất hợp âm", () => {
+  const beats = [0, 1, 2, 3, 4, 5, 6];
+  const ch = [
+    { symbol: "C", start: 0.1, end: 1.6 },   // 0.1 -> 0, 1.6 -> 2 (mốc chung với G)
+    { symbol: "G", start: 1.6, end: 2.3 },   // 2.3 -> 2 thì G dài 0: mốc 2.3 giữ gốc, G còn 2–2.3
+    { symbol: "Am", start: 2.3, end: 4.45 }, // 4.45 -> 4
+    { symbol: "F", start: 4.45, end: 7.2 },  // 7.2: sau phách cuối hơn nửa phách, giữ nguyên
+  ];
+  const out = T.snapChords(ch, beats);
+  assert.equal(out.length, 4);
+  assert.deepEqual(out.map((c) => [c.start, c.end]), [[0, 2], [2, 2.3], [2.3, 4], [4, 7.2]]);
+  assert.equal(out[0].start0, 0.1);
+  for (let i = 1; i < out.length; i++) assert.ok(out[i].start >= out[i - 1].end - 1e-9);
+  for (const c of out) assert.ok(c.end > c.start);
+  assert.equal(ch[0].start, 0.1); // không đổi mảng vào
+  assert.equal(T.snapChords(ch, [1]), ch); // không đủ phách: giữ nguyên
+  const raw = T.buildSong({ beats, downbeats: [0, 4], duration: 8, chords: ch }, { snapToBeats: false });
+  assert.equal(raw.chords, ch);
+});
+
+test("snapChords trên bài thật: mép ô trùng phách", (t) => {
+  const r = loadResult("yGcm81aaTHg");
+  if (!r) return t.skip("không có data/cache/yGcm81aaTHg");
+  const song = T.buildSong(r);
+  const off = (c) => Math.min(...song.beats.map((b) => Math.abs(b - c.start)));
+  const inGrid = song.chords.filter((c) => c.start >= song.beats[0] && c.start <= song.beats[song.beats.length - 1]);
+  const onBeat = inGrid.filter((c) => off(c) < 1e-6).length;
+  assert.equal(song.chords.length, r.chords.length);
+  assert.ok(onBeat / inGrid.length > 0.9, `chỉ ${onBeat}/${inGrid.length} hợp âm trùng phách`);
 });

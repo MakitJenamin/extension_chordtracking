@@ -167,8 +167,37 @@
 
   /* ---------------- Mô hình bài hát ---------------- */
 
-  /** Chuẩn bị dữ liệu dùng nhiều lần cho một result. */
-  function buildSong(result) {
+  /** Kéo mốc đầu/cuối hợp âm về phách gần nhất (chỉ để hiển thị và tô sáng).
+   * Model hợp âm chạy theo khung ~0,093 s, không theo phách, nên mép ô hay lệch vạch phách 0,1–0,35 s.
+   * - Mỗi mốc (đầu hoặc cuối hợp âm; mốc dùng chung giữa hai hợp âm liền nhau) về phách gần nhất nếu cách
+   *   không quá nửa khoảng phách tại đó; ngoài lưới phách (trước phách đầu, sau phách cuối) giữ nguyên.
+   * - Giữ thứ tự: mốc nào sau khi kéo không còn lớn hơn mốc trước ít nhất MIN_LEN thì trả các mốc liên quan
+   *   về giá trị gốc, nên không hợp âm nào bị mất (hợp âm ngắn hơn một phách vẫn hiện).
+   * Trả mảng hợp âm mới (bản sao nông, thêm start0/end0 là mốc gốc); không đổi mảng vào. */
+  function snapChords(chords, beats) {
+    if (!chords || !chords.length || !beats || beats.length < 2) return chords || [];
+    const MIN_LEN = 0.05;
+    const nearest = (t) => {
+      const k = lastLE(beats, t);                 // beats[k] <= t < beats[k + 1]
+      const n = beats.length;
+      if (k < 0) return beats[0] - t <= (beats[1] - beats[0]) / 2 ? beats[0] : t;
+      if (k >= n - 1) return t - beats[n - 1] <= (beats[n - 1] - beats[n - 2]) / 2 ? beats[n - 1] : t;
+      return t - beats[k] <= beats[k + 1] - t ? beats[k] : beats[k + 1];
+    };
+    const orig = [...new Set(chords.flatMap((c) => [c.start, c.end]))].sort((a, b) => a - b);
+    const snap = orig.map(nearest);
+    for (let k = 1; k < snap.length; k++) {
+      if (snap[k] >= snap[k - 1] + MIN_LEN) continue;
+      snap[k] = orig[k];
+      for (let j = k; j > 0 && snap[j] < snap[j - 1] + MIN_LEN; j--) { snap[j - 1] = orig[j - 1]; snap[j] = orig[j]; }
+    }
+    const map = new Map(orig.map((t, i) => [t, snap[i]]));
+    return chords.map((c) => ({ ...c, start: map.get(c.start), end: map.get(c.end), start0: c.start, end0: c.end }));
+  }
+
+  /** Chuẩn bị dữ liệu dùng nhiều lần cho một result.
+   * opts.snapToBeats: kéo mép hợp âm về phách (snapChords), mặc định bật. */
+  function buildSong(result, opts = {}) {
     const beats = result.beats || [];
     const downbeats = result.downbeats || [];
     const posInfo = beatPositions(beats, downbeats);
@@ -184,10 +213,30 @@
     const keys = (result.keys && result.keys.length) ? result.keys
       : (result.key ? [{ start: 0, end: result.duration, ...result.key,
                          white_key_transpose: whiteOffset(result.key) }] : []);
+    const raw = result.chords || [];
+    const snap = opts.snapToBeats !== false;
+    const chords = snap ? snapChords(raw, beats) : raw;
+    // Chỗ đổi giọng và mốc vùng giọng trùng mép một hợp âm (theo mốc gốc) thì đi theo mép đã kéo về phách,
+    // để vạch vàng, cảnh báo "sắp đổi giọng" và giọng hiện tại khớp với ô hợp âm.
+    let follow = (t) => t;
+    if (snap && chords !== raw) {
+      const m = new Map();
+      for (const c of chords) { m.set(c.start0, c.start); m.set(c.end0, c.end); }
+      const origs = [...m.keys()].sort((a, b) => a - b);
+      follow = (t) => {
+        const i = lastLE(origs, t);
+        let best = t, d = 0.15;
+        for (const j of [i, i + 1]) if (j >= 0 && j < origs.length && Math.abs(origs[j] - t) <= d) { d = Math.abs(origs[j] - t); best = m.get(origs[j]); }
+        return best;
+      };
+    }
     return {
-      result, beats, downbeats, beatPos: pos, bar, meter, keys,
-      chords: result.chords || [], sections: result.sections || [],
-      modulations: result.modulations || [], duration: result.duration || 0,
+      result, beats, downbeats, beatPos: pos, bar, meter,
+      keys: snap ? keys.map((k, i) => ({ ...k, start: i ? follow(k.start) : k.start, end: follow(k.end) })) : keys,
+      chords,
+      sections: result.sections || [],
+      modulations: snap ? (result.modulations || []).map((x) => ({ ...x, time: follow(x.time) })) : (result.modulations || []),
+      duration: result.duration || 0,
     };
   }
 
@@ -267,7 +316,7 @@
 
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
-    keyName, parseKeyText, signed, wrap, lastLE, beatPositions, meterOf, buildSong,
+    keyName, parseKeyText, signed, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
