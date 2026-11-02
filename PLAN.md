@@ -299,7 +299,8 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   - Pipeline mặc định: chuẩn hóa ffmpeg → mix.wav, bắt nhịp và 2 model hợp âm trên mix, `fuse()` không có stem.
     Khoảng **10 giây mỗi bài** (trước đây khoảng 90 giây), VRAM đỉnh khoảng 0.6 GB (CNN-LSTM).
   - Thêm cách trộn loại hợp âm 7 (`quality_weight`): bộ mới lấy loại hợp âm trong họ (C so với C7, Cmaj7) hoàn
-    toàn từ CNN-LSTM, gốc + họ trộn 0.6 CNN-LSTM. `fuse` mới ngang CNN-LSTM trên Kajiura, Beatles giảm 1 điểm.
+    toàn từ CNN-LSTM, gốc + họ trộn 0.6 CNN-LSTM. `fuse` mới gần ngang CNN-LSTM trên Kajiura (CV −0.5),
+    Beatles giảm 1.45 (CV) so với `fuse` cũ: chưa đạt trọn mục tiêu, xem đánh đổi ở mục bên dưới.
 
 - [x] **Backend local** (bước 3 của mục 9, 2026-11-03). "Let It Be" khi đã có stem: lần đầu trong tiến trình
   16,5 s (hợp âm 13,0 s, gồm nạp model), lần sau 7,6 s (hợp âm 4,6 s, bắt nhịp 1,3 s). Bài mới "akeboshi" (273 s,
@@ -451,7 +452,7 @@ theo thời gian. Bộ chỉ có 32 bài.
 
 ## Chọn lại tham số fuse trên Beatles + Kajiura (2026-11-03)
 
-Lệnh: `python -m eval.refit_fusion` (khoảng 36 phút, 6 tiến trình). Chỉ dùng đặc trưng của **mix**, không có stem
+Lệnh: `python -m eval.refit_fusion` (khoảng 40 phút, 6 tiến trình). Chỉ dùng đặc trưng của **mix**, không có stem
 (tách nguồn đã tắt mặc định), nên mọi cấu hình dùng `bass_source="cnn"`.
 
 - **Hàm mục tiêu:** `0.6 × mean4(Kajiura theo thời gian, 25 bài căn tốt) + 0.4 × mean4(Beatles, 42 bài)`, với
@@ -462,7 +463,9 @@ Lệnh: `python -m eval.refit_fusion` (khoảng 36 phút, 6 tiến trình). Ch�
   `self_prob` 0.7, 0.8, 0.9, 0.95; `min_duration` 0.25, 0.5, 1.0; `bass_threshold` 0.3–0.6.
 - **Cross-validation 3 phần**, chia theo bài và riêng từng bộ (bài thứ i vào phần i mod 3), nên phần nào cũng có
   14 bài Beatles và 8–9 bài Kajiura căn tốt (10–11 bài Kajiura tính F1 chuỗi). Ba phần chọn: (0.5, family,
-  q 0.7, sp 0.7, bass 0.5), (0.6, family, q 1.0, sp 0.7, bass 0.6), (0.6, family, q 1.0, sp 0.7, bass 0.5).
+  q 1.0, sp 0.8, bass 0.5), (0.7, family, q 0.5, sp 0.7, bass 0.5), (0.6, family, q 1.0, sp 0.7, bass 0.5).
+- Khi trộn loại hợp âm, nhãn CNN-LSTM không đoán được (maj6, min6, minmaj7) giữ đúng tỉ lệ trong họ của ChordMini
+  (`fusion.cnnlstm_abstain`); thiếu bước này thì maj6 có thể thắng sai khi CNN-LSTM gần như không đặt khối nào vào họ.
 
 | phương án | K majmin | K majmin_inv | K sevenths | K sevenths_inv | **K mean4** | K F1 chuỗi majmin | K F1 chuỗi sevenths | B majmin | B majmin_inv | B sevenths | B sevenths_inv | **B mean4** | mục tiêu |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -470,8 +473,8 @@ Lệnh: `python -m eval.refit_fusion` (khoảng 36 phút, 6 tiến trình). Ch�
 | ChordMini một mình | 75.16 | 72.05 | 61.54 | 59.20 | 66.99 | 81.92 | 69.16 | 86.69 | 82.50 | 79.16 | 76.63 | 81.25 | 72.69 |
 | fuse cũ (mặc định cũ, có stem bass) | 78.05 | 75.95 | 63.72 | 62.39 | 70.03 | 84.36 | 71.44 | 88.84 | 85.60 | 81.13 | 79.64 | **83.80** | 75.54 |
 | fuse cũ, bass CNN-LSTM (không tách nguồn) | 78.05 | 75.85 | 63.72 | 62.33 | 69.99 | 84.36 | 71.44 | 88.84 | 85.51 | 81.13 | 79.56 | 83.76 | 75.50 |
-| **fuse mới (CV 3 phần)** | 78.82 | 76.69 | 66.95 | 65.62 | **72.02** | 85.02 | **74.18** | 88.40 | 85.07 | 79.71 | 78.20 | **82.84** | 76.35 |
-| fuse mới (chọn trên cả bộ, mặc định mới, lạc quan) | 79.03 | 76.91 | 67.41 | 66.09 | 72.36 | 85.17 | 73.90 | 88.46 | 85.19 | 79.45 | 78.01 | 82.78 | 76.53 |
+| **fuse mới (CV 3 phần)** | 78.85 | 76.69 | 66.90 | 65.56 | **72.00** | 85.05 | 73.50 | 87.87 | 84.61 | 79.18 | 77.72 | **82.35** | 76.14 |
+| fuse mới (chọn trên cả bộ, mặc định mới, lạc quan) | 79.01 | 76.89 | 67.38 | 66.07 | 72.34 | 85.18 | **73.91** | 88.58 | 85.31 | 79.73 | 78.29 | 82.98 | 76.59 |
 
 K = Kajiura theo thời gian (25 bài), F1 chuỗi trên 32 bài; B = Beatles (42 bài). Hai dòng "cũ" khớp số ở các mục trước.
 
@@ -480,17 +483,19 @@ self_prob=0.7, min_duration=0.25, bass_source="cnn", bass_threshold=0.5`. Khi b�
 `bass_source` thành "both" (trộn 0.3 stem bass).
 
 **Đối chiếu với mục tiêu:**
-- *Không kém CNN-LSTM một mình trên Kajiura:* **gần đạt, chưa vượt.** Điểm CV kém 0.46 mean4 (majmin −0.31,
-  majmin_inv −0.37, sevenths −0.68, sevenths_inv −0.50); khoảng tin cậy bootstrap 95% theo bài đều chứa 0 (ví dụ
-  sevenths [−1.61, +0.03], 10/15 bài thắng/thua). Bộ chọn trên cả bộ kém 0.12 mean4 (sevenths_inv −0.03). F1 chuỗi
-  sevenths thì **hơn** CNN-LSTM (74.18 so với 73.67). So với `fuse` cũ trên Kajiura: **+2.0 mean4**, sevenths +3.2.
-- *Không kém `fuse` cũ trên Beatles quá 1 điểm:* **đạt theo mean4** (−0.96 CV), nhưng riêng sevenths và sevenths_inv
-  giảm 1.4 điểm; majmin −0.4, majmin_inv −0.5. Vẫn hơn CNN-LSTM một mình trên Beatles 3 điểm.
-- **Đánh đổi:** mặt mục tiêu là một đường thẳng giữa hai bộ. Ví dụ `cnn_weight=0.6, "full"`: Kajiura 72.07,
-  Beatles 83.14 (mục tiêu 76.50, gần như bằng bộ chọn). Bộ `cnn_weight=0.35, family, q 0.5`: Beatles 83.7 nhưng
-  Kajiura 71.6. Muốn Kajiura hơn CNN-LSTM rõ rệt thì Beatles phải xuống dưới mức CNN-LSTM.
+- *Không kém CNN-LSTM một mình trên Kajiura:* **chưa đạt, kém ít.** Điểm CV kém 0.48 mean4 (majmin −0.27,
+  majmin_inv −0.37, sevenths −0.72, sevenths_inv −0.57); CI bootstrap 95% theo bài chứa 0 trừ sevenths
+  ([−1.49, −0.03], 9/16 bài thắng/thua). Bộ chọn trên cả bộ kém 0.14 mean4 (sevenths_inv −0.05, CI chứa 0). F1 chuỗi
+  sevenths của bộ mặc định hơn CNN-LSTM (73.91 so với 73.67). So với `fuse` cũ trên Kajiura: **+2.0 mean4**, sevenths +3.2.
+- *Không kém `fuse` cũ trên Beatles quá 1 điểm:* **CV chưa đạt** (−1.45 mean4: majmin −1.0, majmin_inv −1.0,
+  sevenths −2.0, sevenths_inv −1.9), vì một phần CV chọn bộ nghiêng hẳn về CNN-LSTM (0.7, q 0.5). Bộ mặc định chọn
+  trên cả bộ kém 0.82 mean4 (sevenths −1.4). Vẫn hơn CNN-LSTM một mình trên Beatles 2.5–3 điểm.
+- **Đánh đổi:** mặt mục tiêu rất phẳng ở đỉnh; các bộ gần đỉnh chỉ đổi Kajiura lấy Beatles. Ví dụ (chọn trên cả bộ)
+  `cnn_weight=0.5, family, q 1.0`: Kajiura 71.98, Beatles 83.31; `cnn_weight=0.6, "full"`: Kajiura 72.07, Beatles
+  83.14 (mục tiêu đều khoảng 76.5). Không bộ nào trong lưới vừa hơn CNN-LSTM trên Kajiura vừa giữ Beatles trong 1 điểm.
+  Muốn đạt cả hai chắc cần thêm thông tin mới (model khác), không chỉ chỉnh trọng số.
 - Phần lớn lợi ích trên Kajiura đến từ việc lấy **loại hợp âm 7 từ CNN-LSTM** (`quality_weight` 1.0 so với 0 ở cùng
-  `cnn_weight` 0.6: Kajiura +1.5 mean4, Beatles −0.7).
+  `cnn_weight` 0.6: Kajiura +1.5 mean4, Beatles −0.5).
 - Thăm dò thêm (không nằm trong lưới CV, chọn trên cả bộ): `self_prob` 0.3–0.7 gần như bằng nhau (±0.03),
   `beat_hmm` kém HMM theo khung 1.2 điểm mục tiêu.
 - Thời gian end-to-end mặc định (CLI, `--force`, máy rảnh GPU): "Let It Be" 9.6 s (bắt nhịp 1.4, hợp âm 6.1 gồm nạp
