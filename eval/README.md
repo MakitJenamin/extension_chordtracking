@@ -123,3 +123,87 @@ trung bình majmin, majmin_inv, sevenths, sevenths_inv. In thêm bảng chọn t
 là bộ mặc định của `chordtrack.fusion.FusionParams`. Kết quả ở `EVAL_DIR/results/ablation.json`.
 Chạy hết trong khoảng 2.5 phút trên CPU (8 tiến trình), không cần GPU. Bảng kết quả: PLAN.md, mục
 "Kết quả đánh giá đợt 2".
+
+## 6. Bộ Kajiura: `kajiura.py`, `ablation_kajiura.py`
+
+Bộ đánh giá nhạc Yuki Kajiura (Kalafina, FictionJunction, See-Saw, nhạc anime): giọng hát và hợp xướng
+nổi, phối dàn nhạc dày, đổi giọng nhiều. Đáp án là bản hợp âm **ChordWiki**, không có mốc thời gian.
+
+```sh
+python -m eval.kajiura parse                      # đọc bản hợp âm, báo ký hiệu không đọc được
+python -m eval.kajiura download [--cookies FILE]  # tải audio theo kajiura_youtube.csv
+python -m eval.kajiura align                      # căn bản hợp âm vào audio, ghi ref/ và alignment.json
+python -m eval.ablation_kajiura cache             # tách nguồn + chạy model (GPU), cache đặc trưng
+python -m eval.ablation_kajiura run --beatles     # bảng so sánh, kiểm định theo bài, thời gian xử lý
+```
+
+Dữ liệu nằm ở `EVAL_DIR/kajiura/` (không commit): `sheets/<tên>.cho`, `audio/<tên>.wav`, `ref/<tên>.lab`,
+`alignment.json`, `features/`. Chỉ commit bảng ánh xạ `kajiura_youtube.csv`
+(`name, title, artist, chordwiki_url, video_id, yt_title, note`).
+
+### Lấy bản hợp âm
+
+- Nguồn: tag `梶浦由記` (30 bài) và tag `kalafina` (11 bài, trùng 8) trên ja.chordwiki.org. "焔の扉" không
+  có trang, còn **32 bài**.
+- ChordWiki chặn request tự động bằng Cloudflare (curl và script đều nhận 403). Bản hợp âm được đọc bằng
+  trình duyệt thật sau khi người dùng tự qua bước xác minh, mỗi trang cách nhau vài giây. Đoạn JS
+  `kajiura.EXTRACT_JS` chạy trên trang bài **chỉ lấy hợp âm** (`span.chord`), tên đoạn và dòng đổi giọng;
+  không lấy lời bài hát. Kết quả là file ChordPro rút gọn, một dòng nhạc một cặp ngoặc:
+  `[Am G6 F G] x2`, `{key:F#m}`, `{c:Chorus}`, `{yt:<videoId gắn trên trang>}`.
+- Hai trang ("炎", "ユメノツバサ") có thêm một bản gọn lặp lại ở cuối; chỉ giữ bản đầu.
+
+### Đọc ký hiệu (`parse_chord`, `parse_chordpro`)
+
+- `onC` = `/C`; `N.C.` -> `N`; `(C)` vẫn là hợp âm; `/E` đứng riêng = hợp âm trước đó với bass E.
+- Chất lượng: `M7`/`maj7`/`△7`, `m7-5`/`m7b5`/`ø` (hdim7), `mM7`, `dim`, `dim7`, `aug`/`+5`, `sus4`, `sus2`,
+  `7sus4`, `7(sus4)`, `add9`/`(9)`, `6`, `69`, `9`, `7(9)` = `9`, `M7(9)` = `maj9`, `7(b9)`, `7#9`, `7-5`, `5`.
+  Ký tự toàn chiều rộng chuẩn hóa bằng NFKC.
+- Bỏ vạch nhịp, gạch nối, mũi tên, ghi chú chữ (`(break)`, `(Dr.fill)`). Dấu lặp `x2` cuối dòng được nhân.
+- Kết quả: đọc được toàn bộ 5 255 ký hiệu hợp âm của 32 bài.
+
+### Chấm điểm khi đáp án không có thời gian
+
+Bản hợp âm do người dùng tự ghi: có thể đơn giản hóa, sai, ghi theo capo, hoặc bỏ đoạn lặp. Điểm chỉ dùng
+để **so sánh giữa các phương án**, không phải điểm tuyệt đối.
+
+1. **Căn vào audio (DTW chroma, không dùng model).** Gộp hợp âm trùng liên tiếp, dựng chroma mẫu (nốt của
+   hợp âm, cộng 0.5 cho nốt bass), so cosine với chroma CENS của mix (khung ~93 ms). DTW chỉ cho đứng yên
+   hoặc sang hợp âm kế tiếp; thêm trạng thái "ngoài bản hợp âm" ở đầu và cuối với chi phí cố định 0.55,
+   để intro/outro không ghi trong bản hợp âm không bị kéo giãn; các khung này ghi nhãn `X` (không tính
+   điểm), không phải `N`. Thử 12 độ dịch giọng, chọn độ dịch có
+   cosine trung bình cao nhất: đó là **độ dịch của đáp án** (khác 0 thì có thể đáp án ghi theo capo).
+   Độ dịch này lấy từ audio nên không thiên vị phương án nào.
+2. **Theo chuỗi (mọi bài):** rút gọn về `majmin` (theo quãng ba: dim -> min, aug/7 -> maj, sus riêng) hoặc
+   `sevenths`, bỏ N, gộp trùng liên tiếp. Chuỗi dự đoán chỉ lấy trong vùng thời gian bản hợp âm phủ.
+   So bằng LCS (Needleman–Wunsch không phạt khoảng trống, không cho thay thế):
+   precision = LCS / độ dài dự đoán, recall = LCS / độ dài đáp án, **F1**. Kèm F1 trên multiset cặp chuyển
+   hợp âm (bigram). Ghi thêm F1 khi tự chọn độ dịch tốt nhất cho từng phương án (`seq_*_free`).
+3. **Theo thời gian (chỉ bài căn tốt):** nhãn đã căn chấm bằng `evaluate_pair` như bộ Beatles. Bài bị loại
+   khi cosine trung bình trên đường căn < 0.60 hoặc bản hợp âm phủ < 50% bài. Độ chính xác của mốc thời
+   gian bị giới hạn bởi DTW nên điểm thấp hơn bộ Beatles là bình thường.
+4. **Kiểm định:** chênh lệch theo từng bài giữa hai phương án, khoảng tin cậy bootstrap 95% (2000 lần lấy
+   mẫu lại bài) và kiểm định dấu hạng Wilcoxon. Điểm theo thời gian bootstrap trên tỉ số gia quyền.
+
+### Phương án so sánh
+
+Mọi phương án dùng tham số mặc định của `FusionParams` (chọn trên Beatles), không chỉnh trên Kajiura.
+Danh sách ở docstring của `ablation_kajiura.py`. Cùng các phương án đó được chạy lại trên 42 bài Beatles
+(`--beatles`) để đặt cạnh nhau. Kết quả ở `EVAL_DIR/results/ablation_kajiura.json`; bảng ở PLAN.md,
+mục "Kết quả đánh giá Kajiura".
+
+### Kết quả dựng bộ
+
+- 32 bài, 150 phút audio. Bài bị loại khi dựng: "焔の扉" (tag có nhưng trang không tồn tại).
+- Audio: 29 bài có bản chính thức (kênh nghệ sĩ, kênh Topic, hãng đĩa); "アイスクリイム" và
+  "静寂はヘッドフォンの中" chỉ có bản studio do người khác đăng; "瞳の欠片" dùng video gắn trên trang
+  ChordWiki. Ghi chú từng bài trong CSV.
+- Tải audio: YouTube có thể đòi xác minh "not a bot". Khi đó truyền file cookie bằng `--cookies` hoặc biến
+  môi trường `CHORDTRACK_YT_COOKIES`. yt-dlp bản mới cần thêm Deno và gói `yt-dlp-ejs` (`yt-dlp[default]`).
+- Căn: 25/32 bài căn tốt. 7 bài bị loại khỏi phần chấm theo thời gian (vẫn chấm theo chuỗi): 5 bài độ
+  dịch giọng không chắc (i_beg_you, life_goes_on, magia, oblivious, ongaku) và 2 bài thứ tự hợp âm không
+  giúp căn (nowhere, silly_go_round). Phần lớn là bài chỉ lặp một vòng 2–3 hợp âm hoặc gần như một hợp âm,
+  nên vị trí thời gian không xác định được. Bài chưa chắc độ dịch thì chấm theo chuỗi với độ dịch 0.
+- Độ dịch khác 0: natsu_no_ringo (+5, bản ChordWiki ghi thấp hơn bản thu 5 nửa cung), sora_wa_takaku (+1).
+  Đã kiểm tra bằng mắt, cả hai đều đúng.
+- Cosine tuyệt đối không phân biệt được căn đúng hay sai (độ dịch sai vẫn cho 0.60–0.70), nên tiêu chí
+  căn tốt là: hơn độ dịch thứ hai ≥ 0.02 **và** hơn chuỗi cùng hợp âm nhưng xáo trộn thứ tự ≥ 0.02.
