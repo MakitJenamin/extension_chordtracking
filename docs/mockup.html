@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup extension hợp âm</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 16px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--background, #0f0f0f); color: var(--foreground, #eee); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; max-width: 1180px; margin: 0 auto; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  .note { font-size: 12px; color: var(--muted-foreground, #999); margin: 0 auto 10px; max-width: 1180px; }
+
+  /* ---- Khung video giả (bảng màu cố định của trang video) ---- */
+  .player { background: #000; border-radius: 12px; overflow: hidden; position: relative; }
+  .screen { aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; flex-direction: column;
+            background: radial-gradient(circle at 30% 30%, #3a1f4d, #120a1c 70%); color: #fff; user-select: none; cursor: pointer; }
+  .screen .title { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  .screen .sub { opacity: .7; margin-top: 6px; font-size: 14px; }
+  .screen .big { font-size: 54px; margin-top: 14px; opacity: .85; }
+  .controls { display: flex; align-items: center; gap: 10px; padding: 8px 12px 10px; background: linear-gradient(transparent, #000 40%); color: #fff; }
+  .controls button { background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; width: 28px; }
+  .seek { position: relative; flex: 1; height: 14px; cursor: pointer; }
+  .seek .track { position: absolute; top: 5px; left: 0; right: 0; height: 4px; background: #ffffff33; border-radius: 2px; overflow: hidden; display: flex; }
+  .seek .band { height: 100%; }
+  .seek .fill { position: absolute; top: 5px; left: 0; height: 4px; background: #f03; border-radius: 2px; }
+  .seek .knob { position: absolute; top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #f03; }
+  .seek .mod { position: absolute; top: -1px; width: 2px; height: 16px; background: #ffd54a; }
+  .time { font-variant-numeric: tabular-nums; font-size: 13px; min-width: 92px; text-align: right; }
+  .speed { background: #ffffff22; border: 0; color: #fff; border-radius: 6px; padding: 2px 6px; font-size: 12px; cursor: pointer; }
+
+  /* ---- Khung hợp âm của extension ---- */
+  .panel { margin-top: 12px; border-radius: 12px; border: 1px solid var(--border, #333);
+           background: var(--card, #181818); padding: 12px 14px; }
+  .info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 14px; }
+  .info b { font-weight: 650; }
+  .pill { padding: 3px 10px; border-radius: 999px; background: var(--muted, #2a2a2a); font-size: 13px; }
+  .pill.warn { background: #ffd54a; color: #1a1400; font-weight: 600; }
+  .grow { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--border, #333); border-radius: 8px; overflow: hidden; }
+  .seg button { background: transparent; border: 0; color: inherit; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+  .seg button.on { background: var(--accent, #3d6bff); color: var(--accent-foreground, #fff); }
+  .stepper { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+  .stepper button { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border, #333); background: transparent; color: inherit; cursor: pointer; }
+  .stepper button:disabled { opacity: .35; cursor: default; }
+
+  .transpose-box { margin-top: 10px; display: none; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 10px;
+                   background: color-mix(in srgb, var(--accent, #3d6bff) 14%, transparent); font-size: 14px; }
+  .transpose-box.show { display: flex; }
+  .transpose-box .val { font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .transpose-box .next { margin-left: auto; font-size: 13px; }
+
+  .strip-wrap { position: relative; margin-top: 12px; height: 92px; overflow: hidden; border-radius: 10px;
+                background: var(--muted, #222); }
+  .strip { position: absolute; top: 0; left: 0; height: 100%; will-change: transform; }
+  .chord { position: absolute; top: 10px; height: 72px; box-sizing: border-box; padding: 6px 8px; border-right: 1px solid var(--border, #3a3a3a);
+           cursor: pointer; overflow: hidden; white-space: nowrap; }
+  .chord .sym { font-size: 24px; font-weight: 700; line-height: 1.15; }
+  .chord .rn { font-size: 12px; opacity: .65; margin-top: 2px; }
+  .chord.cur { background: var(--accent, #3d6bff); color: var(--accent-foreground, #fff); border-radius: 8px; }
+  .chord.past { opacity: .4; }
+  .chord .unc { position: absolute; top: 4px; right: 6px; font-size: 12px; }
+  .chord:hover:not(.cur) { background: color-mix(in srgb, var(--foreground, #fff) 8%, transparent); }
+  .modmark { position: absolute; top: 0; height: 100%; width: 0; border-left: 3px dashed #ffd54a; }
+  .modmark span { position: absolute; top: 2px; left: 4px; font-size: 11px; background: #ffd54a; color: #1a1400; padding: 1px 5px; border-radius: 4px; white-space: nowrap; font-weight: 600; }
+  .playhead { position: absolute; top: 0; bottom: 0; left: 28%; width: 2px; background: #f03; z-index: 2; }
+  .opts { margin-top: 10px; display: flex; gap: 16px; font-size: 13px; flex-wrap: wrap; color: var(--muted-foreground, #aaa); }
+  .opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+
+  /* ---- Bảng cấu trúc ---- */
+  .side { border-radius: 12px; border: 1px solid var(--border, #333); background: var(--card, #181818); padding: 12px; align-self: start; }
+  .side h3 { margin: 0 0 8px; font-size: 15px; }
+  .sec { padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; border-left: 4px solid transparent; }
+  .sec:hover { background: color-mix(in srgb, var(--foreground, #fff) 6%, transparent); }
+  .sec.cur { background: color-mix(in srgb, var(--accent, #3d6bff) 18%, transparent); }
+  .sec .top { display: flex; justify-content: space-between; font-size: 13px; }
+  .sec .lab { font-weight: 650; text-transform: capitalize; }
+  .sec .t { opacity: .6; font-variant-numeric: tabular-nums; }
+  .sec .prog { font-size: 14px; margin-top: 3px; }
+  .sec .rom { font-size: 12px; opacity: .6; }
+  .sec .k { font-size: 11px; opacity: .7; }
+  .legend { font-size: 12px; color: var(--muted-foreground, #999); margin-top: 8px; line-height: 1.5; }
+
+  /* ---- Nhịp, phách, metronome ---- */
+  .beat { position: absolute; bottom: 0; width: 0; pointer-events: none; }
+  .beat.strong { height: 100%; border-left: 2px solid color-mix(in srgb, var(--foreground, #fff) 55%, transparent); }
+  .beat.weak { height: 22%; border-left: 1px solid color-mix(in srgb, var(--foreground, #fff) 30%, transparent); }
+  .beat.strong span { position: absolute; bottom: 2px; left: 3px; font-size: 10px; opacity: .55; }
+  .beats { display: inline-flex; gap: 5px; align-items: center; }
+  .beats i { width: 14px; height: 14px; border-radius: 50%; background: var(--muted, #2a2a2a); border: 1px solid var(--border, #444);
+             font-style: normal; font-size: 9px; display: inline-flex; align-items: center; justify-content: center; }
+  .beats i.on { background: var(--accent, #3d6bff); border-color: transparent; color: var(--accent-foreground, #fff); }
+  .beats i.on.first { background: #f03; transform: scale(1.25); }
+  .metro { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+  .metro button { border: 1px solid var(--border, #333); background: transparent; color: inherit; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  .metro button.on { background: var(--accent, #3d6bff); color: var(--accent-foreground, #fff); border-color: transparent; }
+  .metro input[type=range] { width: 80px; }
+
+  /* ---- Toàn màn hình ---- */
+  .fsbtn { background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
+  .overlay { display: none; position: absolute; left: 0; right: 0; bottom: 56px; padding: 0 24px; pointer-events: none; }
+  .player.fs { position: fixed; inset: 0; z-index: 50; border-radius: 0; display: flex; flex-direction: column; }
+  .player.fs .screen { aspect-ratio: auto; flex: 1; }
+  .player.fs .overlay { display: block; }
+  .player.fs .controls { position: relative; }
+  /* Khi toàn màn hình: chính dải karaoke bên ngoài được chuyển vào lớp phủ trên video */
+  .ov-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; color: #fff; font-size: 14px;
+            text-shadow: 0 1px 3px #000; }
+  .ov-row .beats i { background: #ffffff30; border-color: #ffffff50; color: #fff; }
+  .ov-row .beats i.on { background: var(--accent, #3d6bff); }
+  .ov-row .beats i.on.first { background: #f03; }
+  .overlay .strip-wrap { background: #000000a6; pointer-events: auto; height: 104px; margin-top: 0; }
+  .overlay .chord { color: #fff; border-right-color: #ffffff30; }
+  .overlay .chord .sym { font-size: 30px; }
+  .overlay .chord.past { opacity: .35; }
+  .overlay .beat.strong { border-left-color: #ffffffa0; }
+  .overlay .beat.weak { border-left-color: #ffffff55; }
+</style>
+</head>
+<body>
+<p class="note">Mockup tương tác, dùng dữ liệu thật do pipeline phân tích bài "Magia" (Kalafina, Yuki Kajiura). Không có âm thanh: bấm ▶ để giả lập phát nhạc, bấm vào hợp âm hoặc đoạn để tua.</p>
+<div class="layout">
+  <div>
+    <div class="player">
+      <div class="screen" id="screen">
+        <div class="title">Magia</div>
+        <div class="sub">Kalafina · khung video giả</div>
+        <div class="big" id="bigplay">▶</div>
+      </div>
+      <div class="overlay" id="overlay">
+        <div class="ov-row">
+          <span class="beats" id="ovBeats"></span>
+          <span id="ovKey"></span>
+          <span class="pill warn" id="ovSoon" style="display:none"></span>
+        </div>
+        <div id="ovSlot"></div>
+      </div>
+      <div class="controls">
+        <button id="play" title="Phát / dừng">▶</button>
+        <div class="seek" id="seek">
+          <div class="track" id="bands"></div>
+          <div class="fill" id="fill"></div>
+          <div class="knob" id="knob"></div>
+        </div>
+        <span class="time" id="time">0:00 / 0:00</span>
+        <button class="speed" id="speed" title="Tốc độ giả lập">1×</button>
+        <button class="fsbtn" id="fs" title="Toàn màn hình">⛶</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="info">
+        <span>🎵 Giọng: <b id="keyNow">–</b></span>
+        <span class="pill" id="tempo"></span>
+        <span class="pill" id="meter"></span>
+        <span class="beats" id="beatDots"></span>
+        <span class="metro">
+          <button id="metroBtn" title="Bật/tắt tiếng phách">🔈 Metronome</button>
+          <input type="range" id="vol" min="0" max="100" value="60" title="Âm lượng tiếng phách">
+        </span>
+        <span class="pill warn" id="soon" style="display:none"></span>
+        <span class="grow"></span>
+        <div class="seg" id="mode">
+          <button data-m="orig" class="on">Gốc</button>
+          <button data-m="white">🎹 Phím trắng</button>
+          <button data-m="roman">Bậc La Mã</button>
+        </div>
+        <div class="stepper" id="stepper">Tông
+          <button id="down">−</button><b id="tr">0</b><button id="up">+</button>
+        </div>
+      </div>
+      <div class="transpose-box" id="tbox">
+        <span>Đặt transpose đàn:</span><span class="val" id="tval">+0</span>
+        <span id="tkey" style="opacity:.75"></span>
+        <span class="next" id="tnext"></span>
+      </div>
+      <div class="strip-wrap" id="wrap">
+        <div class="strip" id="strip"></div>
+        <div class="playhead"></div>
+      </div>
+      <div class="opts">
+        <label><input type="checkbox" id="hideInv"> Ẩn hợp âm đảo</label>
+        <label><input type="checkbox" id="simple"> Đơn giản hóa (làm sau, bản xem trước)</label>
+        <span>⚠ = model không chắc, nên nghe lại · vạch cao = phách mạnh (đầu ô nhịp), vạch thấp = phách nhẹ</span>
+      </div>
+    </div>
+  </div>
+
+  <aside class="side">
+    <h3>📋 Cấu trúc bài</h3>
+    <div id="secs"></div>
+    <div class="legend">Vạch vàng trên thanh tua là chỗ đổi giọng. Bấm vào đoạn để tua tới đó.</div>
+  </aside>
+</div>
+
+<script src="mockup_data.js"></script>
+<script>
+const D = window.MOCK_DATA; // dữ liệu thật của bài Magia, nạp từ docs/mockup_data.js
+const PX = 46;               // pixel mỗi giây trên dải hợp âm
+const NOTES_S = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const NOTES_F = ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
+const PC = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+const SEC_COLORS = { intro:"#7e57c2", verse:"#26a69a", chorus:"#ef5350", bridge:"#ffa726", outro:"#78909c" };
+const secColor = l => SEC_COLORS[l] || ["#42a5f5","#ab47bc","#8d6e63","#9ccc65","#ec407a"][l.charCodeAt(0) % 5];
+
+let t = 0, playing = false, speed = 1, mode = "orig", transpose = 0;
+const $ = id => document.getElementById(id);
+const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+
+function pcOf(n){ let p = PC[n[0]]; for (const c of n.slice(1)) p += c==="#"?1:c==="b"?-1:0; return (p+12)%12; }
+function shiftNote(n, k){ const p = (pcOf(n)+k+120)%12; return (k<0||n.includes("b") ? NOTES_F : NOTES_S)[p]; }
+function shiftSym(sym, k){
+  if (!k || sym === "N.C.") return sym;
+  const [main, bass] = sym.split("/");
+  const m = main.match(/^([A-G][#b]?)(.*)$/); if (!m) return sym;
+  let out = shiftNote(m[1], k) + m[2];
+  if (bass) { const b = bass.match(/^([A-G][#b]?)(.*)$/); out += "/" + (b ? shiftNote(b[1], k) + b[2] : bass); }
+  return out;
+}
+function simplify(sym){
+  if (sym === "N.C.") return sym;
+  const m = sym.split("/")[0].match(/^([A-G][#b]?)(m(?!aj))?/);
+  return m ? m[1] + (m[2] ? "m" : "") : sym;
+}
+function display(c){
+  const [, , sym, rn, white] = c;
+  let s = mode === "white" ? white : mode === "roman" ? (rn || sym) : shiftSym(sym, transpose);
+  if ($("hideInv").checked && mode !== "roman") s = s.split("/")[0];
+  if ($("simple").checked && mode !== "roman") s = simplify(s);
+  return s;
+}
+const keyAt = time => D.keys.find(k => time >= k[0] && time < k[1]) || D.keys[D.keys.length-1];
+const keyName = k => k[2] + (k[3]==="minor" ? " thứ" : " trưởng");
+const sgn = v => (v>0?"+":"") + v;
+
+// ---- nhịp: vị trí của từng phách trong ô nhịp (1 = phách mạnh)
+const DB = new Set(D.downbeats.map(x => x.toFixed(3)));
+const beatPos = []; { let p = 0; D.beats.forEach(b => { p = DB.has(b.toFixed(3)) ? 1 : p + 1; beatPos.push(p); }); }
+const METER = (() => {            // số phách mỗi ô nhịp phổ biến nhất
+  const cnt = {}; let run = 0;
+  beatPos.forEach((p, i) => { if (p === 1 && i > 0) { cnt[run] = (cnt[run] || 0) + 1; } run = p; });
+  return +Object.entries(cnt).sort((a, b) => b[1] - a[1])[0][0] || 4;
+})();
+function beatIndexAt(time){       // phách cuối cùng <= time (tìm nhị phân)
+  let lo = 0, hi = D.beats.length - 1, ans = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (D.beats[m] <= time) { ans = m; lo = m + 1; } else hi = m - 1; }
+  return ans;
+}
+function dotsHTML(pos){ let s = ""; for (let i = 1; i <= METER; i++) s += `<i class="${i===pos?"on":""} ${i===1?"first":""}">${i}</i>`; return s; }
+
+// ---- metronome (Web Audio): phách mạnh cao hơn và to hơn
+let actx = null, metroOn = false, lastBeat = -1;
+function click(strong){
+  if (!actx) return;
+  const v = $("vol").value / 100; if (v <= 0) return;
+  const o = actx.createOscillator(), g = actx.createGain(), now = actx.currentTime;
+  o.frequency.value = strong ? 1760 : 1175;
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime((strong ? 0.9 : 0.5) * v, now + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+  o.connect(g).connect(actx.destination); o.start(now); o.stop(now + 0.07);
+}
+
+// ---- dựng dải hợp âm
+function buildStrip(){
+  const strip = $("strip"); strip.innerHTML = "";
+  strip.style.width = (D.duration * PX) + "px";
+  D.chords.forEach((c, i) => {
+    const el = document.createElement("div");
+    el.className = "chord"; el.dataset.i = i;
+    el.style.left = (c[0]*PX) + "px"; el.style.width = Math.max(10, (c[1]-c[0])*PX) + "px";
+    el.innerHTML = `<div class="sym"></div><div class="rn"></div>${c[6] ? '<span class="unc" title="Model không chắc">⚠</span>' : ""}`;
+    el.onclick = () => seek(c[0] + 0.01);
+    strip.appendChild(el);
+  });
+  D.beats.forEach((b, i) => {
+    const el = document.createElement("div");
+    const strong = beatPos[i] === 1;
+    el.className = "beat " + (strong ? "strong" : "weak");
+    el.style.left = (b*PX) + "px";
+    if (strong) el.innerHTML = `<span>${Math.round(D.beats.slice(0, i + 1).filter((_, j) => beatPos[j] === 1).length)}</span>`;
+    strip.appendChild(el);
+  });
+  D.mods.forEach(m => {
+    const el = document.createElement("div");
+    el.className = "modmark"; el.style.left = (m[0]*PX) + "px";
+    el.innerHTML = `<span>⬆ ${m[2].replace(" minor","m").replace(" major","")} · transpose ${sgn(m[3])} → ${sgn(m[4])}</span>`;
+    strip.appendChild(el);
+  });
+  relabel();
+}
+function relabel(){
+  document.querySelectorAll(".chord").forEach(el => {
+    const c = D.chords[+el.dataset.i];
+    el.querySelector(".sym").textContent = display(c);
+    el.querySelector(".rn").textContent = mode === "roman" ? shiftSym(c[2], transpose) : (c[3] || "");
+  });
+  buildSections();
+}
+
+// ---- thanh tua: dải màu theo đoạn + vạch đổi giọng
+function buildSeek(){
+  const bands = $("bands"); bands.innerHTML = "";
+  D.sections.forEach(s => {
+    const b = document.createElement("div"); b.className = "band";
+    b.style.width = ((s[1]-s[0])/D.duration*100) + "%"; b.style.background = secColor(s[2]) + "99";
+    bands.appendChild(b);
+  });
+  D.mods.forEach(m => {
+    const mk = document.createElement("div"); mk.className = "mod";
+    mk.style.left = (m[0]/D.duration*100) + "%"; $("seek").appendChild(mk);
+  });
+}
+
+// ---- bảng cấu trúc
+function buildSections(){
+  const box = $("secs"); box.innerHTML = "";
+  D.sections.forEach((s, i) => {
+    const k = keyAt(s[0] + 0.01);
+    const w = k[4];
+    const prog = s[3].map(x => mode === "white" ? shiftSym(x, -w) : mode === "roman" ? null : shiftSym(x, transpose));
+    const el = document.createElement("div");
+    el.className = "sec"; el.dataset.i = i; el.style.borderLeftColor = secColor(s[2]);
+    el.innerHTML = `<div class="top"><span class="lab">${s[2]}</span><span class="t">${fmt(s[0])}</span></div>
+      <div class="prog">${mode === "roman" ? s[4].join(" – ") : prog.join(" – ")}</div>
+      <div class="rom">${mode === "roman" ? "" : s[4].join(" – ")}</div>
+      <div class="k">${keyName(k)}${mode === "white" ? " · transpose " + sgn(w) : ""}</div>`;
+    el.onclick = () => seek(s[0] + 0.01);
+    box.appendChild(el);
+  });
+}
+
+// ---- cập nhật theo thời gian
+function render(){
+  $("time").textContent = `${fmt(t)} / ${fmt(D.duration)}`;
+  const pct = t / D.duration * 100;
+  $("fill").style.width = pct + "%"; $("knob").style.left = pct + "%";
+  const wrapW = $("wrap").clientWidth;
+  $("strip").style.transform = `translateX(${wrapW*0.28 - t*PX}px)`;
+  document.querySelectorAll(".chord").forEach(el => {
+    const c = D.chords[+el.dataset.i];
+    el.classList.toggle("cur", t >= c[0] && t < c[1]);
+    el.classList.toggle("past", t >= c[1]);
+  });
+  document.querySelectorAll(".sec").forEach(el => {
+    const s = D.sections[+el.dataset.i];
+    el.classList.toggle("cur", t >= s[0] && t < s[1]);
+  });
+  const k = keyAt(t);
+  $("keyNow").textContent = keyName(k);
+  $("tempo").textContent = `${D.tempo} BPM`;
+  $("meter").textContent = `Nhịp ${METER}/4`;
+  const bi = beatIndexAt(t), pos = bi >= 0 ? beatPos[bi] : 0;
+  $("beatDots").innerHTML = dotsHTML(pos);
+  if (playing && metroOn && bi !== lastBeat && bi >= 0) click(pos === 1);
+  lastBeat = bi;
+  // lớp hợp âm khi toàn màn hình
+  $("ovBeats").innerHTML = dotsHTML(pos);
+  $("ovKey").textContent = mode === "white" ? `Transpose ${sgn(k[4])} · ${keyName(k)}` : `${keyName(k)} · ${D.tempo} BPM · ${METER}/4`;
+  // báo trước chỗ đổi giọng 8 giây
+  const next = D.mods.find(m => m[0] > t);
+  const soon = next && next[0] - t <= 8;
+  $("soon").style.display = soon ? "" : "none";
+  if (soon) $("soon").textContent = `Sắp đổi giọng sau ${Math.ceil(next[0]-t)} s → ${next[2].replace(" minor"," thứ").replace(" major"," trưởng")}`;
+  $("ovSoon").style.display = soon ? "" : "none";
+  $("ovSoon").textContent = $("soon").textContent + (mode === "white" && soon ? ` · transpose ${sgn(next[3])} → ${sgn(next[4])}` : "");
+  // ô transpose của chế độ phím trắng
+  $("tbox").classList.toggle("show", mode === "white");
+  $("tval").textContent = sgn(k[4]);
+  $("tkey").textContent = `(${keyName(k)} → chơi như ${k[3]==="minor" ? "A thứ" : "C trưởng"})`;
+  $("tnext").textContent = next ? `Kế tiếp ${fmt(next[0])}: transpose ${sgn(next[3])} → ${sgn(next[4])}` : "Không còn chỗ đổi giọng";
+}
+
+function seek(v){ t = Math.max(0, Math.min(D.duration, v)); render(); }
+function toggle(){ playing = !playing; $("play").textContent = playing ? "⏸" : "▶"; $("bigplay").textContent = playing ? "" : "▶"; }
+let last = performance.now();
+function loop(now){
+  const dt = (now - last) / 1000; last = now;
+  if (playing) { t += dt * speed; if (t >= D.duration) { t = D.duration; toggle(); } render(); }
+  requestAnimationFrame(loop);
+}
+
+$("play").onclick = toggle; $("screen").onclick = toggle;
+$("speed").onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 4 : 1; $("speed").textContent = speed + "×"; };
+$("seek").onclick = e => { const r = $("seek").getBoundingClientRect(); seek((e.clientX - r.left) / r.width * D.duration); };
+document.querySelectorAll("#mode button").forEach(b => b.onclick = () => {
+  mode = b.dataset.m;
+  document.querySelectorAll("#mode button").forEach(x => x.classList.toggle("on", x === b));
+  $("down").disabled = $("up").disabled = mode === "white";
+  relabel(); render();
+});
+$("down").onclick = () => { transpose = Math.max(-6, transpose - 1); $("tr").textContent = sgn(transpose); relabel(); render(); };
+$("up").onclick = () => { transpose = Math.min(6, transpose + 1); $("tr").textContent = sgn(transpose); relabel(); render(); };
+$("hideInv").onchange = relabel; $("simple").onchange = relabel;
+$("metroBtn").onclick = () => {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  metroOn = !metroOn;
+  $("metroBtn").classList.toggle("on", metroOn);
+  $("metroBtn").textContent = metroOn ? "🔊 Metronome" : "🔈 Metronome";
+  if (metroOn) click(true);
+};
+// Toàn màn hình: chuyển chính dải karaoke vào lớp phủ, thoát thì trả về chỗ cũ
+const wrapHome = $("wrap").parentNode, wrapNext = $("wrap").nextSibling;
+function setFullscreen(on){
+  const p = document.querySelector(".player");
+  p.classList.toggle("fs", on);
+  if (on) $("ovSlot").appendChild($("wrap")); else wrapHome.insertBefore($("wrap"), wrapNext);
+  $("fs").textContent = on ? "🗗" : "⛶";
+  render();
+}
+$("fs").onclick = () => setFullscreen(!document.querySelector(".player").classList.contains("fs"));
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") setFullscreen(false);
+  if (e.key === " ") { e.preventDefault(); toggle(); }
+});
+window.addEventListener("resize", render);
+
+buildSeek(); buildStrip(); seek(44); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
