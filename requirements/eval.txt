@@ -1,2 +1,3 @@
 # Đánh giá
 mir_eval==0.8.2
+# Dùng thêm librosa, soundfile, yt-dlp, filelock: đã có trong base.txt
