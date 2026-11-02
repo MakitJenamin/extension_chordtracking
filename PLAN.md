@@ -155,7 +155,9 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
   - CNN-LSTM: `frame_probs` (T, 301) trên từ điển của HMM (N + 25 mẫu `submission` x 12 nốt gốc), khung 0.0232 s, là tích xác suất các thành phần chuẩn hóa lại (không có hệ số giảm N 0.5 của bản gốc). `extras` có `bass_probs`, `root_probs` (T, 13), `triad_probs` và 7th/9th/11th/13th.
   - Khi đã nạp sẵn: BTC 0.6 s, VRAM đỉnh 79 MiB; 2E1D 0.5 s, 35 MiB; CNN-LSTM 1.9 s, 509 MiB (lần đầu mỗi tiến trình 3–5 s).
   - Mã CNN-LSTM đọc file theo đường dẫn tương đối và **dùng weights ngẫu nhiên mà không báo lỗi** nếu không thấy file `.sdict`. Wrapper chdir vào repo khi import và kiểm tra weights đã nạp.
-- [ ] Kiểm tra BS-Roformer-Viperx-1297 chạy vừa 8 GB VRAM (qua `audio-separator`).
+- [x] Kiểm tra BS-Roformer-Viperx-1297 chạy vừa 8 GB VRAM (qua `audio-separator`). Trên "Let It Be" (243 giây): BS-Roformer 50 giây, VRAM đỉnh 1,6 GB; `htdemucs_ft` trên instrumental 29 giây, VRAM đỉnh 0,55 GB (`torch.cuda.max_memory_allocated`).
+  - `audio-separator` từ 0.31 đòi numpy 2, nên ghim **0.30.2**. Bản này ghi file theo cwd, bỏ qua `output_dir`, nên phải truyền đường dẫn tuyệt đối trong `custom_output_names`.
+  - `no_bass.wav` = drums + other của HTDemucs, bỏ stem vocals (giọng còn sót sau Roformer).
 - [ ] Tìm nguồn dữ liệu đánh giá: file nhãn hợp âm cùng audio tương ứng.
 - [x] Bắt nhịp bằng beat_this (checkpoint `final0`, hậu xử lý minimal, không cần madmom) chạy được trên Windows, Python 3.11, numpy 1.26. "Let It Be": 279 phách, 78 phách mạnh (tỉ lệ 0,28), tempo trung vị 69,8 BPM, khoảng 1 giây trên GPU, VRAM đỉnh khoảng 270 MB.
   - Tempo trôi từ khoảng 73 BPM (phút đầu) xuống khoảng 68 BPM (cuối bài). Đầu ra theo khung 50 fps nên khoảng cách phách bị lượng tử 20 ms, tempo lệch theo bước khoảng 1,5 BPM.

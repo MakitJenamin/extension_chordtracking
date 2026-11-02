@@ -1,1 +1,5 @@
 # Tách nguồn: BS-Roformer, HTDemucs
+# audio-separator từ 0.31 trở lên đòi numpy 2, nên giữ 0.30.2. Cài kèm "-c" ghim numpy==1.26.4.
+audio-separator==0.30.2
+onnxruntime  # audio-separator import onnxruntime dù BS-Roformer chạy bằng torch
+demucs==4.1.0
