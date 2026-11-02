@@ -150,7 +150,11 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
   - ChordMini BTC-PL: khoảng **12 giây** mỗi bài trên GPU, bắt được `F:maj7`. Lệnh chạy: `src/evaluation/test.py --model_type BTC --checkpoint checkpoints/btc_model_best.pth --config config/ChordMini.yaml --smooth_logits --use_overlap --use_gaussian --kernel_size 9 --vote_aggregation logit --min_segment_duration 0.5 --smooth_predictions`
   - Chord-CNN-LSTM: `chord_recognition.py <audio> <out.lab> [submission|ismir2017|full]`.
 - [x] Định dạng nốt bass của Chord-CNN-LSTM: ký hiệu Harte có **bậc của bass**, ví dụ `C:maj/5` = C/G, `C:maj/3` = C/E, `F:maj/2` = F/G. Đã bắt đúng **C/G** ở đoạn điệp khúc Am – C/G – F – C.
-- [ ] Đầu ra hiện là `.lab` (bắt đầu, kết thúc, hợp âm). Cần lấy thêm xác suất từng khung để kết hợp model và tính độ tin cậy.
+- [x] Lấy xác suất từng khung: `chordtrack/chords/chordmini.py` và `cnnlstm.py` gọi model trực tiếp trong Python, `segments` trùng file `.lab` của script gốc.
+  - ChordMini: `frame_probs` (T, 170), khung 0.0929 s, là softmax của trung bình logits đã làm mượt. Script gốc **bỏ đoạn ngắn hơn 0.5 s** nên giữa các đoạn có khoảng trống. Nhãn trưởng của ChordMini ghi tắt (`C`), wrapper đổi sang `C:maj`.
+  - CNN-LSTM: `frame_probs` (T, 301) trên từ điển của HMM (N + 25 mẫu `submission` x 12 nốt gốc), khung 0.0232 s, là tích xác suất các thành phần chuẩn hóa lại (không có hệ số giảm N 0.5 của bản gốc). `extras` có `bass_probs`, `root_probs` (T, 13), `triad_probs` và 7th/9th/11th/13th.
+  - Khi đã nạp sẵn: BTC 0.6 s, VRAM đỉnh 79 MiB; 2E1D 0.5 s, 35 MiB; CNN-LSTM 1.9 s, 509 MiB (lần đầu mỗi tiến trình 3–5 s).
+  - Mã CNN-LSTM đọc file theo đường dẫn tương đối và **dùng weights ngẫu nhiên mà không báo lỗi** nếu không thấy file `.sdict`. Wrapper chdir vào repo khi import và kiểm tra weights đã nạp.
 - [ ] Kiểm tra BS-Roformer-Viperx-1297 chạy vừa 8 GB VRAM (qua `audio-separator`).
 - [ ] Tìm nguồn dữ liệu đánh giá: file nhãn hợp âm cùng audio tương ứng.
 - [x] Bắt nhịp bằng beat_this (checkpoint `final0`, hậu xử lý minimal, không cần madmom) chạy được trên Windows, Python 3.11, numpy 1.26. "Let It Be": 279 phách, 78 phách mạnh (tỉ lệ 0,28), tempo trung vị 69,8 BPM, khoảng 1 giây trên GPU, VRAM đỉnh khoảng 270 MB.
