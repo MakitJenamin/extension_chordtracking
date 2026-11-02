@@ -49,8 +49,9 @@
   }
 
   const sleep = (ms, signal) => new Promise((resolve, reject) => {
-    const id = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => { clearTimeout(id); reject(new ApiError("aborted", "Đã hủy")); }, { once: true });
+    const onAbort = () => { clearTimeout(id); reject(new ApiError("aborted", "Đã hủy")); };
+    const id = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 
   async function loadSong(videoId, { onProgress, signal, force = false } = {}) {
@@ -73,6 +74,10 @@
         // Server tắt giữa chừng: thử lại vài lần trước khi báo lỗi.
         if (r.status === 0 && ++failures < 5) continue;
         throw toError(r);
+      }
+      if (!r.data || typeof r.data !== "object") { // 200 nhưng không phải JSON (proxy, server đang khởi động lại)
+        if (++failures < 5) continue;
+        throw new ApiError("http", "Server trả về dữ liệu job không đọc được");
       }
       failures = 0;
       job = r.data;

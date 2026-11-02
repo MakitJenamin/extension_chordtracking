@@ -122,8 +122,14 @@ class Handler(SimpleHTTPRequestHandler):
                 start = int(m.group(1))
                 end = int(m.group(2)) if m.group(2) else size - 1
             else:
-                start = size - int(m.group(2))
+                start = max(0, size - int(m.group(2)))
             end = min(end, size - 1)
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             self.send_response(206)
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         else:

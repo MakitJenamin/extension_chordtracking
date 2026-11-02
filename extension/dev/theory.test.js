@@ -39,6 +39,12 @@ test("shiftSym: dịch giọng giữ loại hợp âm và bass", () => {
   assert.equal(T.shiftSym("Cm", -3, K("A", "minor")), "Am");
   assert.equal(T.shiftSym("Ab", -3, K("A", "minor")), "F");
   assert.equal(T.shiftSym("Bb", -3, K("A", "minor")), "G");
+  // Giọng đích có dấu trong tên: hợp âm viết cùng kiểu dấu (C thứ +3 = Eb thứ, không ra D#m)
+  const eb = T.shiftKey(K("C", "minor"), 3);
+  assert.equal(eb.tonic, "Eb");
+  assert.equal(T.shiftSym("Cm", 3, eb), "Ebm");
+  assert.equal(T.shiftSym("Ab", 3, eb), "B");
+  assert.equal(T.shiftSym("G7", 3, eb), "Bb7");
 });
 
 test("stripBass và simplify", () => {

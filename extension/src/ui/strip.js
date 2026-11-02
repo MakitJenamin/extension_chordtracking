@@ -72,7 +72,7 @@
         this.beatEls.push(e);
       });
       song.chords.forEach((c, i) => {
-        const nc = c.label === "N" || c.symbol === "N.C.";
+        const nc = c.label === "N" || c.label === "X" || c.symbol === "N.C." || c.symbol === "?";
         const e = el("div", "ct-chord" + (nc ? " ct-nc" : ""));
         e.dataset.i = i;
         const lbl = el("div", "ct-lbl");

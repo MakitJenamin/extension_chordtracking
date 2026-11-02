@@ -89,6 +89,9 @@
     return s;
   }
 
+  /** Chữ ký các cài đặt quyết định nhãn hợp âm và việc hiện bảng (dùng chung với sections.js). */
+  const labelSig = (s) => [s.mode, s.transpose | 0, !!s.hideInversions, !!s.simplify, !!s.enabled, !!s.panelCollapsed].join("|");
+
   /* ---------------- Panel ---------------- */
   const panel = {
     el: null, state: "hidden", song: null, last: {},
@@ -101,8 +104,14 @@
       this.soonEl = h("span", { class: "ct-chip ct-warn", hidden: true });
       this.metroBtn = h("button", { type: "button", class: "ct-btn", title: `Bật/tắt tiếng phách theo nhịp bài (${sc("KeyM")})`,
         onclick: () => CT.setSettings({ metronome: !CT.settings.metronome }) });
+      // Kéo thanh âm lượng: gộp các lần đổi (chrome.storage.sync giới hạn ~120 lần ghi mỗi phút).
+      let volTimer = 0;
       this.volEl = h("input", { type: "range", min: 0, max: 100, class: "ct-vol", title: "Âm lượng tiếng phách",
-        oninput: (e) => CT.setSettings({ metronomeVolume: e.target.value / 100 }) });
+        oninput: (e) => {
+          clearTimeout(volTimer);
+          const v = e.target.value / 100;
+          volTimer = setTimeout(() => CT.setSettings({ metronomeVolume: v }), 150);
+        } });
       this.seg = h("div", { class: "ct-seg", role: "group", "aria-label": "Cách hiện hợp âm" },
         modeBtn("orig", "Gốc", `Hợp âm đúng tông bài, có thể dịch tông (${sc("Digit1")})`),
         modeBtn("white", "🎹 Phím trắng", `Chơi trên phím trắng, đặt transpose của đàn theo ô bên dưới (${sc("Digit2")})`),
@@ -156,6 +165,7 @@
 
     setSong(song) {
       this.sawSeparation = false;
+      this.labelSig = labelSig(CT.settings);
       this.song = song;
       this.last = {};
       const r = song.result;
@@ -185,8 +195,13 @@
       this.collapseBtn.title = (col ? "Mở khung hợp âm" : "Thu gọn khung hợp âm") + ` (${sc("KeyH")})`;
       if (this.state !== "hidden") this.show(this.state);
       this.last = {};
-      if (this.song) {
+      // Chỉ đổi chữ trên dải khi cài đặt ảnh hưởng tới nhãn (không phải mỗi lần đổi âm lượng).
+      const sig = labelSig(s);
+      if (this.song && sig !== this.labelSig) {
+        this.labelSig = sig;
         CT.ui.strip.relabel();
+      }
+      if (this.song) {
         this.onTime(CT.ui.lastTime || { t: 0 });
       }
     },
@@ -326,6 +341,7 @@
     place() {
       this.timer = 0;
       if (!this.mounted) return;
+      this.watchFlexy();
       const p = panel.el, secs = CT.ui.sections && CT.ui.sections.el;
       const below = document.querySelector("ytd-watch-flexy #below") || document.querySelector("#below");
       if (below) {
@@ -344,7 +360,16 @@
         p.parentNode.insertBefore(secs, p.nextSibling);
       }
     },
-    schedule() { if (!this.timer) this.timer = setTimeout(() => this.place(), 200); },
+    schedule() { if (!this.timer) this.timer = setTimeout(() => this.place(), 300); },
+    /** Theo dõi thuộc tính rạp hát/hai cột. ytd-watch-flexy có thể chưa có lúc mount nên thử lại mỗi lần place(). */
+    watchFlexy() {
+      const f = this.flexy();
+      if (!f || f === this.flexyEl) return;
+      this.mo2?.disconnect();
+      this.flexyEl = f;
+      this.mo2 = new MutationObserver(() => this.schedule());
+      this.mo2.observe(f, { attributes: true, attributeFilter: ["theater", "is-two-columns_", "fullscreen"] });
+    },
     mount() {
       if (!panel.el) panel.build();
       this.mounted = true;
@@ -359,18 +384,14 @@
           }
         });
         this.mo.observe(document.body, { childList: true, subtree: true });
-        const f = this.flexy();
-        if (f) {
-          this.mo2 = new MutationObserver(() => this.schedule());
-          this.mo2.observe(f, { attributes: true, attributeFilter: ["theater", "is-two-columns_", "fullscreen"] });
-        }
+        this.watchFlexy();
         window.addEventListener("resize", this.onResize = () => this.schedule());
       }
     },
     unmount() {
       this.mounted = false;
       this.mo?.disconnect(); this.mo = null;
-      this.mo2?.disconnect(); this.mo2 = null;
+      this.mo2?.disconnect(); this.mo2 = null; this.flexyEl = null;
       if (this.onResize) window.removeEventListener("resize", this.onResize);
       panel.el?.remove();
       CT.ui.sections?.el?.remove();
@@ -378,18 +399,20 @@
   };
 
   CT.ui = CT.ui || {};
-  Object.assign(CT.ui, { panel, layout, BeatDots, info, soonText, shortcuts: SHORTCUTS, lastTime: null, fullscreenOn: false });
+  Object.assign(CT.ui, { panel, layout, BeatDots, info, soonText, labelSig, shortcuts: SHORTCUTS, lastTime: null, fullscreenOn: false });
 
   CT.bus.on("settings", (s) => panel.applySettings(s));
   CT.bus.on("time", (p) => { CT.ui.lastTime = p; panel.onTime(p); });
-  CT.bus.on("song:loading", ({ job }) => { if (panel.el) panel.showLoading(job || {}); });
-  CT.bus.on("song:error", (e) => { if (panel.el) panel.showError(e); });
+  // CT.ui.song chỉ là bài của video hiện tại: xóa ngay khi bắt đầu tải hoặc lỗi (fullscreen.js, sections.js đọc nó).
+  CT.bus.on("song:loading", ({ job }) => { CT.ui.song = null; if (panel.el) panel.showLoading(job || {}); });
+  CT.bus.on("song:error", (e) => { CT.ui.song = null; if (panel.el) panel.showError(e); });
   CT.bus.on("song:ready", ({ result }) => {
     if (!panel.el) return;
     try {
       CT.ui.song = T().buildSong(result);
       panel.setSong(CT.ui.song);
     } catch (e) {
+      CT.ui.song = null;
       console.error("[ChordTrack] result lỗi", e);
       panel.showError({ code: "bad_result", message: "Kết quả từ server không đọc được: " + e.message });
     }

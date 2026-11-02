@@ -36,6 +36,7 @@
     },
     setSong(song) {
       this.song = song;
+      this.sig = CT.ui.labelSig(CT.settings);
       this.idx = -1;
       this.el.hidden = !this.visible();
       this.render();
@@ -110,10 +111,13 @@
 
   sections.build();
   CT.ui.sections = sections;
-  CT.bus.on("song:ready", () => { if (CT.ui.song) sections.setSong(CT.ui.song); });
+  CT.bus.on("song:ready", () => sections.setSong(CT.ui.song || null));
   for (const evt of ["song:loading", "song:error", "song:none"]) CT.bus.on(evt, () => sections.setSong(null));
-  CT.bus.on("settings", () => {
+  CT.bus.on("settings", (s) => {
     if (!sections.song) return;
+    const sig = CT.ui.labelSig(s);
+    if (sig === sections.sig) return; // ví dụ chỉ đổi âm lượng metronome
+    sections.sig = sig;
     sections.el.hidden = !sections.visible();
     sections.render();
   });

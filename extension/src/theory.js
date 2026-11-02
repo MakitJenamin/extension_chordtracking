@@ -29,6 +29,8 @@
 
   function sharpKey(key) {
     if (!key || !key.tonic) return null;
+    // Tên giọng có dấu thì theo dấu đó (Eb thứ viết giáng, D# thứ viết thăng), để hợp âm khớp tên giọng.
+    if (key.tonic.length > 1) return key.tonic[1] === "#";
     const t = pcOf(key.tonic);
     if (t === null) return null;
     const major = key.mode === "minor" ? mod12(t + 3) : t;
