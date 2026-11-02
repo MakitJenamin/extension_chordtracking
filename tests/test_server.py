@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from chordtrack import jobs, paths, pipeline, server
+from chordtrack import audio, jobs, paths, pipeline, server
 from tests.test_pipeline import fake_env  # noqa: F401  (fixture pipeline giả)
 
 VID = "abcdefghijk"
@@ -27,6 +27,8 @@ class FakePipeline:
         return self.results.get(song_id)
 
     def analyze(self, source, *, force=False, progress=None):
+        assert source.startswith("https://www.youtube.com/watch?v=")   # luôn nhận URL chuẩn
+        source = audio.parse_video_id(source)
         self.calls.append((source, force))
         for step in jobs.STEPS:
             progress(step, 0.0)
@@ -89,7 +91,7 @@ def test_job_created_progress_and_result(fake, tmp_path):
         assert fake.in_chords.wait(5)
         st = c.get(f"/jobs/{job_id}").json()
         assert st["status"] == "running" and st["step"] == "chords"
-        assert 0.0 < st["progress"] < 1.0 and st["eta_seconds"] is not None and st["error"] is None
+        assert 0.0 < st["progress"] < 1.0 and st["eta_seconds"] is not None and st["error"] is None, st
         assert c.get(f"/result/{VID}").status_code == 404
         fake.gate.set()
         st = wait_status(c, job_id, "done")
@@ -142,7 +144,7 @@ def test_job_error_is_friendly_and_worker_continues(fake, tmp_path):
 def test_restart_requeues_running_job(fake, tmp_path):
     # Lần chạy trước: job đang chạy dở thì server tắt.
     store = jobs.JobStore(tmp_path / "jobs.sqlite")
-    job, _ = store.submit(VID, VID)
+    job, _ = store.submit(VID, server.youtube_url(VID))
     store.claim_next()
     store.step_started(job.id, "beats")
     store.close()
@@ -156,7 +158,7 @@ def test_bad_requests(fake, tmp_path):
     with make_client(fake, tmp_path, start_worker=False) as c:
         assert c.post("/analyze", json={"source": "https://example.com/x"}).status_code == 400
         assert c.post("/analyze", content=f'{{"source": "{VID}"}}',
-                      headers={"Content-Type": "text/plain"}).status_code in (415, 422)
+                      headers={"Content-Type": "text/plain"}).status_code == 422
         assert c.get("/jobs/khongco").status_code == 404
         assert c.get("/result/..%2F..%2Fetc").status_code in (400, 404)
         assert c.get("/result/a.b").status_code == 400
@@ -232,3 +234,16 @@ def test_pipeline_progress_callback(fake_env):
     events.clear()
     pipeline.analyze(VID, progress=lambda step, f: events.append((step, f)))
     assert events == []   # có cache: không chạy bước nào
+
+
+def test_no_stale_done_while_force_job_active(fake, tmp_path):
+    fake.results[VID] = {"song_id": VID, "old": True}
+    fake.gate.clear()
+    with make_client(fake, tmp_path) as c:
+        f = c.post("/analyze", json={"source": VID, "force": True}).json()
+        assert fake.in_chords.wait(5)
+        r = c.post("/analyze", json={"source": VID}).json()
+        assert r == {"status": "running", "job_id": f["job_id"], "song_id": VID}
+        fake.gate.set()
+        wait_status(c, f["job_id"], "done")
+        assert "old" not in c.post("/analyze", json={"source": VID}).json()["result"]

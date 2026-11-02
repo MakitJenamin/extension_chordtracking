@@ -218,8 +218,8 @@ def run_chordmini(audio_path: str | Path, variant: str = "btc") -> ChordModelOut
         seq_len = 108
 
     with gpu_lock():
-        model.to(torch.device(_device_name()))
         try:
+            model.to(torch.device(_device_name()))
             mean_logits = _sliding_window_logits(model, features, mean, std, seq_len)
         finally:
             model.to("cpu")

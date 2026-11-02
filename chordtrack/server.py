@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -70,6 +70,7 @@ def default_cached_result(song_id: str) -> dict | None:
     return pipeline._cached_result(song_id, _default_config())
 
 
+@functools.lru_cache(maxsize=1)
 def _default_config():
     """Cấu hình mặc định lấy từ chữ ký `pipeline.analyze`, để server luôn tra đúng file cache mà
     `analyze(source)` sẽ ghi (kể cả khi mặc định trong pipeline đổi)."""
@@ -170,7 +171,10 @@ def create_app(
             yield
         finally:
             worker.stop()
-            store.close()
+            # Job đang chạy không ngắt được: để worker (daemon) còn ghi được thì không đóng DB;
+            # tiến trình thoát thì job đó được khôi phục ở lần khởi động sau.
+            if not worker.alive:
+                store.close()
 
     app = FastAPI(title="chordtrack", version=app_version(), lifespan=lifespan,
                   default_response_class=UTF8JSONResponse)
@@ -197,21 +201,23 @@ def create_app(
             "worker_alive": bool(worker and worker.alive),
             "deno": jobs.deno_path() is not None,
             "ffmpeg": shutil.which("ffmpeg") is not None,
-            "cookies": bool(os.environ.get(audio_mod.COOKIES_ENV, "").strip()),
+            "cookies": _cookies_ok(),
         }
 
     @app.post("/analyze")
-    def analyze_endpoint(body: AnalyzeRequest, request: Request) -> dict:
-        if not request.headers.get("content-type", "").lower().startswith("application/json"):
-            raise HTTPException(415, "Content-Type phải là application/json")
+    def analyze_endpoint(body: AnalyzeRequest) -> dict:
+        # FastAPI chỉ đọc body khi Content-Type là JSON (khác thì 422), nên trình duyệt luôn gửi preflight CORS.
         video_id = audio_mod.parse_video_id(body.source)
         if video_id is None:
             raise HTTPException(400, f"Không nhận ra videoId hoặc URL YouTube: {body.source!r}")
-        if not body.force:
+        active = store().active(video_id)
+        if not body.force and (active is None or not active.force):
+            # Đang phân tích lại (force) thì không trả kết quả cũ như thể đã xong.
             result = cached_result(video_id)
             if result is not None:
                 return {"status": "done", "song_id": video_id, "result": result}
-        job, created = store().submit(video_id, video_id, force=body.force)
+        # Truyền URL chuẩn, không truyền videoId trần: pipeline coi chuỗi trùng tên file trong cwd là file local.
+        job, created = store().submit(video_id, youtube_url(video_id), force=body.force)
         if created:
             store_holder["worker"].notify()
         return {"status": job.status, "job_id": job.id, "song_id": job.song_id}
@@ -241,6 +247,17 @@ def create_app(
         return {"songs": songs.list(_result_filename())}
 
     return app
+
+
+def youtube_url(video_id: str) -> str:
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _cookies_ok() -> bool:
+    try:
+        return audio_mod.cookies_file() is not None
+    except FileNotFoundError:
+        return False
 
 
 def _result_filename() -> str:

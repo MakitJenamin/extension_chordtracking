@@ -24,7 +24,9 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
-STEPS = ("fetch", "separation", "beats", "chords", "fusion", "analysis")
+from chordtrack.pipeline import TIMING_KEYS
+
+STEPS = tuple(k for k in TIMING_KEYS if k != "total")   # các bước pipeline báo qua `progress`
 STEP_MESSAGES = {
     "fetch": "Đang tải audio từ YouTube",
     "separation": "Đang chuẩn bị audio (tách nguồn nếu bật)",
@@ -64,6 +66,7 @@ CREATE TABLE IF NOT EXISTS step_times (
     seconds REAL NOT NULL,
     finished_at REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS step_times_step ON step_times (step, finished_at);
 """
 
 
@@ -102,6 +105,7 @@ class JobStore:
         self._lock = threading.RLock()
         self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         self._db.row_factory = sqlite3.Row
+        self._averages: dict[str, float] | None = None
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(_SCHEMA)
@@ -129,6 +133,14 @@ class JobStore:
                 "INSERT INTO jobs (id, song_id, source, force, status, created_at) VALUES (?, ?, ?, ?, 'queued', ?)",
                 (job_id, song_id, source, int(force), time.time()))
             return Job.from_row(self._row(job_id)), True
+
+    def active(self, song_id: str) -> Job | None:
+        """Job đang chờ hoặc đang chạy của `song_id`, nếu có."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM jobs WHERE song_id = ? AND status IN ('queued', 'running') "
+                "ORDER BY created_at LIMIT 1", (song_id,)).fetchone()
+        return None if row is None else Job.from_row(row)
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
@@ -198,20 +210,30 @@ class JobStore:
             if error:
                 # Thời gian các bước của job lỗi không đại diện, bỏ khỏi thống kê.
                 self._db.execute("DELETE FROM step_times WHERE job_id = ?", (job_id,))
+            # Chỉ giữ HISTORY lần gần nhất mỗi bước để bảng không phình mãi.
+            self._db.execute(
+                "DELETE FROM step_times WHERE rowid IN (SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER "
+                "(PARTITION BY step ORDER BY finished_at DESC) AS n FROM step_times) WHERE n > ?)", (HISTORY,))
+            self._averages = None
 
     # --- thống kê thời gian ---
 
     def step_averages(self) -> dict[str, float]:
-        """Thời gian trung bình (giây) mỗi bước trên `HISTORY` lần chạy gần nhất; chưa có thì mặc định."""
-        out = dict(DEFAULT_STEP_SECONDS)
+        """Thời gian trung bình (giây) mỗi bước trên `HISTORY` lần chạy gần nhất; chưa có thì mặc định.
+        Nhớ lại giữa các lần gọi (mỗi lần poll `/jobs`), chỉ tính lại khi có job kết thúc."""
         with self._lock:
+            if self._averages is not None:
+                return dict(self._averages)
+            out = dict(DEFAULT_STEP_SECONDS)
             for step in STEPS:
                 rows = self._db.execute(
-                    "SELECT seconds FROM step_times WHERE step = ? ORDER BY finished_at DESC LIMIT ?",
+                    "SELECT t.seconds FROM step_times t JOIN jobs j ON j.id = t.job_id "
+                    "WHERE t.step = ? AND j.status = 'done' ORDER BY t.finished_at DESC LIMIT ?",
                     (step, HISTORY)).fetchall()
                 if rows:
                     out[step] = sum(r[0] for r in rows) / len(rows)
-        return out
+            self._averages = out
+            return dict(out)
 
 
 def job_status(store: JobStore, job: Job, now: float | None = None) -> dict[str, Any]:
@@ -336,16 +358,17 @@ class JobWorker:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            # Xóa cờ trước khi lấy job, để notify() đến trong lúc này không bị mất.
+            self._wake.clear()
             try:
                 job = self.store.claim_next()
+                if job is not None:
+                    self.run_job(job)
+                    continue
             except Exception:
-                log.exception("Không đọc được hàng đợi job")
-                job = None
-            if job is None:
-                self._wake.wait(self.poll_interval)
-                self._wake.clear()
-                continue
-            self.run_job(job)
+                # Worker là thread duy nhất: lỗi bất ngờ (SQLite...) chỉ được log, không làm chết vòng lặp.
+                log.exception("Lỗi trong worker")
+            self._wake.wait(self.poll_interval)
 
     def run_job(self, job: Job) -> None:
         log.info("Bắt đầu job %s (%s)", job.id, job.song_id)
@@ -367,7 +390,14 @@ class JobWorker:
         except Exception as e:
             log.exception("Job %s (%s) lỗi ở bước %s", job.id, job.song_id, current[0])
             _free_vram()
-            self.store.finish(job.id, error=friendly_error(e, current[0]))
+            try:
+                message = friendly_error(e, current[0])
+            except Exception:
+                message = f"Lỗi khi phân tích: {type(e).__name__}"
+            self.store.finish(job.id, error=message)
+        except BaseException as e:  # SystemExit... từ thư viện: ghi lỗi cho job rồi để worker tiếp tục
+            log.exception("Job %s (%s) dừng bất thường", job.id, job.song_id)
+            self.store.finish(job.id, error=f"Lỗi khi phân tích: {type(e).__name__}")
         else:
             self.store.finish(job.id)
             log.info("Xong job %s (%s) sau %.1f s", job.id, job.song_id, time.perf_counter() - t0)

@@ -135,3 +135,41 @@ def test_worker_survives_errors_and_runs_in_order(store):
     bad = store.get(ids[0])
     assert bad.status == "error" and "không tồn tại" in bad.error and bad.step == "fetch"
     assert [store.get(i).status for i in ids[1:]] == ["done", "done"]
+
+
+def test_worker_survives_store_errors(store, monkeypatch):
+    """Lỗi SQLite khi ghi kết quả không được làm chết worker."""
+    job, _ = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa")
+    real_finish = store.finish
+    calls = []
+
+    def flaky_finish(job_id, error=None):
+        calls.append(job_id)
+        if len(calls) == 1:
+            raise RuntimeError("database is locked")
+        real_finish(job_id, error)
+
+    monkeypatch.setattr(store, "finish", flaky_finish)
+    w = jobs.JobWorker(store, lambda s, **kw: {}, poll_interval=0.05)
+    w.start()
+    try:
+        store.submit("bbbbbbbbbbb", "bbbbbbbbbbb")
+        w.notify()
+        deadline = time.time() + 5
+        while len(calls) < 2 and time.time() < deadline:
+            time.sleep(0.02)
+        assert w.alive and len(calls) >= 2
+    finally:
+        w.stop()
+
+
+def test_step_times_pruned(store, monkeypatch):
+    monkeypatch.setattr(jobs, "HISTORY", 3)
+    for i in range(5):
+        job, _ = store.submit(f"song{i:07d}", "x")
+        store.claim_next()
+        store.step_started(job.id, "fetch")
+        store.step_finished(job.id, "fetch")
+        store.finish(job.id)
+    n = store._db.execute("SELECT COUNT(*) FROM step_times WHERE step = 'fetch'").fetchone()[0]
+    assert n == 3

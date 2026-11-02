@@ -92,8 +92,8 @@ def track_beats(audio_path: Path, max_duration: float | None = None) -> BeatGrid
     with _MODEL_LOCK:
         model = _load_model()
         with gpu_lock():
-            _move(model, torch.device(device()))
             try:
+                _move(model, torch.device(device()))
                 beats, downbeats = model(signal, sr)
             finally:
                 _move(model, torch.device("cpu"))
