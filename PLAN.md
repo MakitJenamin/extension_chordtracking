@@ -121,7 +121,7 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 
 - **Ba chế độ hiển thị:** Gốc (có Tông −/+), **🎹 Phím trắng** (mặc định cho người dùng, vì người dùng chơi piano), Bậc La Mã. Tùy chọn: ẩn hợp âm đảo, đơn giản hóa.
 - **Phím trắng:** ô "Đặt transpose đàn: +k" theo vùng giọng đang phát. Báo trước 8 giây khi sắp đổi giọng. Trên dải hợp âm có vạch "⬆ transpose +a → +b".
-- **Nhịp:** hiện số chỉ nhịp (ví dụ "Nhịp 4/4", suy ra từ số phách giữa các phách mạnh) và các chấm 1-2-3-4 sáng theo phách, phách 1 đỏ và to hơn. Trên dải hợp âm có **vạch dọc ở mỗi phách**: vạch cao kèm số ô nhịp ở phách mạnh, vạch thấp ở phách nhẹ. Backend nên trả thêm `meter` (số phách mỗi ô nhịp) trong JSON.
+- **Nhịp:** hiện số chỉ nhịp (ví dụ "Nhịp 4/4", suy ra từ số phách giữa các phách mạnh) và các chấm 1-2-3-4 sáng theo phách, phách 1 đỏ và to hơn. Trên dải hợp âm có **vạch dọc ở mỗi phách**: vạch cao kèm số ô nhịp ở phách mạnh, vạch thấp ở phách nhẹ. JSON có `meter` (số nguyên, số phách mỗi ô nhịp; xem mục 11, "Metronome, popup và `meter`").
 - **Metronome:** tiếng phách đồng bộ với `beats` của video. Phách mạnh cao và to hơn. Có nút bật/tắt và **thanh chỉnh âm lượng**. Tiếng tạo bằng Web Audio. Phải theo đúng tốc độ phát của video (0.5×, 0.75×…) và khi tua.
 - **Toàn màn hình:** khi video YouTube ở chế độ toàn màn hình, đưa **chính dải hợp âm karaoke như lúc bình thường** (cùng vạch phách, vạch đổi giọng, vạch đỏ đang phát) đè lên phía dưới video, nền bán trong suốt. Phía trên dải có chấm phách, giọng hoặc transpose, và cảnh báo sắp đổi giọng. Phải gắn vào phần tử fullscreen của YouTube thì mới hiện được.
 - ⚠ đánh dấu hợp âm có `uncertain = true`.
@@ -310,6 +310,21 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     (`CHORDTRACK_YT_COOKIES`) để extension phân tích bài mới.
   - `eta_seconds` lấy trung bình 20 lần chạy gần nhất của từng bước, chưa tính độ dài bài. Bật hay tắt tách nguồn
     làm bước `separation` dao động từ 0 đến 100 s, nên ETA cần vài bài để ổn định.
+- [x] **Metronome, popup và `meter`** (2026-11-03).
+  - JSON thêm `"meter": <int>` ngay sau `tempo` (`pipeline.estimate_meter`): số phách nằm giữa hai phách mạnh liên
+    tiếp, lấy giá trị phổ biến nhất (hòa thì lấy số nhỏ hơn); dưới hai phách mạnh thì 4. Không bump
+    `RESULT_VERSION`: `code_revision` đổi nên cache cũ tự chạy lại. "Let It Be" và mọi bài trong cache ra 4.
+  - `extension/src/metronome.js`: lên lịch trước 100 ms, tick 25 ms, tiếng "woodblock" tổng hợp (sine có pitch rơi
+    nhanh, phách mạnh 1250 Hz to hơn, phách nhẹ 880 Hz), có kiểu `sine` dự phòng (`CT.metronome.sound`). Mốc
+    đồng bộ dùng `AudioContext.getOutputTimestamp()` (đồng hồ của mẫu đang ra loa, đã gồm `outputLatency`).
+  - Đo bằng `extension/dev/metronome_test.html` ("Let It Be", Chrome, 48 kHz, baseLatency 10 ms, outputLatency 40 ms),
+    độ lệch giữa lúc tiếng gõ được lên lịch và phách trong JSON, theo đường khớp đồng hồ media (|lệch| TB / max):
+    1×: 1,4 / 4,4 ms (20 tiếng); 0,75×: 3,9 / 11,4 ms (15); 1× sau khi tua tới 120 s: 3,0 / 9,4 ms (18);
+    0,75× sau khi tua lùi tới 60 s: 2,2 / 6,0 ms (14). Đạt mục tiêu < 15 ms. ⚠️ Cách đo này không thấy được độ trễ
+    khác nhau giữa trình phát video và AudioContext trên thiết bị thật; muốn chắc cần thu loopback.
+  - Popup: trạng thái `/health`, bật/tắt, chế độ mặc định, âm lượng metronome, địa chỉ server, danh sách `/songs`.
+  - ⚠️ Trình duyệt Claude in Chrome trên máy này không vào được `127.0.0.1` của shell (ERR_CONNECTION_REFUSED), phải
+    phục vụ trang thử qua IP LAN và proxy `/api/` tới backend. Extension thật không bị ảnh hưởng.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

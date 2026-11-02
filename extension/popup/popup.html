@@ -1,1 +1,75 @@
-<!doctype html><html lang="vi"><head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head><body><script src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChordTrack</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="hd">
+    <img class="logo" src="../icons/icon32.png" alt="" width="24" height="24">
+    <div class="brand">
+      <div class="name">ChordTrack</div>
+      <div class="sub" id="enabledText">Hợp âm theo video YouTube</div>
+    </div>
+    <label class="switch" title="Bật/tắt trên YouTube">
+      <input type="checkbox" id="enabled" aria-label="Bật ChordTrack trên YouTube">
+      <span class="track"><span class="thumb"></span></span>
+    </label>
+  </header>
+
+  <section class="card status" id="status" data-state="loading" aria-live="polite">
+    <div class="st-row">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="st-title" id="stTitle">Đang kiểm tra server…</span>
+      <button class="icon-btn" id="refresh" title="Kiểm tra lại" aria-label="Kiểm tra lại">↻</button>
+    </div>
+    <div class="st-sub" id="stSub"></div>
+    <ul class="chips" id="chips"></ul>
+    <div class="down" id="down" hidden>
+      <div class="hint">Mở PowerShell ở thư mục repo và chạy:</div>
+      <div class="cmd">
+        <code id="cmd">powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1</code>
+        <button class="copy" id="copy" title="Sao chép lệnh">Sao chép</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Cài đặt nhanh</h2>
+    <div class="field">
+      <span class="lbl" id="modeLbl">Hiển thị mặc định</span>
+      <div class="seg" role="radiogroup" aria-labelledby="modeLbl" id="mode">
+        <button role="radio" data-mode="white">🎹 Phím trắng</button>
+        <button role="radio" data-mode="orig">Gốc</button>
+        <button role="radio" data-mode="roman">La Mã</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="lbl" for="vol">Âm lượng metronome</label>
+      <div class="vol-row">
+        <input type="range" id="vol" min="0" max="100" step="1">
+        <output id="volOut" for="vol">60%</output>
+      </div>
+    </div>
+    <div class="field">
+      <label class="lbl" for="server">Địa chỉ server</label>
+      <div class="srv-row">
+        <input type="url" id="server" spellcheck="false" autocomplete="off">
+        <button class="ghost" id="serverReset" title="Về mặc định">Mặc định</button>
+      </div>
+      <div class="err" id="serverErr" hidden>Địa chỉ phải bắt đầu bằng http:// hoặc https://</div>
+    </div>
+  </section>
+
+  <section class="card songs">
+    <h2>Bài đã phân tích <span class="count" id="songCount"></span></h2>
+    <ul class="song-list" id="songs"></ul>
+    <div class="empty" id="songsEmpty" hidden></div>
+  </section>
+
+  <script src="../src/core.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
