@@ -245,6 +245,8 @@ REGION_SWITCH_PENALTY = 12.0    # phạt mỗi lần đổi giọng trong Viterb
 REGION_RELATIVE_FACTOR = 0.7    # hệ số phạt khi đổi sang giọng tương đối hoặc song song (dò ra < 1: phạt nhẹ hơn)
 MIN_REGION_BARS = 4             # vùng phải dài ít nhất chừng này ô nhịp ...
 MIN_REGION_SECONDS = 8.0        # ... hoặc chừng này giây, nếu không thì gộp vào vùng bên cạnh
+MIN_FINAL_REGION_SECONDS = 12.0 # sau khi chấm lại: vùng ngắn hơn chừng này giây ...
+MIN_REGION_CHORDS = 2           # ... hoặc ít hơn chừng này hợp âm khác nhau thì gộp vào vùng bên cạnh (3 làm tụt bài đổi giọng)
 REGION_FALLBACK_BAR = 2.0       # độ dài ô (giây) khi không có phách
 SNAP_MODULATION_SECONDS = 4.0   # ranh giới đoạn trong khoảng này được ưu tiên làm chỗ đổi giọng
 MODULATION_SEARCH_BARS = 2      # tìm chỗ đổi giọng chính xác trong ± chừng này ô quanh kết quả Viterbi
@@ -343,6 +345,9 @@ def estimate_key_regions(
        ranh giới đoạn trong `boundaries` (nếu có), rồi điểm gần kết quả Viterbi.
     5. Chấm lại giọng mỗi vùng bằng `_key_scores` (có thành phần âm giai) trên đúng các hợp âm của
        vùng, gộp các vùng liền nhau trùng giọng. Bài chỉ có một vùng thì giọng trùng `estimate_key`.
+    6. Vùng quá yếu để tin là một giọng riêng (ngắn hơn MIN_FINAL_REGION_SECONDS giây, hoặc ít hơn
+       MIN_REGION_CHORDS hợp âm khác nhau, ví dụ intro chỉ có một hợp âm Ab trong bài C trưởng) được
+       gộp vào vùng bên cạnh có giọng chấm điểm cao hơn trên chính các hợp âm của vùng đó.
 
     Trả về list rỗng nếu không có hợp âm nào.
     """
@@ -403,6 +408,7 @@ def _decode_regions(segs: list[ChordSegment], grid: np.ndarray, emis: np.ndarray
             regions[-1].end = b
             continue
         regions.append(KeyRegion(a, b, _key_from_index(best)))
+    regions = _merge_weak_regions(segs, regions)
     for reg in regions:   # độ tin cậy trên cả vùng sau khi gộp
         sc = _key_scores(_clip_segments(segs, reg.start, reg.end), w_fit=W_REGION_FIT)
         if sc is not None:
@@ -411,6 +417,44 @@ def _decode_regions(segs: list[ChordSegment], grid: np.ndarray, emis: np.ndarray
         whole = estimate_key(segs)            # một vùng: đúng bằng giọng của cả bài
         if whole is not None:
             regions[0].key = whole
+    return regions
+
+
+def _distinct_chords(segs: list[ChordSegment], a: float, b: float) -> int:
+    return len({simplify_label(s.label) for s in _clip_segments(segs, a, b) if _chord(s.label).is_chord})
+
+
+def _merge_weak_regions(segs: list[ChordSegment], regions: list[KeyRegion]) -> list[KeyRegion]:
+    """Bước 6 của `estimate_key_regions`: gộp lần lượt vùng yếu ngắn nhất vào vùng bên cạnh."""
+    regions = list(regions)
+
+    def weak(r: KeyRegion) -> bool:
+        return r.end - r.start < MIN_FINAL_REGION_SECONDS or _distinct_chords(segs, r.start, r.end) < MIN_REGION_CHORDS
+
+    while len(regions) > 1:
+        cand = [j for j, r in enumerate(regions) if weak(r)]
+        if not cand:
+            break
+        j = min(cand, key=lambda j: regions[j].end - regions[j].start)
+        r = regions[j]
+        sc = _key_scores(_clip_segments(segs, r.start, r.end), w_fit=W_REGION_FIT)
+        nbrs = [m for m in (j - 1, j + 1) if 0 <= m < len(regions)]
+        if sc is None:   # không có hợp âm: gộp vào vùng dài hơn
+            m = max(nbrs, key=lambda m: regions[m].end - regions[m].start)
+        else:
+            m = max(nbrs, key=lambda m: sc[_key_index(regions[m].key)])
+        n = regions[m]
+        merged = KeyRegion(min(r.start, n.start), max(r.end, n.end), n.key)
+        lo, hi = min(j, m), max(j, m)
+        regions[lo:hi + 1] = [merged]
+        # vùng bên kia có thể trùng giọng với vùng vừa gộp: nối luôn
+        out: list[KeyRegion] = []
+        for q in regions:
+            if out and _key_index(out[-1].key) == _key_index(q.key):
+                out[-1] = KeyRegion(out[-1].start, q.end, out[-1].key)
+            else:
+                out.append(q)
+        regions = out
     return regions
 
 

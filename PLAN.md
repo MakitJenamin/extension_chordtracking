@@ -334,6 +334,11 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   vạch chỉ vẽ ở làn trên và làn thước phách, tiến độ trong ô hiện bằng thanh đỏ ở đáy ô. Chrome bản chính thức
   (137+) bỏ `--load-extension`, Playwright `--channel chrome` không nạp được extension. Người dùng chốt: kiểm thử
   trình duyệt chỉ bằng Claude in Chrome; nạp lại bản mới bằng `window.postMessage({type:"ct:dev-reload"})` (README).
+- [x] Mép hợp âm lệch vạch phách (2026-11-03): không phải lỗi vẽ (sai số 0,02 px) mà do model nhận hợp âm theo
+  khung ~0,093 s (lệch trung bình 0,12 s, 7% lệch > 0,25 s). Extension kéo mép về phách gần nhất (`snapToBeats`).
+- [x] Vùng giọng quá ngắn (2026-11-03): intro một hợp âm Ab của "Nơi này có anh" thành vùng "Ab trưởng". Thêm bước 6
+  ở `estimate_key_regions`: gộp vùng < 12 s hoặc < 2 hợp âm khác nhau. Giọng theo vùng (w): Isophonics 0,841 → 0,852
+  (đổi giọng 0,683 → 0,683), Kajiura 0,644 → 0,641. Ngưỡng 3 hợp âm làm nhóm đổi giọng Isophonics tụt 2,2 điểm.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
