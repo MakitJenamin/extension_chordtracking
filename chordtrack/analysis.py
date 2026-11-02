@@ -7,6 +7,8 @@ Tóm tắt thuật toán:
 - `estimate_key`: so phân bố cao độ của các hợp âm (gia trọng theo thời lượng) với profile
   Temperley cho 24 giọng, cộng thêm điểm cho hợp âm chủ (thời lượng, hợp âm đầu và cuối bài)
   và cho quãng V–I. Độ tin cậy là xác suất softmax của giọng thắng.
+- `estimate_key_regions`: giọng theo từng vùng (đổi giọng, nâng tông): chấm 24 giọng theo cửa sổ
+  trượt rồi giải Viterbi có phạt đổi giọng (xem docstring của hàm).
 - `analyze_structure`: dựng chuỗi hợp âm theo phách, tính "structure features" kiểu
   Serrà và cộng sự (2012) trên ma trận lặp (recurrence) theo độ trễ, lấy đỉnh novelty làm
   ranh giới, gom các đoạn giống nhau thành nhãn A/B/C, rồi đặt tên intro/verse/chorus...
@@ -19,7 +21,7 @@ from collections import Counter
 import mir_eval.chord as mchord
 import numpy as np
 
-from chordtrack.types import BeatGrid, ChordSegment, KeyEstimate, Section
+from chordtrack.types import BeatGrid, ChordSegment, KeyEstimate, KeyRegion, Section
 
 # ---------------------------------------------------------------- nốt và giọng
 
@@ -146,8 +148,22 @@ def simplify_label(label: str) -> str:
 
 # ---------------------------------------------------------------- 1. giọng
 
-def _key_scores(segments: list[ChordSegment]) -> np.ndarray | None:
-    """Điểm của 24 giọng: index 0–11 là major (theo nốt chủ), 12–23 là minor."""
+# Âm giai dùng để xét hợp âm "nằm trong giọng": trưởng tự nhiên; thứ tự nhiên cộng bậc 7 nâng
+# (hợp âm V trưởng của giọng thứ rất hay gặp).
+_MAJOR_SCALE = np.zeros(12, dtype=bool)
+_MAJOR_SCALE[[0, 2, 4, 5, 7, 9, 11]] = True
+_MINOR_SCALE = np.zeros(12, dtype=bool)
+_MINOR_SCALE[[0, 2, 3, 5, 7, 8, 10, 11]] = True
+_SCALES = np.array([np.roll(_MAJOR_SCALE, t) for t in range(12)] + [np.roll(_MINOR_SCALE, t) for t in range(12)])
+
+
+def _key_scores(segments: list[ChordSegment], edges: bool = True, w_fit: float = 0.0) -> np.ndarray | None:
+    """Điểm của 24 giọng: index 0–11 là major (theo nốt chủ), 12–23 là minor.
+
+    `edges=False` bỏ điểm cộng cho hợp âm đầu và cuối (dùng cho cửa sổ trượt giữa bài, nơi hợp âm
+    đầu và cuối cửa sổ không có ý nghĩa gì). `w_fit` > 0 cộng thêm w_fit x tỉ lệ thời lượng hợp âm có
+    mọi nốt nằm trong âm giai của giọng (chỉ dùng cho giọng theo vùng; `estimate_key` để 0).
+    """
     chords = [(s, _chord(s.label)) for s in segments if s.end > s.start]
     chords = [(s, c) for s, c in chords if c.is_chord]
     if not chords:
@@ -187,9 +203,28 @@ def _key_scores(segments: list[ChordSegment]) -> np.ndarray | None:
             if trans:
                 v = (t + 7) % 12
                 cad = sum(1 for a, b in trans if a.root == v and a.has(4) and b.root == t) / len(trans)
-            scores[mode_i * 12 + t] = (corr + W_TONIC_DUR * tonic_frac + W_FIRST * is_tonic(first)
-                                       + W_LAST * is_tonic(last) + W_CADENCE * cad)
+            edge = W_FIRST * is_tonic(first) + W_LAST * is_tonic(last) if edges else 0.0
+            scores[mode_i * 12 + t] = corr + W_TONIC_DUR * tonic_frac + edge + W_CADENCE * cad
+    if w_fit:
+        notes = np.array([np.roll(c.bitmap > 0, c.root) for _, c in chords])      # (n, 12)
+        inside = ~(notes[:, None, :] & ~_SCALES[None, :, :]).any(axis=2)          # (n, 24)
+        scores += w_fit * (durs @ inside) / total
     return scores
+
+
+def _key_from_index(i: int, conf: float | None = None) -> KeyEstimate:
+    if i < 12:
+        return KeyEstimate(MAJOR_TONIC_NAMES[i], "major", conf)
+    return KeyEstimate(MINOR_TONIC_NAMES[i - 12], "minor", conf)
+
+
+def _key_index(key: KeyEstimate) -> int:
+    return key_tonic_pc(key) + (12 if key.mode == "minor" else 0)
+
+
+def _softmax_conf(scores: np.ndarray, best: int) -> float:
+    p = np.exp((scores - scores.max()) / KEY_TEMPERATURE)
+    return float(np.clip(p[best] / p.sum(), 0.0, 1.0))
 
 
 def estimate_key(segments: list[ChordSegment]) -> KeyEstimate | None:
@@ -198,11 +233,295 @@ def estimate_key(segments: list[ChordSegment]) -> KeyEstimate | None:
     if scores is None:
         return None
     best = int(np.argmax(scores))
-    p = np.exp((scores - scores.max()) / KEY_TEMPERATURE)
-    conf = float(np.clip(p[best] / p.sum(), 0.0, 1.0))
-    if best < 12:
-        return KeyEstimate(MAJOR_TONIC_NAMES[best], "major", conf)
-    return KeyEstimate(MINOR_TONIC_NAMES[best - 12], "minor", conf)
+    return _key_from_index(best, _softmax_conf(scores, best))
+
+
+# ---------------------------------------------------------------- 1b. giọng theo vùng
+
+# Tham số nhận giọng theo vùng (chỉnh trên keylab Isophonics, xem PLAN.md mục "Kết quả analysis").
+REGION_WINDOW_SECONDS = 16.0    # cửa sổ trượt (căn giữa mỗi ô) để chấm điểm 24 giọng tại chỗ
+REGION_SWITCH_PENALTY = 12.0    # phạt mỗi lần đổi giọng trong Viterbi (đơn vị: điểm giọng x REGION_FALLBACK_BAR giây)
+REGION_RELATIVE_FACTOR = 0.7    # hệ số phạt khi đổi sang giọng tương đối hoặc song song (dò ra < 1: phạt nhẹ hơn)
+MIN_REGION_BARS = 4             # vùng phải dài ít nhất chừng này ô nhịp ...
+MIN_REGION_SECONDS = 8.0        # ... hoặc chừng này giây, nếu không thì gộp vào vùng bên cạnh
+REGION_FALLBACK_BAR = 2.0       # độ dài ô (giây) khi không có phách
+SNAP_MODULATION_SECONDS = 4.0   # ranh giới đoạn trong khoảng này được ưu tiên làm chỗ đổi giọng
+MODULATION_SEARCH_BARS = 2      # tìm chỗ đổi giọng chính xác trong ± chừng này ô quanh kết quả Viterbi
+W_REGION_FIT = 2.0              # trọng số "hợp âm nằm trong âm giai" khi chấm cửa sổ trượt
+REGION_REESTIMATE = True        # chấm lại giọng mỗi vùng trên đúng các hợp âm của vùng
+
+
+def _bar_grid(beats: BeatGrid | None, duration: float) -> np.ndarray:
+    """Mốc đầu các ô nhịp, có 0 ở đầu và duration ở cuối. Ưu tiên phách mạnh, rồi 4 phách một ô,
+    không có phách thì chia đều REGION_FALLBACK_BAR giây."""
+    marks = np.array([])
+    if beats is not None:
+        down = np.unique(np.asarray(beats.downbeats, dtype=float))
+        allb = np.unique(np.asarray(beats.beats, dtype=float))
+        if len(down) >= 4:
+            marks = down
+        elif len(allb) >= 8:
+            marks = allb[::4]
+    marks = marks[(marks > 0) & (marks < duration)]
+    if len(marks) >= 2 and np.median(np.diff(marks)) > 0:
+        step = float(np.median(np.diff(marks)))
+        head = np.arange(marks[0] - step, step * 0.5, -step)[::-1]
+        tail = np.arange(marks[-1] + step, duration - step * 0.5, step)
+        grid = np.concatenate([[0.0], head, marks, tail, [duration]])
+    else:
+        n = max(1, int(round(duration / REGION_FALLBACK_BAR)))
+        grid = np.linspace(0.0, duration, n + 1)
+    return np.unique(grid)
+
+
+def _clip_segments(segs: list[ChordSegment], a: float, b: float) -> list[ChordSegment]:
+    out = []
+    for s in segs:
+        lo, hi = max(a, s.start), min(b, s.end)
+        if hi > lo:
+            out.append(ChordSegment(lo, hi, s.label))
+    return out
+
+
+def _switch_cost() -> np.ndarray:
+    """Ma trận phạt chuyển giọng 24 x 24 (0 trên đường chéo)."""
+    cost = np.full((24, 24), REGION_SWITCH_PENALTY)
+    for i in range(24):
+        cost[i, i] = 0.0
+        t, minor = i % 12, i >= 12
+        rel = (t + 9) % 12 + 12 if not minor else (t + 3) % 12     # giọng tương đối
+        par = t + (0 if minor else 12)                              # giọng song song
+        cost[i, rel] = cost[i, par] = REGION_SWITCH_PENALTY * REGION_RELATIVE_FACTOR
+    return cost
+
+
+def _viterbi(emis: np.ndarray, cost: np.ndarray) -> np.ndarray:
+    """Đường đi điểm cao nhất: tổng emis[i, k_i] trừ cost[k_{i-1}, k_i]."""
+    n, k = emis.shape
+    score = emis[0].copy()
+    back = np.zeros((n, k), dtype=int)
+    for i in range(1, n):
+        cand = score[:, None] - cost          # (từ, đến)
+        back[i] = np.argmax(cand, axis=0)
+        score = cand[back[i], np.arange(k)] + emis[i]
+    path = np.zeros(n, dtype=int)
+    path[-1] = int(np.argmax(score))
+    for i in range(n - 1, 0, -1):
+        path[i - 1] = back[i, path[i]]
+    return path
+
+
+def _runs(path: np.ndarray) -> list[list[int]]:
+    """[[nhãn, ô đầu, ô cuối + 1], ...]"""
+    runs: list[list[int]] = []
+    for i, p in enumerate(path):
+        if runs and runs[-1][0] == p:
+            runs[-1][2] = i + 1
+        else:
+            runs.append([int(p), i, i + 1])
+    return runs
+
+
+def estimate_key_regions(
+    segments: list[ChordSegment],
+    beats: BeatGrid | None,
+    duration: float,
+    boundaries: list[float] | None = None,
+) -> list[KeyRegion]:
+    """Chia bài thành các vùng giọng liên tục phủ [0, duration] (đổi giọng, nâng tông).
+
+    1. Chia bài thành ô nhịp (`_bar_grid`). Ở mỗi ô, chấm 24 giọng bằng `_key_scores` trên các hợp âm
+       trong cửa sổ REGION_WINDOW_SECONDS căn giữa ô: không cộng điểm hợp âm đầu/cuối, cộng thêm
+       W_REGION_FIT x tỉ lệ thời lượng hợp âm nằm trọn trong âm giai (để giọng "dung hòa", ví dụ G khi
+       bài đổi từ C sang D, không thắng được hai giọng thật).
+    2. Viterbi trên 24 giọng, mỗi lần đổi giọng bị phạt REGION_SWITCH_PENALTY (đổi sang giọng tương
+       đối hoặc song song nhân thêm REGION_RELATIVE_FACTOR). Điểm mỗi ô nhân theo độ dài ô.
+    3. Vùng ngắn hơn MIN_REGION_BARS ô và MIN_REGION_SECONDS giây bị gộp vào vùng bên cạnh có điểm
+       cao hơn trên đoạn đó.
+    4. Chỗ đổi giọng tinh chỉnh trong ± MODULATION_SEARCH_BARS ô (`_refine_modulation`): điểm đổi hợp
+       âm có ít hợp âm ngoài âm giai nhất, hòa thì ưu tiên chỗ hợp âm chủ của giọng mới bắt đầu, rồi
+       ranh giới đoạn trong `boundaries` (nếu có), rồi điểm gần kết quả Viterbi.
+    5. Chấm lại giọng mỗi vùng bằng `_key_scores` (có thành phần âm giai) trên đúng các hợp âm của
+       vùng, gộp các vùng liền nhau trùng giọng. Bài chỉ có một vùng thì giọng trùng `estimate_key`.
+
+    Trả về list rỗng nếu không có hợp âm nào.
+    """
+    segs = sorted((s for s in segments if s.end > s.start), key=lambda s: s.start)
+    if duration <= 0 or _key_scores(segs) is None:
+        return []
+    grid = _bar_grid(beats, duration)
+    emis = _region_emissions(segs, grid, REGION_WINDOW_SECONDS)
+    return _decode_regions(segs, grid, emis, duration, boundaries)
+
+
+def _region_emissions(segs: list[ChordSegment], grid: np.ndarray, window: float) -> np.ndarray:
+    """(số ô, 24): điểm 24 giọng trên cửa sổ `window` giây căn giữa mỗi ô. Ô không có hợp âm: 0."""
+    centers = (grid[:-1] + grid[1:]) / 2
+    emis = np.zeros((len(centers), 24))
+    half = window / 2
+    for i, c in enumerate(centers):
+        sc = _key_scores(_clip_segments(segs, c - half, c + half), edges=False, w_fit=W_REGION_FIT)
+        if sc is not None:
+            # nhân theo độ dài ô để phạt đổi giọng không phụ thuộc tempo
+            emis[i] = sc * (grid[i + 1] - grid[i]) / REGION_FALLBACK_BAR
+    return emis
+
+
+def _decode_regions(segs: list[ChordSegment], grid: np.ndarray, emis: np.ndarray, duration: float,
+                    boundaries: list[float] | None = None) -> list[KeyRegion]:
+    """Bước 2–5 của `estimate_key_regions` (tách riêng để dò tham số mà không tính lại emis)."""
+    runs = _runs(_viterbi(emis, _switch_cost()))
+
+    # 3. gộp vùng ngắn: lần lượt vùng ngắn nhất, vào bên cạnh có điểm cao hơn trên đoạn đó
+    def too_short(r: list[int]) -> bool:
+        return r[2] - r[1] < MIN_REGION_BARS and grid[r[2]] - grid[r[1]] < MIN_REGION_SECONDS
+
+    while len(runs) > 1:
+        short = [j for j, r in enumerate(runs) if too_short(r)]
+        if not short:
+            break
+        j = min(short, key=lambda j: grid[runs[j][2]] - grid[runs[j][1]])
+        r = runs[j]
+        nbrs = [m for m in (j - 1, j + 1) if 0 <= m < len(runs)]
+        m = max(nbrs, key=lambda m: emis[r[1]:r[2], runs[m][0]].sum())
+        runs[j][0] = runs[m][0]
+        runs = _runs(np.concatenate([[q[0]] * (q[2] - q[1]) for q in runs]))
+
+    # 4. thời điểm đổi giọng: tinh chỉnh quanh ranh giới ô của Viterbi
+    times = [0.0] + [float(grid[r[1]]) for r in runs[1:]] + [float(duration)]
+    bar = float(np.median(np.diff(grid)))
+    for i in range(1, len(times) - 1):
+        times[i] = _refine_modulation(segs, times[i], runs[i - 1][0], runs[i][0],
+                                      times[i - 1], times[i + 1], bar, boundaries)
+
+    # 5. chấm lại từng vùng, gộp vùng trùng giọng
+    regions: list[KeyRegion] = []
+    for (a, b), r in zip(zip(times[:-1], times[1:]), runs):
+        sc = _key_scores(_clip_segments(segs, a, b), w_fit=W_REGION_FIT) if REGION_REESTIMATE else None
+        best = int(np.argmax(sc)) if sc is not None else r[0]
+        if regions and _key_index(regions[-1].key) == best:
+            regions[-1].end = b
+            continue
+        regions.append(KeyRegion(a, b, _key_from_index(best)))
+    for reg in regions:   # độ tin cậy trên cả vùng sau khi gộp
+        sc = _key_scores(_clip_segments(segs, reg.start, reg.end), w_fit=W_REGION_FIT)
+        if sc is not None:
+            reg.key.confidence = _softmax_conf(sc, _key_index(reg.key))
+    if len(regions) == 1:
+        whole = estimate_key(segs)            # một vùng: đúng bằng giọng của cả bài
+        if whole is not None:
+            regions[0].key = whole
+    return regions
+
+
+def _out_of_scale(segs: list[ChordSegment], key_i: int, a: float, b: float) -> float:
+    """Tổng thời lượng (trong [a, b]) của hợp âm có nốt nằm ngoài âm giai của giọng key_i."""
+    out = 0.0
+    for s in segs:
+        ov = min(b, s.end) - max(a, s.start)
+        if ov <= 0:
+            continue
+        c = _chord(s.label)
+        if c.is_chord and (np.roll(c.bitmap > 0, c.root) & ~_SCALES[key_i]).any():
+            out += ov
+    return out
+
+
+def _refine_modulation(segs: list[ChordSegment], t0: float, key_a: int, key_b: int, lo: float, hi: float,
+                       bar: float, boundaries: list[float] | None) -> float:
+    """Chọn chỗ đổi giọng từ key_a sang key_b trong khoảng ± MODULATION_SEARCH_BARS ô quanh t0.
+
+    Ứng viên là các điểm đổi hợp âm (và ranh giới đoạn trong `boundaries`). Chọn điểm có ít thời
+    lượng hợp âm ngoài âm giai nhất (key_a trước điểm đó, key_b sau). Hòa thì ưu tiên điểm mà hợp
+    âm chủ của key_b bắt đầu, rồi ranh giới đoạn (trong SNAP_MODULATION_SECONDS), rồi điểm gần t0.
+    Hợp âm chung của hai giọng (ví dụ G khi C -> D) vì thế thuộc về giọng cũ.
+    """
+    r = MODULATION_SEARCH_BARS * bar
+    a, b = max(lo, t0 - r), min(hi, t0 + r)
+    starts = {round(s.start, 6): s for s in segs}
+    cands = {t for t in starts if a < t < b} | {t0}
+    bounds = [x for x in (boundaries or []) if a < x < b]
+    cands |= set(bounds)
+    tonic_b, minor_b = key_b % 12, key_b >= 12
+
+    def rank(t: float) -> tuple:
+        cost = _out_of_scale(segs, key_a, a, t) + _out_of_scale(segs, key_b, t, b)
+        s = starts.get(round(t, 6))
+        c = _chord(s.label) if s is not None else None
+        is_tonic = c is not None and c.is_chord and c.root == tonic_b and c.has(3 if minor_b else 4)             and not c.has(4 if minor_b else 3)
+        near_bound = any(abs(x - t) <= SNAP_MODULATION_SECONDS for x in bounds)
+        return (round(cost, 3), not is_tonic, not near_bound, abs(t - t0))
+
+    return float(min(cands, key=rank))
+
+
+def _same_loop(a: list[str], b: list[str]) -> bool:
+    """Hai vòng bậc La Mã giống nhau, kể cả khi bắt đầu ở vị trí khác (xoay vòng)."""
+    if len(a) != len(b) or len(a) < 2:
+        return False
+    return any(a[k:] + a[:k] == b for k in range(len(a)))
+
+
+def relate_sections_to_keys(sections: list[Section], regions: list[KeyRegion]) -> list[dict]:
+    """Gắn mỗi đoạn với vùng giọng và tìm đoạn nâng tông.
+
+    Trả về, cho mỗi đoạn: `key_index` (vùng giao nhiều nhất, None nếu không có vùng), `roman` (vòng
+    hợp âm tính theo giọng của vùng đó) và, nếu đoạn là bản dịch giọng của một đoạn trước,
+    `transposed_from` (chỉ số đoạn gốc) cùng `semitones` (khoảng dịch nốt chủ, trong [-6, +5]).
+    Hai đoạn coi là cùng vòng nhưng lệch giọng khi vòng bậc La Mã (theo giọng của mỗi đoạn, trên hợp
+    âm đã rút gọn về hợp âm ba, bỏ đảo) trùng nhau, kể cả xoay vòng, cùng mode, mà nốt chủ khác nhau.
+    Đoạn gốc là đoạn sớm nhất như vậy.
+    """
+    out: list[dict] = []
+    for sec in sections:
+        ki = region_index(regions, sec.start, sec.end)
+        key = regions[ki].key if ki is not None else None
+        roman = [to_roman(p, key) for p in sec.progression] if key is not None else []
+        simple = [to_roman(simplify_label(p), key) for p in sec.progression] if key is not None else []
+        out.append({"key_index": ki, "roman": roman, "transposed_from": None, "semitones": None, "_simple": simple})
+    for i, cur in enumerate(out):
+        if cur["key_index"] is None:
+            continue
+        ki = regions[cur["key_index"]].key
+        for j in range(i):
+            prev = out[j]
+            if prev["key_index"] is None or prev["transposed_from"] is not None:
+                continue
+            kj = regions[prev["key_index"]].key
+            if kj.mode != ki.mode or key_tonic_pc(kj) == key_tonic_pc(ki):
+                continue
+            if _same_loop(prev["_simple"], cur["_simple"]):
+                cur["transposed_from"] = j
+                cur["semitones"] = (key_tonic_pc(ki) - key_tonic_pc(kj) + 6) % 12 - 6
+                break
+    for cur in out:
+        del cur["_simple"]
+    return out
+
+
+def main_region_key(regions: list[KeyRegion]) -> KeyEstimate | None:
+    """Giọng chính: giọng có tổng thời lượng lớn nhất trên các vùng."""
+    dur: dict[int, float] = {}
+    for r in regions:
+        k = _key_index(r.key)
+        dur[k] = dur.get(k, 0.0) + (r.end - r.start)
+    if not dur:
+        return None
+    best = max(dur, key=dur.get)
+    return next(r.key for r in sorted(regions, key=lambda r: r.start - r.end) if _key_index(r.key) == best)
+
+
+def region_index(regions: list[KeyRegion], start: float, end: float) -> int | None:
+    """Chỉ số vùng giao nhiều nhất với [start, end] (đoạn rỗng thì lấy vùng chứa start)."""
+    if not regions:
+        return None
+    if end <= start:
+        for i, r in enumerate(regions):
+            if r.start <= start < r.end:
+                return i
+        return 0 if start < regions[0].start else len(regions) - 1
+    ov = [min(end, r.end) - max(start, r.start) for r in regions]
+    return int(np.argmax(ov))
 
 
 # ---------------------------------------------------------------- 2. bậc La Mã

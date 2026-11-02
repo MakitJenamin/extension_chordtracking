@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -30,8 +31,10 @@ import mir_eval
 import numpy as np
 
 from chordtrack.analysis import analyze_structure, estimate_key, key_to_mir_eval
+from chordtrack.analysis import _chord, estimate_key_regions, pitch_class
 from chordtrack.paths import EVAL_DIR
-from chordtrack.types import ChordSegment, lab_to_segments
+from chordtrack.transpose import white_key_offset
+from chordtrack.types import ChordSegment, KeyEstimate, lab_to_segments
 from eval import datasets as D
 from eval.evaluate import _utf8_console
 
@@ -255,13 +258,224 @@ def run(include_runs: bool = True, verbose: bool = False) -> dict:
     return report
 
 
+# ---------------------------------------------------------------- giọng theo thời gian
+
+def score_key_frames(ref: list[tuple[float, float, str]], est: list[tuple[float, float, str]]) -> dict:
+    """Điểm giọng theo thời gian: `mir_eval.key.weighted_score` trên từng khúc (giao của hai chuỗi
+    vùng), gia quyền theo thời lượng. Khúc mà giọng chuẩn là X (modal) hoặc không có nhãn Key
+    (Silence) thì bỏ. Trả về weighted, correct (tỉ lệ thời gian đúng tuyệt đối), transpose (tỉ lệ
+    thời gian đúng giá trị transpose phím trắng, tức đúng giọng hoặc nhầm sang giọng tương đối) và số
+    giây được chấm."""
+    cuts = sorted({t for a, b, _ in ref + est for t in (a, b)})
+    tot = w_sum = c_sum = t_sum = 0.0
+    for a, b in zip(cuts[:-1], cuts[1:]):
+        m = (a + b) / 2
+        r = next((k for s, e, k in ref if s <= m < e), None)
+        if r is None or r == "X":
+            continue
+        e_ = next((k for s, e, k in est if s <= m < e), "X")
+        w = float(mir_eval.key.weighted_score(r, e_)) if e_ != "X" else 0.0
+        tot += b - a
+        w_sum += w * (b - a)
+        c_sum += (w == 1.0) * (b - a)
+        t_sum += (e_ != "X" and _white_offset(r) == _white_offset(e_)) * (b - a)
+    if tot <= 0:
+        return {"weighted": float("nan"), "correct": float("nan"), "transpose": float("nan"), "seconds": 0.0}
+    return {"weighted": w_sum / tot, "correct": c_sum / tot, "transpose": t_sum / tot, "seconds": tot}
+
+
+def _white_offset(key: str) -> int:
+    tonic, mode = key.split()
+    return white_key_offset(KeyEstimate(tonic, mode))
+
+
+def has_modulation(ref: list[tuple[float, float, str]]) -> bool:
+    """Bài có ít nhất hai giọng khác nhau (so theo cao độ) trong keylab, không tính X."""
+    keys = {k for _, _, k in ref if k != "X"}
+    canon = set()
+    for k in keys:
+        tonic, mode = k.split()
+        canon.add((pitch_class(tonic), mode))
+    return len(canon) >= 2
+
+
+def evaluate_key_regions(segs: list[ChordSegment], ref: list[tuple[float, float, str]], duration: float) -> dict:
+    """So giọng theo vùng (`estimate_key_regions`) với một giọng cho cả bài (`estimate_key`)."""
+    t0 = time.perf_counter()
+    regions = estimate_key_regions(segs, None, duration)
+    elapsed = time.perf_counter() - t0
+    single = key_to_mir_eval(estimate_key(segs))
+    reg = [(r.start, r.end, key_to_mir_eval(r.key)) for r in regions]
+    return {
+        "single": score_key_frames(ref, [(0.0, duration, single)]),
+        "regions": score_key_frames(ref, reg),
+        "n_regions": len(regions),
+        "n_ref_keys": len({k for _, _, k in ref if k != "X"}),
+        "modulating": has_modulation(ref),
+        "est_regions": reg,
+        "time": elapsed,
+    }
+
+
+def aggregate_key_regions(results: dict[str, dict]) -> dict:
+    """Trung bình gia quyền theo số giây được chấm, cho cả bộ và riêng nhóm bài đổi giọng."""
+    out = {}
+    for group, rows in (("all", list(results.values())),
+                        ("modulating", [r for r in results.values() if r["modulating"]]),
+                        ("single_key", [r for r in results.values() if not r["modulating"]])):
+        rows = [r for r in rows if r["single"]["seconds"] > 0]
+        g: dict = {"n_songs": len(rows)}
+        secs = np.array([r["single"]["seconds"] for r in rows])
+        for name in ("single", "regions"):
+            for m in ("weighted", "correct", "transpose"):
+                g[f"{name}_{m}"] = float(np.average([r[name][m] for r in rows], weights=secs)) if rows else float("nan")
+        g["mean_regions"] = float(np.mean([r["n_regions"] for r in rows])) if rows else float("nan")
+        g["mean_ref_keys"] = float(np.mean([r["n_ref_keys"] for r in rows])) if rows else float("nan")
+        out[group] = g
+    return out
+
+
+def format_key_regions(agg: dict) -> str:
+    lines = ["== Giọng theo thời gian (chordlab, gia quyền thời lượng; w = weighted, đ = đúng tuyệt đối, "
+             "tr = đúng transpose phím trắng)",
+             f"{'nhóm':12s}{'số bài':>7s}{'1 giọng w':>10s}{'đ':>7s}{'tr':>7s}{'theo vùng w':>12s}{'đ':>7s}{'tr':>7s}"
+             f"{'số vùng':>9s}{'số giọng chuẩn':>16s}"]
+    for group, g in agg.items():
+        lines.append(f"{group:12s}{g['n_songs']:7d}{g['single_weighted']:10.3f}{g['single_correct']:7.3f}"
+                     f"{g['single_transpose']:7.3f}{g['regions_weighted']:12.3f}{g['regions_correct']:7.3f}"
+                     f"{g['regions_transpose']:7.3f}{g['mean_regions']:9.2f}{g['mean_ref_keys']:16.2f}")
+    return "\n".join(lines)
+
+
+def run_key_regions(verbose: bool = False) -> dict:
+    """Chấm giọng theo thời gian trên mọi bài Isophonics có chordlab và keylab."""
+    D.download_labels()
+    D.download_key_seg_labels()
+    results: dict[str, dict] = {}
+    for name, lab, keylab, _ in ground_truth_songs():
+        if keylab is None:
+            continue
+        segs = lab_to_segments(lab)
+        ref = read_keylab(keylab)
+        if not segs or not ref:
+            continue
+        duration = max(segs[-1].end, ref[-1][1])
+        results[name] = r = evaluate_key_regions(segs, ref, duration)
+        if verbose and (r["modulating"] or r["n_regions"] > 1):
+            print(f"{name:45s} 1 giọng {r['single']['weighted']:.2f} -> vùng {r['regions']['weighted']:.2f}  "
+                  f"chuẩn: {' | '.join(f'{a:.0f}-{b:.0f} {k}' for a, b, k in ref if k != 'X')}")
+            print(f"{'':45s} đoán: {' | '.join(f'{a:.0f}-{b:.0f} {k}' for a, b, k in r['est_regions'])}")
+    return {"mean": aggregate_key_regions(results), "files": results}
+
+
+# ---------------------------------------------------------------- giọng theo thời gian: bộ Kajiura
+
+KAJIURA_DIR = EVAL_DIR / "kajiura"
+_CHO_KEY_RE = re.compile(r"\{key:\s*([^}]*)\}")
+_CHO_CHORD_RE = re.compile(r"^([A-G][#b]?)(.*)$")
+
+
+def _cho_key(text: str) -> str:
+    """'F#m' -> 'F# minor', 'Eb' -> 'Eb major'. Không đọc được -> 'X'."""
+    m = _CHO_CHORD_RE.match(text.strip().replace("＃", "#").replace("♭", "b"))
+    if m is None:
+        return "X"
+    root, rest = m.groups()
+    return f"{root} {'minor' if rest.startswith('m') and not rest.startswith('maj') else 'major'}"
+
+
+def _cho_chord_class(token: str) -> tuple[int, bool] | None:
+    """Ký hiệu ChordWiki -> (nốt gốc, có quãng ba thứ) để so khớp với nhãn Harte."""
+    m = _CHO_CHORD_RE.match(token.replace("＃", "#").replace("♭", "b"))
+    if m is None:
+        return None
+    root, rest = m.groups()
+    return pitch_class(root), rest.startswith("m") and not rest.startswith("maj") and not rest.startswith("M")
+
+
+def kajiura_key_reference(name: str) -> list[tuple[float, float, str]] | None:
+    """Giọng theo thời gian của một bài Kajiura: lấy dấu `{key:...}` trong bản ChordWiki
+    (`sheets/<name>.cho`) gán cho từng hợp âm, rồi căn chuỗi hợp âm của bản đó với nhãn đã căn
+    thời gian (`ref/<name>.lab`) bằng difflib. Chỉ đọc dữ liệu, không sửa. None nếu thiếu file."""
+    import difflib
+
+    cho, lab = KAJIURA_DIR / "sheets" / f"{name}.cho", KAJIURA_DIR / "ref" / f"{name}.lab"
+    if not cho.exists() or not lab.exists():
+        return None
+    key, toks = "X", []
+    for line in cho.read_text(encoding="utf-8").splitlines():
+        m = _CHO_KEY_RE.search(line)
+        if m:
+            key = _cho_key(m.group(1))
+            continue
+        for grp in re.findall(r"\[([^\]]*)\]", line):
+            for tok in grp.split():
+                c = _cho_chord_class(tok)
+                if c is not None and (not toks or toks[-1][0] != c):   # lab gộp hợp âm trùng liên tiếp
+                    toks.append((c, key))
+    segs = [s for s in lab_to_segments(lab) if s.end > s.start]
+    if not toks or not segs:
+        return None
+    lab_cls = []
+    for s in segs:
+        c = _chord(s.label)
+        lab_cls.append((c.root, c.has(3) and not c.has(4)) if c.is_chord else None)
+    sm = difflib.SequenceMatcher(a=[c for c, _ in toks], b=lab_cls, autojunk=False)
+    seg_key: list[str | None] = [None] * len(segs)
+    for a0, b0, size in sm.get_matching_blocks():
+        for k in range(size):
+            seg_key[b0 + k] = toks[a0 + k][1]
+    # đoạn không khớp: lấy giọng của hợp âm khớp gần nhất phía trước (hoặc phía sau nếu ở đầu bài)
+    last = next((k for k in seg_key if k is not None), "X")
+    out: list[tuple[float, float, str]] = []
+    for s, k in zip(segs, seg_key):
+        last = k if k is not None else last
+        if out and out[-1][2] == last and abs(out[-1][1] - s.start) < 1e-6:
+            out[-1] = (out[-1][0], s.end, last)
+        else:
+            out.append((s.start, s.end, last))
+    return out
+
+
+def run_kajiura_key_regions(verbose: bool = False) -> dict | None:
+    """Chấm giọng theo thời gian trên bộ Kajiura (nhãn hợp âm chuẩn đã căn thời gian)."""
+    if not (KAJIURA_DIR / "ref").is_dir():
+        return None
+    results: dict[str, dict] = {}
+    for lab in sorted((KAJIURA_DIR / "ref").glob("*.lab")):
+        ref = kajiura_key_reference(lab.stem)
+        segs = lab_to_segments(lab)
+        if not ref or not segs:
+            continue
+        results[lab.stem] = r = evaluate_key_regions(segs, ref, max(segs[-1].end, ref[-1][1]))
+        if verbose:
+            print(f"{lab.stem:28s} 1 giọng {r['single']['weighted']:.2f} -> vùng {r['regions']['weighted']:.2f}")
+            print(f"{'':28s} chuẩn: {' | '.join(f'{a:.0f}-{b:.0f} {k}' for a, b, k in ref)}")
+            print(f"{'':28s} đoán:  {' | '.join(f'{a:.0f}-{b:.0f} {k}' for a, b, k in r['est_regions'])}")
+    return {"mean": aggregate_key_regions(results), "files": results}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Chấm giọng và chia đoạn trên Isophonics The Beatles")
     ap.add_argument("--out", type=Path, default=OUT_DEFAULT)
     ap.add_argument("--no-runs", action="store_true", help="chỉ chấm trên chordlab")
     ap.add_argument("--verbose", action="store_true", help="in điểm từng bài")
+    ap.add_argument("--key-regions", action="store_true",
+                    help="chỉ chấm giọng theo thời gian (theo vùng so với một giọng cho cả bài)")
     args = ap.parse_args(argv)
     _utf8_console()
+    if args.key_regions:
+        rep = run_key_regions(verbose=args.verbose)
+        print(format_key_regions(rep["mean"]))
+        kaj = run_kajiura_key_regions(verbose=args.verbose)
+        if kaj is not None:
+            print(format_key_regions(kaj["mean"]).replace("(chordlab,", "(Kajiura, nhãn chuẩn,"))
+            rep = {"isophonics": rep, "kajiura": kaj}
+        out = args.out.with_name("key_regions.json")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(rep, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"Đã ghi {out}")
+        return 0
     report = run(include_runs=not args.no_runs, verbose=args.verbose)
     for name, rep in report.items():
         print(format_summary(name, rep["mean"]))

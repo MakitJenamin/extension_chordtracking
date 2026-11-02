@@ -16,13 +16,25 @@ ALL_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm"]
 
 def check_schema(result: dict) -> None:
     """Dạng JSON mà extension sẽ đọc."""
-    assert set(result) == {"version", "song_id", "source", "duration", "tempo", "key", "beats", "downbeats",
-                           "chords", "sections", "timing", "pipeline"}
+    assert set(result) == {"version", "song_id", "source", "duration", "tempo", "key", "keys", "modulations",
+                           "beats", "downbeats", "chords", "sections", "timing", "pipeline"}
     assert result["version"] == 1
     assert isinstance(result["song_id"], str)
     assert {"type", "title", "url"} <= set(result["source"])
     assert isinstance(result["duration"], float)
     assert result["key"] is None or set(result["key"]) == {"tonic", "mode", "confidence"}
+    keys = result["keys"]
+    for k in keys:
+        assert set(k) == {"start", "end", "tonic", "mode", "confidence", "white_key_transpose"}
+        assert -6 <= k["white_key_transpose"] <= 5
+    if keys:
+        assert keys[0]["start"] == 0.0 and keys[-1]["end"] == pytest.approx(result["duration"], abs=1e-3)
+        for a, b in zip(keys, keys[1:]):
+            assert a["end"] == pytest.approx(b["start"])
+    assert len(result["modulations"]) == max(0, len(keys) - 1)
+    for m, b in zip(result["modulations"], keys[1:]):
+        assert set(m) == {"time", "from", "to", "semitones", "transpose_from", "transpose_to"}
+        assert m["time"] == b["start"] and m["transpose_to"] == b["white_key_transpose"]
     assert all(isinstance(t, float) for t in result["beats"] + result["downbeats"])
     assert set(result["downbeats"]) <= set(result["beats"])
     chords = result["chords"]
@@ -30,12 +42,15 @@ def check_schema(result: dict) -> None:
     for a, b in zip(chords, chords[1:]):
         assert a["end"] == pytest.approx(b["start"])
     for c in chords:
-        assert set(c) == {"start", "end", "label", "symbol", "roman", "confidence", "uncertain"}
+        assert set(c) == {"start", "end", "label", "symbol", "roman", "white_key_symbol", "key_index",
+                          "confidence", "uncertain"}
         assert isinstance(c["uncertain"], bool)
-        if result["key"] is None:
-            assert c["roman"] is None
+        assert c["key_index"] is None or 0 <= c["key_index"] < len(keys)
+        if c["key_index"] is None:
+            assert c["roman"] is None and c["white_key_symbol"] is None
+    base = {"start", "end", "label", "progression", "roman", "key_index"}
     for s in result["sections"]:
-        assert set(s) == {"start", "end", "label", "progression", "roman"}
+        assert base <= set(s) and set(s) - base <= {"transposed_from", "semitones"}
     assert set(result["timing"]) == set(pipeline.TIMING_KEYS)
     assert {"separation_model", "bass_model", "chord_models"} <= set(result["pipeline"])
     json.dumps(result)  # phải ghi ra JSON được
@@ -179,7 +194,8 @@ def test_chord_stem_parameter(fake_env):
 
 def test_key_roman_and_sections(fake_env, monkeypatch):
     key = KeyEstimate("C", "major", 0.9)
-    romans = {"C:maj": "I", "G:maj": "V", "A:min7": "vi7", "F:maj/3": "IV6"}
+    romans = {"C:maj": "I", "G:maj": "V", "A:min7": "vi7", "F:maj/3": "IV6", "G:maj/3": "V6", "A:min": "vi",
+              "F:maj": "IV"}
     monkeypatch.setattr(pipeline.analysis, "estimate_key", lambda segs: key)
     monkeypatch.setattr(pipeline.analysis, "to_roman", lambda label, k: romans[label])
     monkeypatch.setattr(pipeline.analysis, "analyze_structure", lambda segs, beats, dur, k: [
@@ -188,16 +204,83 @@ def test_key_roman_and_sections(fake_env, monkeypatch):
     check_schema(result)
     assert result["key"] == {"tonic": "C", "mode": "major", "confidence": 0.9}
     assert [c["roman"] for c in result["chords"]] == [None, "I", "V", "vi7", "IV6", None]
-    assert result["sections"] == [{"start": 0.0, "end": DURATION, "label": "verse",
+    assert [c["white_key_symbol"] for c in result["chords"]] == ["N.C.", "C", "G", "Am7", "F/A", "N.C."]
+    assert {c["key_index"] for c in result["chords"]} == {0}
+    assert result["keys"] == [{"start": 0.0, "end": DURATION, "tonic": "C", "mode": "major", "confidence": 0.9,
+                               "white_key_transpose": 0}]
+    assert result["modulations"] == []
+    assert result["sections"] == [{"start": 0.0, "end": DURATION, "label": "verse", "key_index": 0,
                                    "progression": ["C", "G/B", "Am", "F"], "roman": ["I", "V6", "vi", "IV"]}]
 
 
 def test_sections_roman_null_without_key(fake_env, monkeypatch):
     monkeypatch.setattr(pipeline.analysis, "estimate_key", lambda segs: None)
+    monkeypatch.setattr(pipeline.analysis, "estimate_key_regions", lambda *a, **k: [])
     monkeypatch.setattr(pipeline.analysis, "analyze_structure", lambda segs, beats, dur, k: [
         Section(0.0, DURATION, "A", ["C:maj"], [])])
     result = pipeline.analyze("abcdefghijk")
+    check_schema(result)
     assert result["sections"][0]["roman"] is None and result["sections"][0]["progression"] == ["C"]
+    assert result["keys"] == [] and result["modulations"] == []
+    assert all(c["key_index"] is None and c["white_key_symbol"] is None for c in result["chords"])
+
+
+def _modulating_song():
+    """16 ô C trưởng (I–V–vi–IV) rồi 16 ô D trưởng, mỗi hợp âm một ô 2 s."""
+    segs, t = [], 0.0
+    for lab in ["C:maj", "G:maj", "A:min", "F:maj"] * 4 + ["D:maj", "A:maj/3", "B:min", "G:maj"] * 4:
+        segs.append(ChordSegment(t, t + 2.0, lab, 0.9))
+        t += 2.0
+    beats = np.arange(0.0, t, 0.5)
+    return segs, BeatGrid(beats=beats, downbeats=beats[::4], tempo=120.0), t
+
+
+def _modulating_result(with_boundaries: bool = True) -> dict:
+    segs, grid, dur = _modulating_song()
+    key = pipeline.analysis.estimate_key(segs)
+    sections = pipeline.analysis.analyze_structure(segs, grid, dur, key)
+    bounds = [s.start for s in sections[1:]] if with_boundaries else None
+    regions = pipeline.analysis.estimate_key_regions(segs, grid, dur, bounds)
+    src = AudioSource(song_id="x", path=None, type="file", title="nâng tông")
+    return pipeline.build_result(src, duration=dur, grid=grid, segments=segs, key=key, sections=sections,
+                                 timing={}, config=pipeline.PipelineConfig(), regions=regions)
+
+
+def test_build_result_with_key_change():
+    result = _modulating_result()
+    check_schema(result)
+    assert [(k["tonic"], k["mode"], k["white_key_transpose"]) for k in result["keys"]] == [
+        ("C", "major", 0), ("D", "major", 2)]
+    (mod,) = result["modulations"]
+    assert mod["from"] == "C major" and mod["to"] == "D major" and mod["semitones"] == 2
+    assert (mod["transpose_from"], mod["transpose_to"]) == (0, 2)
+    assert abs(mod["time"] - 32.0) < 2.0
+    late = [c for c in result["chords"] if c["start"] >= 34.0]
+    assert {c["key_index"] for c in late} == {1}
+    # bậc La Mã theo giọng của vùng, ký hiệu phím trắng là nốt trắng
+    assert [c["roman"] for c in late[:4]] == ["V/3", "vi", "IV", "I"]
+    assert [c["white_key_symbol"] for c in late[:4]] == ["G/B", "Am", "F", "C"]
+    assert [c["symbol"] for c in late[:4]] == ["A/C#", "Bm", "G", "D"]
+    early = [c for c in result["chords"] if c["end"] <= 30.0]
+    assert {c["key_index"] for c in early} == {0}
+    assert [c["white_key_symbol"] for c in early[:4]] == ["C", "G", "Am", "F"]
+    # đoạn ở vùng D có cùng vòng bậc La Mã với một đoạn ở vùng C: nhận ra là nâng tông
+    secs = result["sections"]
+    moved = [s for s in secs if s.get("transposed_from") is not None]
+    assert moved, secs
+    for s in moved:
+        src_sec = secs[s["transposed_from"]]
+        assert s["semitones"] == 2 and s["label"] == src_sec["label"]
+        assert s["key_index"] == 1 and src_sec["key_index"] == 0
+
+
+def test_cli_prints_modulation_and_white_keys():
+    result = _modulating_result(with_boundaries=False)
+    text = cli.summarize(result)
+    assert "C major -> D major" in text and "đặt transpose đàn: +2" in text
+    lines = cli.white_key_lines(result)
+    assert "[transpose 0]" in lines[0] and "[transpose +2]" in lines[2]
+    assert lines[1].split()[:4] == ["C", "G", "Am", "F"] and lines[3].split()[:4] == ["C", "G/B", "Am", "F"]
 
 
 @pytest.mark.parametrize("t, s", [(0, "0:00.00"), (59.999, "1:00.00"), (61.5, "1:01.50"), (243.03, "4:03.03")])

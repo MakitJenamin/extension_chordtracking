@@ -67,6 +67,15 @@ class KeyEstimate:
 
 
 @dataclass
+class KeyRegion:
+    """Một vùng giọng của bài (analysis.estimate_key_regions). Các vùng phủ liên tục [0, duration]."""
+
+    start: float
+    end: float
+    key: KeyEstimate
+
+
+@dataclass
 class Section:
     """Một đoạn của bài, kèm vòng hợp âm (analysis.py)."""
 

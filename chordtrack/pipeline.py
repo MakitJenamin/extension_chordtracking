@@ -1,8 +1,8 @@
 """Ghép pipeline end-to-end: nguồn audio (videoId, URL, file) -> JSON hợp âm.
 
     fetch_audio -> separate (cache ở CACHE_DIR/<song_id>/) -> track_beats
-    -> run_chordmini + run_cnnlstm -> fusion.fuse -> analysis.estimate_key, analyze_structure
-    -> JSON (xem `build_result`)
+    -> run_chordmini + run_cnnlstm -> fusion.fuse -> analysis.estimate_key, analyze_structure,
+    estimate_key_regions -> JSON (xem `build_result`)
 
 Mỗi bước dùng GPU tự lấy `gpu_lock()` riêng bên trong hàm của nó (separate, track_beats,
 run_chordmini, run_cnnlstm), nên ở đây không lồng khóa; giữa các bước gọi `free_vram()`.
@@ -24,14 +24,14 @@ import soundfile as sf
 
 from chordtrack import analysis, fusion, paths
 from chordtrack import audio as audio_mod
-from chordtrack import separation, symbols
+from chordtrack import separation, symbols, transpose
 from chordtrack.audio import read_json, write_json
 from chordtrack.beats import track_beats
 from chordtrack.chords.chordmini import run_chordmini
 from chordtrack.chords.cnnlstm import run_cnnlstm
 from chordtrack.gpu import free_vram
 from chordtrack.symbols import harte_to_symbol
-from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstimate, Section, Stems
+from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstimate, KeyRegion, Section, Stems
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def code_revision() -> str:
     import chordtrack.chords.cnnlstm
 
     h = hashlib.sha1()
-    for mod in (fusion, analysis, symbols, chordtrack.beats, chordtrack.chords.chordmini,
+    for mod in (fusion, analysis, symbols, transpose, chordtrack.beats, chordtrack.chords.chordmini,
                 chordtrack.chords.cnnlstm):
         h.update(Path(mod.__file__).read_bytes())
     h.update(Path(__file__).read_bytes())
@@ -152,12 +152,13 @@ def analyze(
     t0 = time.perf_counter()
     key = analysis.estimate_key(segments)
     sections = analysis.analyze_structure(segments, grid, duration, key)
+    regions = analysis.estimate_key_regions(segments, grid, duration, [s.start for s in sections[1:]])
     timing["analysis"] = time.perf_counter() - t0
     timing["total"] = time.perf_counter() - t_start
 
     result = build_result(
         src, duration=duration, grid=grid, segments=segments, key=key, sections=sections,
-        timing=timing, config=config, peak_vram_mb=vram,
+        timing=timing, config=config, peak_vram_mb=vram, regions=regions,
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_json(result_path, result)
@@ -211,26 +212,77 @@ def _is_uncertain(c: float | None) -> bool:
     return c is None or c < UNCERTAIN_THRESHOLD
 
 
-def chord_to_json(seg: ChordSegment, key: KeyEstimate | None) -> dict:
+def chord_to_json(seg: ChordSegment, key: KeyEstimate | None, key_index: int | None = None) -> dict:
+    """Một hợp âm. `key` là giọng của vùng chứa hợp âm (chỉ số `key_index` trong `keys`);
+    bậc La Mã và ký hiệu phím trắng tính theo giọng đó."""
+    is_chord = seg.label not in ("N", "X")
     return {
         "start": round(float(seg.start), 3),
         "end": round(float(seg.end), 3),
         "label": seg.label,
         "symbol": harte_to_symbol(seg.label, key),
-        "roman": analysis.to_roman(seg.label, key) if key is not None and seg.label not in ("N", "X") else None,
+        "roman": analysis.to_roman(seg.label, key) if key is not None and is_chord else None,
+        "white_key_symbol": transpose.white_key_symbol(seg.label, key) if key is not None else None,
+        "key_index": key_index,
         "confidence": _confidence(seg.confidence),
         "uncertain": _is_uncertain(seg.confidence),
     }
 
 
-def section_to_json(sec: Section, key: KeyEstimate | None) -> dict:
-    return {
+def section_to_json(sec: Section, key: KeyEstimate | None, info: dict | None = None) -> dict:
+    """Một đoạn. `info` là phần tử tương ứng của `analysis.relate_sections_to_keys`: khi có thì
+    `roman` tính theo giọng của vùng chứa đoạn và có thêm `key_index`, `transposed_from`, `semitones`."""
+    out = {
         "start": round(float(sec.start), 3),
         "end": round(float(sec.end), 3),
         "label": sec.label,
         "progression": [harte_to_symbol(label, key) for label in sec.progression],
         "roman": list(sec.roman) if key is not None else None,
     }
+    if info is not None:
+        out["roman"] = list(info["roman"]) if info["key_index"] is not None else None
+        out["key_index"] = info["key_index"]
+        if info["transposed_from"] is not None:
+            out["transposed_from"] = info["transposed_from"]
+            out["semitones"] = info["semitones"]
+    return out
+
+
+def key_region_to_json(region: KeyRegion) -> dict:
+    k = region.key
+    return {
+        "start": round(float(region.start), 3),
+        "end": round(float(region.end), 3),
+        "tonic": k.tonic,
+        "mode": k.mode,
+        "confidence": _confidence(k.confidence),
+        "white_key_transpose": transpose.white_key_offset(k),
+    }
+
+
+def modulations_to_json(regions: list[KeyRegion]) -> list[dict]:
+    """Chỗ đổi giọng giữa hai vùng liền nhau. `semitones`: khoảng dịch nốt chủ trong [-6, +5]
+    (C trưởng -> D trưởng = +2, C trưởng -> A thứ = -3); `transpose_from/to`: giá trị transpose
+    phím trắng trước và sau chỗ đổi."""
+    out = []
+    for a, b in zip(regions, regions[1:]):
+        out.append({
+            "time": round(float(b.start), 3),
+            "from": analysis.key_to_mir_eval(a.key),
+            "to": analysis.key_to_mir_eval(b.key),
+            "semitones": transpose.wrap_semitones(analysis.key_tonic_pc(b.key) - analysis.key_tonic_pc(a.key)),
+            "transpose_from": transpose.white_key_offset(a.key),
+            "transpose_to": transpose.white_key_offset(b.key),
+        })
+    return out
+
+
+def _relabel_transposed(sections_json: list[dict]) -> None:
+    """Đoạn nâng tông lấy nhãn của đoạn gốc (ví dụ chorus cuối nâng +2 vẫn là "chorus")."""
+    for s in sections_json:
+        src = s.get("transposed_from")
+        if src is not None:
+            s["label"] = sections_json[src]["label"]
 
 
 def build_result(
@@ -244,7 +296,19 @@ def build_result(
     timing: dict[str, float],
     config: PipelineConfig,
     peak_vram_mb: dict[str, Any] | None = None,
+    regions: list[KeyRegion] | None = None,
 ) -> dict:
+    """Dựng JSON kết quả. `regions` (vùng giọng) None hoặc rỗng thì mọi hợp âm và đoạn dùng `key`."""
+    regions = list(regions or [])
+    chord_idx = [analysis.region_index(regions, s.start, s.end) for s in segments]
+    chords = [chord_to_json(s, regions[i].key if i is not None else key, i) for s, i in zip(segments, chord_idx)]
+    if regions:
+        infos = analysis.relate_sections_to_keys(sections, regions)
+        secs = [section_to_json(s, regions[inf["key_index"]].key if inf["key_index"] is not None else key, inf)
+                for s, inf in zip(sections, infos)]
+        _relabel_transposed(secs)
+    else:
+        secs = [section_to_json(s, key) | {"key_index": None} for s in sections]
     return {
         "version": RESULT_VERSION,
         "song_id": src.song_id,
@@ -256,8 +320,10 @@ def build_result(
         },
         "beats": [round(float(t), 3) for t in (grid.beats if grid is not None else [])],
         "downbeats": [round(float(t), 3) for t in (grid.downbeats if grid is not None else [])],
-        "chords": [chord_to_json(s, key) for s in segments],
-        "sections": [section_to_json(s, key) for s in sections],
+        "keys": [key_region_to_json(r) for r in regions],
+        "modulations": modulations_to_json(regions),
+        "chords": chords,
+        "sections": secs,
         "timing": {k: round(float(timing.get(k, 0.0)), 2) for k in TIMING_KEYS},
         "pipeline": {
             "separation_model": separation.ROFORMER_MODEL if config.use_separation else None,

@@ -202,6 +202,42 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
     - Tên đoạn (intro, verse, chorus, bridge, outro) là heuristic, `mir_eval` không chấm phần này. Đoạn không đặt tên được thì giữ chữ cái.
   - Vòng hợp âm: n-gram 2–8 hợp âm (đã rút gọn về hợp âm ba và bỏ hợp âm trùng liên tiếp), đếm gộp trên mọi đoạn cùng nhãn, phải phủ ít nhất 60% chuỗi. Bậc La Mã: hợp âm đảo ghi theo bậc bass của Harte (`I/5`), không dùng figured bass.
   - "Let It Be": chordlab cho giọng C major, verse `I – V – vi – IVmaj7 – I – V – IV`. Nhãn của ChordMini trên audio thật kèm phách beat_this cũng ra C major, verse `I – V – vi – IV – I`, analysis mất 16 ms.
+  - **Giọng theo vùng** (đổi giọng, nâng tông; `estimate_key_regions`, 2026-11-03). Chấm 24 giọng trên cửa sổ trượt 16 s
+    căn giữa mỗi ô nhịp (điểm `_key_scores` bỏ phần hợp âm đầu/cuối, cộng 2 x tỉ lệ thời lượng hợp âm nằm trọn trong
+    âm giai), giải Viterbi với phạt đổi giọng 12 (đổi sang giọng tương đối/song song x0.7), gộp vùng < 4 ô và < 8 s,
+    tinh chỉnh chỗ đổi trong ± 2 ô (ít hợp âm ngoài âm giai nhất, ưu tiên chỗ hợp âm chủ mới bắt đầu, rồi ranh giới
+    đoạn), rồi chấm lại giọng từng vùng. Bài một vùng thì giọng đúng bằng `estimate_key`.
+    Chấm bằng `python -m eval.eval_analysis --key-regions`: tỉ lệ thời gian đúng giọng, `mir_eval.key.weighted_score`
+    theo từng khúc, gia quyền thời lượng, trên nhãn hợp âm chuẩn. "tr" là tỉ lệ thời gian đúng giá trị transpose phím
+    trắng (đúng giọng hoặc chỉ nhầm sang giọng tương đối).
+
+    | Bộ | Nhóm | Số bài | 1 giọng: weighted / tr | Theo vùng: weighted / tr | Số vùng (đoán / chuẩn) |
+    |---|---|---|---|---|---|
+    | Isophonics (keylab) | cả bộ | 178 | 0.852 / 0.847 | 0.841 / 0.842 | 1.33 / 1.14 |
+    | | **có đổi giọng** | 21 | 0.600 / 0.635 | **0.683 / 0.740** | 2.24 / 2.19 |
+    | | một giọng | 157 | 0.888 / 0.877 | 0.863 / 0.857 | 1.21 / 1.00 |
+    | Kajiura (ChordWiki `{key:}`) | cả bộ | 17 | 0.384 / 0.427 | **0.642 / 0.724** | 5.35 / 2.82 |
+    | | **có đổi giọng** | 12 | 0.367 / 0.398 | **0.702 / 0.794** | 6.33 / 3.58 |
+    | | một giọng | 5 | 0.425 / 0.496 | 0.499 / 0.554 | 3.00 / 1.00 |
+
+    - Giọng chuẩn của Kajiura: dấu `{key:...}` trong `data/eval/kajiura/sheets/*.cho`, gán cho từng hợp âm rồi căn với
+      `ref/*.lab` bằng difflib (`kajiura_key_reference`). 15 bài không ghi `{key:}` nên không chấm. Bài chỉ ghi một
+      giọng có thể do người chép lười ghi đổi giọng, nên nhóm "một giọng" của Kajiura không đáng tin.
+    - Bài Kajiura tốt: akeboshi 0.50 → 0.99, magia 0.73 → 0.99, heavenly_blue 0.25 → 0.94, "to the beginning"
+      0.00 → 0.69 (D#m, Cm, Am, F#m, Em, Am, F#m, C, F#m, D#m: tìm ra 7 vùng, gộp mất đoạn Cm 12 s và Em 12 s).
+    - Đánh đổi: bài Beatles một giọng mất 0.025 (13% bài bị tách thêm một vùng, thường là đoạn bridge sang giọng IV
+      hoặc tương đối). Phạt cao hơn (24) giữ được Beatles (0.849) nhưng Kajiura chỉ còn 0.630 và bỏ sót vùng nâng
+      tông ngắn hơn 32 s. Chọn bộ hiện tại vì nhạc người dùng nghe đổi giọng nhiều.
+    - ⚠️ Không có thành phần "âm giai", vòng I–V–vi–IV nâng +2 bị nhận thành một giọng "dung hòa" (C → D thành G cả
+      bài), vì giọng bậc IV chỉ thua giọng thật 0.1–0.2 điểm mỗi ô. Thành phần âm giai sửa được lỗi này.
+    - Giọng chính (`key`) vẫn là `estimate_key` trên cả bài: 0.870 trên giọng chính của keylab, hơn lấy vùng dài nhất
+      (0.860).
+    - JSON thêm `keys[]` (vùng giọng kèm `white_key_transpose`), `modulations[]` (`time`, `from`, `to`, `semitones`,
+      `transpose_from`, `transpose_to`); `chords[]` thêm `white_key_symbol`, `key_index`, và `roman` tính theo giọng
+      của vùng; `sections[]` thêm `key_index`, và `transposed_from`, `semitones` khi đoạn là bản nâng tông của đoạn
+      trước (cùng vòng bậc La Mã trên hợp âm ba, kể cả xoay vòng); đoạn đó lấy nhãn của đoạn gốc.
+    - Chế độ phím trắng (`chordtrack/transpose.py`): transpose +k nghĩa là bấm C đàn phát C+k; hợp âm để bấm = hợp âm
+      gốc dịch -k. Giọng trưởng về C, thứ về A, k trong [-6, +5] (F# trưởng, D#/Eb thứ: -6).
 
 - [x] **Kết hợp model và hậu xử lý (bước 6–8), 2026-11-03.** Chi tiết ở mục "Kết quả đánh giá đợt 2" bên dưới.
   - Bộ đánh giá từ 31 lên **42 bài**: bỏ quy tắc loại theo độ dài, thay bằng độ trôi đầu–cuối bài (`eval/README.md`).
