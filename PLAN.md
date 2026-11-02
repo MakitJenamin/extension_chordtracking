@@ -115,6 +115,17 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 | Nút "đơn giản hóa" | Làm sau |
 | Bấm vào hợp âm để tua video | Nhảy video tới đúng chỗ đó để luyện |
 
+### Giao diện đã chốt với người dùng (2026-11-03, theo mockup)
+
+Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video (có vạch đỏ cố định ở khoảng 28% chiều rộng), bảng "Cấu trúc bài" bên phải, thanh tua có dải màu theo đoạn và vạch vàng ở chỗ đổi giọng.
+
+- **Ba chế độ hiển thị:** Gốc (có Tông −/+), **🎹 Phím trắng** (mặc định cho người dùng, vì người dùng chơi piano), Bậc La Mã. Tùy chọn: ẩn hợp âm đảo, đơn giản hóa.
+- **Phím trắng:** ô "Đặt transpose đàn: +k" theo vùng giọng đang phát. Báo trước 8 giây khi sắp đổi giọng. Trên dải hợp âm có vạch "⬆ transpose +a → +b".
+- **Nhịp:** hiện số chỉ nhịp (ví dụ "Nhịp 4/4", suy ra từ số phách giữa các phách mạnh) và các chấm 1-2-3-4 sáng theo phách, phách 1 đỏ và to hơn. Trên dải hợp âm có **vạch dọc ở mỗi phách**: vạch cao kèm số ô nhịp ở phách mạnh, vạch thấp ở phách nhẹ. Backend nên trả thêm `meter` (số phách mỗi ô nhịp) trong JSON.
+- **Metronome:** tiếng phách đồng bộ với `beats` của video. Phách mạnh cao và to hơn. Có nút bật/tắt và **thanh chỉnh âm lượng**. Tiếng tạo bằng Web Audio. Phải theo đúng tốc độ phát của video (0.5×, 0.75×…) và khi tua.
+- **Toàn màn hình:** khi video YouTube ở chế độ toàn màn hình, hiện **lớp hợp âm đè lên video** ở phía dưới: hợp âm hiện tại (chữ lớn), 3 hợp âm kế tiếp, chấm phách, và giọng hoặc transpose. Phải gắn vào phần tử fullscreen của YouTube để còn hiện được.
+- ⚠ đánh dấu hợp âm có `uncertain = true`.
+
 ## 8. Đo chất lượng (quan trọng nhất)
 
 - Dữ liệu có sẵn đáp án: Isophonics/Beatles, McGill Billboard, cùng vài bài Việt tự ghi hợp âm.
