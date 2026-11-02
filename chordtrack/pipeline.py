@@ -210,8 +210,10 @@ def _cached_result(song_id: str, config: PipelineConfig) -> dict | None:
         log.info("%s tạo bởi mã cũ, chạy lại", path)
         return None
     # Phòng khi tên file trùng nhưng cấu hình khác (vd. result.json do bản cũ ghi khi mặc định còn tách nguồn).
-    if ((meta.get("separation_model") is not None) != config.use_separation
-            or meta.get("chord_stem") != config.chord_stem or meta.get("beat_stem") != config.beat_stem):
+    # Chỉ so các trường có mặt trong file.
+    separated = meta.get("separation_model", "?" if config.use_separation else None) is not None
+    if (separated != config.use_separation or meta.get("chord_stem", config.chord_stem) != config.chord_stem
+            or meta.get("beat_stem", config.beat_stem) != config.beat_stem):
         log.info("%s tạo với cấu hình khác, chạy lại", path)
         return None
     log.info("Dùng kết quả có sẵn %s", path)
