@@ -203,6 +203,54 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
   - Vòng hợp âm: n-gram 2–8 hợp âm (đã rút gọn về hợp âm ba và bỏ hợp âm trùng liên tiếp), đếm gộp trên mọi đoạn cùng nhãn, phải phủ ít nhất 60% chuỗi. Bậc La Mã: hợp âm đảo ghi theo bậc bass của Harte (`I/5`), không dùng figured bass.
   - "Let It Be": chordlab cho giọng C major, verse `I – V – vi – IVmaj7 – I – V – IV`. Nhãn của ChordMini trên audio thật kèm phách beat_this cũng ra C major, verse `I – V – vi – IV – I`, analysis mất 16 ms.
 
+- [x] **Kết hợp model và hậu xử lý (bước 6–8), 2026-11-03.** Chi tiết ở mục "Kết quả đánh giá đợt 2" bên dưới.
+  - Bộ đánh giá từ 31 lên **42 bài**: bỏ quy tắc loại theo độ dài, thay bằng độ trôi đầu–cuối bài (`eval/README.md`).
+  - `fuse()` mặc định tăng majmin_inv **+2.8**, sevenths_inv **+2.1** so với ChordMini (điểm cross-validation).
+  - **Chạy model hợp âm trên mix, không trên instrumental:** tách giọng làm ChordMini giảm 3 điểm sevenths, CNN-LSTM giảm 3–4 điểm.
+  - Stem bass của HTDemucs chỉ có bass guitar (đoạn piano tự đệm như "Let It Be" giây 36–44 không có gì), và
+    bass của McCartney đi nốt lướt nhiều. Nốt nổi bật nhất trong stem chỉ trùng bass của nhãn ở khoảng 49% số khung,
+    còn `bass_probs` của CNN-LSTM trùng ở 86% (đo trên 8–10 bài đầu). Stem chỉ có ích khi trộn với trọng số nhỏ (0.3).
+
+## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
+
+42 bài Isophonics The Beatles (117 phút), `python -m eval.ablation`. WCSR gia quyền theo thời lượng (%).
+Tham số chọn bằng **cross-validation 3 phần**: chọn trên 28 bài, chấm 14 bài còn lại, ghép 3 phần.
+Hàm mục tiêu là trung bình majmin, majmin_inv, sevenths, sevenths_inv. Các dòng 1–3 không có tham số.
+
+| biến thể | root | majmin | majmin_inv | sevenths | sevenths_inv | tetrads | mirex | seg |
+|---|---|---|---|---|---|---|---|---|
+| 1 ChordMini mix (baseline) | 87.19 | 86.69 | 82.50 | 79.16 | 76.63 | 74.80 | 86.86 | 81.95 |
+| 2 ChordMini instrumental | 86.57 | 85.61 | 81.82 | 76.16 | 73.87 | 72.12 | 85.61 | 82.21 |
+| 3a CNN-LSTM mix | 85.36 | 84.72 | 82.33 | 76.65 | 75.52 | 72.14 | 84.36 | 83.09 |
+| 3b CNN-LSTM instrumental | 82.68 | 81.61 | 79.43 | 72.29 | 71.32 | 68.00 | 80.98 | 83.03 |
+| 4 ChordMini + bass CNN-LSTM | 87.19 | 86.69 | 83.58 | 79.16 | 77.62 | 74.80 | 86.86 | 81.95 |
+| 5 ChordMini + bass stem | 87.19 | 86.69 | 82.75 | 79.16 | 76.84 | 74.80 | 86.86 | 81.95 |
+| 6 ChordMini + bass cả hai | 87.19 | 86.69 | 83.52 | 79.16 | 77.57 | 74.80 | 86.86 | 81.95 |
+| 7a Trộn 2 model (cả 170 nhãn), HMM | 89.12 | 89.01 | 84.56 | 80.60 | 78.08 | 76.02 | 88.46 | 81.58 |
+| 7b Trộn 2 model (theo họ hợp âm), HMM | 88.98 | 88.76 | 84.35 | 81.00 | 78.48 | 76.45 | 88.23 | 81.38 |
+| 8 Làm mượt (phách/HMM), chỉ ChordMini | 87.76 | 87.42 | 83.11 | 79.87 | 77.31 | 75.37 | 87.38 | 80.89 |
+| **9 Bộ tốt nhất (CV)** | **88.66** | **88.65** | **85.29** | **80.29** | **78.75** | **75.75** | **88.05** | 81.03 |
+| 9 Bộ tốt nhất, chọn trên cả bộ (mặc định của `fuse`, lạc quan) | 89.02 | 88.84 | 85.60 | 81.13 | 79.64 | 76.57 | 88.32 | 81.85 |
+
+- Bộ mặc định của `FusionParams` (chọn trên cả 42 bài): ChordMini và CNN-LSTM trên mix. Trộn log theo họ hợp âm
+  (nốt gốc + maj/min/dim/aug/sus) với trọng số CNN-LSTM 0.35, giữ phân bố loại hợp âm 7/6 trong họ của ChordMini.
+  Viterbi theo khung với `self_prob` 0.8, gộp đoạn < 0.25 s. Bass = 0.7 × `bass_probs` của CNN-LSTM (giữ phần xác suất
+  "không có bass") + 0.3 × chroma stem bass. Chỉ thêm `/x` khi nốt bass thuộc hợp âm, khác nốt gốc và có xác suất ≥ 0.4.
+  Ba phần CV chọn các bộ gần giống nhau (trọng số 0.35–0.5, `self_prob` 0.8–0.95, cả hai cách trộn), nên kết quả khá ổn định.
+  Trộn trên cả 170 nhãn hơn majmin, trộn theo họ hơn sevenths; tổng thể hai cách gần như ngang nhau.
+- So với baseline: majmin +1.96, **majmin_inv +2.79**, sevenths +1.13, **sevenths_inv +2.12** (điểm CV).
+  Khoảng cách majmin → majmin_inv giảm từ 4.2 xuống 3.4 điểm. Phần lớn điểm tăng ở majmin đến từ việc trộn hai model.
+- Trên 31 bài cũ, baseline cho đúng số cũ (86.30 / 81.35 / 79.27 / 76.26). `fuse()` mặc định cho majmin 88.69,
+  majmin_inv 84.79, sevenths 81.22, sevenths_inv 79.46 (bộ tham số chọn trên cả 42 bài, có 31 bài này).
+- Bỏ phiếu theo phách và HMM theo phách không hơn HMM theo khung. Quyết định bass theo từng phách cũng không được chọn.
+- `fuse()` mất khoảng 0.35 s mỗi bài trên CPU, phần lớn là CQT của stem bass. Không dùng GPU.
+- "Let It Be" (chạy thật trên `data/audio/QDYfEBY9NM4.wav`): ra `C:maj/5` ở 40.50–42.07 s, vòng C – G – Am – F,
+  4 đoạn C/G trong cả bài. Chạy 2 model và bắt nhịp mất 6–8 s (stem đã có sẵn), VRAM đỉnh 509 MiB.
+- ⚠️ Beatles có thể nằm trong dữ liệu huấn luyện của cả ChordMini và CNN-LSTM, nên điểm tuyệt đối có thể cao hơn thực tế.
+  Bộ dữ liệu chỉ có 42 bài của một ban nhạc. Cần thêm bài khác (Billboard, bài Việt) để kiểm tra bộ tham số.
+- Việc còn mở: căn nhãn có co giãn tuyến tính (vài bài trôi 0.3–0.56 s); thêm ưu tiên theo giọng vào HMM; thử model
+  2E1D của ChordMini trong bộ trộn.
+
 ## Nguồn tham khảo
 
 - ChordMini: https://arxiv.org/abs/2602.19778
