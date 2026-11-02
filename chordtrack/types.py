@@ -57,6 +57,26 @@ class ChordModelOutput:
     extras: dict[str, np.ndarray] = field(default_factory=dict)
 
 
+@dataclass
+class KeyEstimate:
+    """Giọng của bài (analysis.py)."""
+
+    tonic: str               # "C", "F#", "Bb"...
+    mode: str                # "major" hoặc "minor"
+    confidence: float | None = None
+
+
+@dataclass
+class Section:
+    """Một đoạn của bài, kèm vòng hợp âm (analysis.py)."""
+
+    start: float
+    end: float
+    label: str                    # "intro", "verse", "chorus", "bridge", "outro"... hoặc "A", "B" nếu không đặt tên được
+    progression: list[str]        # vòng hợp âm lặp lại của đoạn, nhãn Harte, ví dụ ["C:maj", "G:maj", "A:min", "F:maj"]
+    roman: list[str]              # cùng vòng đó ở dạng bậc La Mã, ví dụ ["I", "V", "vi", "IV"]
+
+
 def segments_to_lab(segments: list[ChordSegment], path: Path) -> None:
     """Ghi ra file .lab (bắt đầu, kết thúc, nhãn), định dạng mir_eval đọc được."""
     path.parent.mkdir(parents=True, exist_ok=True)
