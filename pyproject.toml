@@ -1,0 +1,11 @@
+[project]
+name = "chordtrack"
+version = "0.0.1"
+requires-python = ">=3.11,<3.12"
+
+[tool.setuptools]
+packages = ["chordtrack", "chordtrack.chords"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["gpu: test cần GPU và weights thật (chạy chậm)"]

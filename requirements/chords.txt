@@ -1,0 +1,10 @@
+# ChordMini
+mir_eval==0.8.2
+scikit-learn
+matplotlib
+seaborn==0.13.2
+# Chord-CNN-LSTM
+pretty_midi
+h5py
+pydub
+joblib
