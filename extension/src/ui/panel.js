@@ -154,7 +154,7 @@
       const item = (sw, text) => h("li", {}, h("span", { class: "ct-sw " + sw }), text);
       this.help = h("div", { class: "ct-help", hidden: true },
         h("ul", { class: "ct-help-list" },
-          item("ct-sw-cur", "Ô sáng: hợp âm đang chơi; thanh đỏ ở đáy ô là tiến độ"),
+          item("ct-sw-cur", "Ô có viền sáng: hợp âm đang chơi; thanh đỏ ở đáy ô là tiến độ"),
           item("ct-sw-bar", "Vạch cao kèm số: phách 1 của ô nhịp"),
           item("ct-sw-mod", "Vạch vàng: đổi giọng"),
           item("ct-sw-unc", "⚠ Model không chắc, nên nghe lại"),

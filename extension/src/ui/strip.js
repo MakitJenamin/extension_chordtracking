@@ -189,7 +189,7 @@
       this.progress(t);
     }
 
-    /** Tiến độ trong hợp âm hiện tại (0–1): thanh đỏ mảnh ở đáy ô, nối tiếp vạch đỏ bị ô che. */
+    /** Tiến độ trong hợp âm hiện tại (0–1): thanh đỏ mảnh ở đáy ô hiện tại. */
     progress(t) {
       const e = this.chordEls[this.idx];
       if (!e) return;
