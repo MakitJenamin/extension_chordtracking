@@ -26,7 +26,7 @@ def test_normalize_audio_to_44k_stereo(tmp_path):
     info = sf.info(dst)
     assert info.samplerate == SAMPLE_RATE and info.channels == 2
     assert abs(info.duration - 1.0) < 0.01
-    assert not (tmp_path / "mix.part.wav").exists()
+    assert not list(tmp_path.glob("*.part.wav"))
 
 
 def test_cache_skips_existing_outputs(tmp_path, monkeypatch):
@@ -58,6 +58,50 @@ def test_cache_reruns_only_missing_step(tmp_path, monkeypatch):
     monkeypatch.setattr(separation, "_run_demucs", fake_demucs)
     separate(tmp_path / "x.wav", tmp_path)
     assert calls == ["demucs"]
+
+
+def test_rerun_vocal_step_invalidates_bass_step(tmp_path, monkeypatch):
+    # instrumental.wav bị mất: Roformer chạy lại, nên bass/no_bass cũ phải được tạo lại theo
+    for name in ["mix", "vocals", "bass", "no_bass"]:
+        sf.write(tmp_path / f"{name}.wav", np.zeros((10, 2)), SAMPLE_RATE)
+    calls = []
+
+    def fake(step):
+        def run(_, a, b):
+            calls.append(step)
+            for p in (a, b):
+                sf.write(p, np.zeros((10, 2)), SAMPLE_RATE)
+        return run
+
+    monkeypatch.setattr(separation, "_run_roformer", fake("roformer"))
+    monkeypatch.setattr(separation, "_run_demucs", fake("demucs"))
+    separate(tmp_path / "x.wav", tmp_path)
+    assert calls == ["roformer", "demucs"]
+
+
+@needs_ffmpeg
+def test_different_source_redoes_everything(tmp_path, monkeypatch):
+    out = tmp_path / "out"
+    calls = []
+
+    def fake(step):
+        def run(_, a, b):
+            calls.append(step)
+            for p in (a, b):
+                sf.write(p, np.zeros((10, 2)), SAMPLE_RATE)
+        return run
+
+    monkeypatch.setattr(separation, "_run_roformer", fake("roformer"))
+    monkeypatch.setattr(separation, "_run_demucs", fake("demucs"))
+    a, b = tmp_path / "a.wav", tmp_path / "b.wav"
+    sf.write(a, np.zeros((22050, 2)), 22050)
+    sf.write(b, np.zeros((44100, 2)), 22050)
+    separate(a, out)
+    separate(a, out)  # cùng nguồn: dùng cache
+    assert calls == ["roformer", "demucs"]
+    separate(b, out)  # nguồn khác: tách lại từ đầu
+    assert calls == ["roformer", "demucs"] * 2
+    assert abs(sf.info(out / "mix.wav").duration - 2.0) < 0.01
 
 
 @pytest.mark.gpu
