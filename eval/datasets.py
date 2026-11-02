@@ -154,6 +154,49 @@ def download_labels(force: bool = False) -> int:
     return n
 
 
+# Nhãn giọng và nhãn đoạn, cùng tarball với chordlab. Cấu trúc giống chordlab: <kind>/<Album>/<Track>.lab
+KEYLAB_DIR = ISO_DIR / "keylab"
+SEGLAB_DIR = ISO_DIR / "seglab"
+N_KEYLABS = 179   # bộ Isophonics thiếu keylab của "Revolution 1" (chỉ có .ttl)
+N_SEGLABS = 180
+
+
+def download_key_seg_labels(force: bool = False) -> dict[str, int]:
+    """Tải nhãn giọng (keylab) và nhãn đoạn (seglab) của Isophonics. Trả về số file mỗi loại."""
+    dirs = {"keylab": (KEYLAB_DIR, N_KEYLABS), "seglab": (SEGLAB_DIR, N_SEGLABS)}
+    have = {k: len(list(d.rglob("*.lab"))) if d.exists() else 0 for k, (d, _) in dirs.items()}
+    if not force and all(have[k] >= need for k, (_, need) in dirs.items()):
+        return have
+    for d, _ in dirs.values():
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True, exist_ok=True)
+    counts = {k: 0 for k in dirs}
+    with tempfile.TemporaryDirectory() as tmp:
+        tgz = Path(tmp) / "beatles.tar.gz"
+        print(f"Tải {ISO_URL}")
+        urllib.request.urlretrieve(ISO_URL, tgz)
+        with tarfile.open(tgz) as tar:
+            for m in tar.getmembers():
+                parts = Path(m.name).parts
+                kind = next((k for k in dirs if k in parts), None)
+                if kind is None or not m.isfile() or not m.name.endswith(".lab"):
+                    continue
+                rel = parts[parts.index(kind) + 2:]   # <kind>/The Beatles/<Album>/<Track>.lab
+                if len(rel) != 2 or any(p in ("..", "") for p in rel):
+                    continue
+                dst = dirs[kind][0].joinpath(*rel)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                src = tar.extractfile(m)
+                assert src is not None
+                dst.write_bytes(src.read())
+                counts[kind] += 1
+    for k, (_, need) in dirs.items():
+        if counts[k] < need:
+            raise RuntimeError(f"Chỉ giải nén được {counts[k]}/{need} file {k} từ {ISO_URL}")
+    return counts
+
+
 # ---------------------------------------------------------------- tìm videoId
 
 def _yt_dlp() -> list[str]:
