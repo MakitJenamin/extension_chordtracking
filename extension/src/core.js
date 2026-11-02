@@ -19,6 +19,7 @@
  * BỔ SUNG (ext-core, chỉ thêm, không đổi phần trên):
  *   "time" có thêm `ad` (true khi YouTube đang chạy quảng cáo; lúc đó paused = true)
  *   "song:error" có thêm `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "extension_reloaded"
+ *   CT.settings.snapToBeats          kéo mép hợp âm về phách khi hiển thị (mặc định bật)
  *   CT.settings.panelCollapsed       khung hợp âm đang thu gọn (không có trong DEFAULTS, mặc định falsy)
  *   CT.api      gọi backend qua background.js (src/api.js)
  *   CT.theory   dịch giọng, nhãn theo chế độ, nhịp (src/theory.js)
@@ -48,6 +49,7 @@
     metronomeVolume: 0.6,     // 0..1
     pxPerSecond: 46,          // độ "zoom" của dải hợp âm
     modulationWarnSeconds: 8,
+    snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     serverUrl: "http://127.0.0.1:8765",
   };
 
