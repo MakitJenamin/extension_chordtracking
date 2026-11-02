@@ -194,3 +194,38 @@ def test_structure_edge_cases():
     gappy = [ChordSegment(1.0, 3.0, "C:maj"), ChordSegment(5.0, 9.0, "G:maj"), ChordSegment(9.0, 40.0, "F:maj")]
     _check_continuous(analyze_structure(gappy, None, 35.0, C_MAJOR), 35.0)
     assert analyze_structure(short, None, 0.0, None) == []
+
+
+# ---------------------------------------------------------------- các lỗi tìm được khi review
+
+def test_simplify_enharmonic_and_unison():
+    assert simplify_label("C#:maj") == simplify_label("Db:maj")
+    assert simplify_label("C:1") == "C:1"
+    assert simplify_label("C:5") == "C:5"
+    assert to_roman("C:1", C_MAJOR) == "I1"
+
+
+def test_find_progression_enharmonic_sections_match():
+    a = [simplify_label(x) for x in ["C#:maj", "F#:maj", "C#:maj", "F#:maj"]]
+    b = [simplify_label(x) for x in ["Db:maj", "Gb:maj", "Db:maj", "Gb:maj"]]
+    assert len(find_progression([a, b])) == 2
+
+
+def test_progression_keeps_full_label_across_no_chord():
+    labels = ["C:maj", "N", "C:maj", "G:7", "A:min7", "F:maj7"] * 6
+    segs = _song(labels, dur=2.0)
+    sections = analyze_structure(segs, None, segs[-1].end, C_MAJOR)
+    loop = ["C:maj", "G:7", "A:min7", "F:maj7"]
+    rotations = [loop[i:] + loop[:i] for i in range(4)]
+    assert any(s.progression in rotations for s in sections)
+
+
+def test_duplicate_beats_do_not_crash():
+    segs = _verse_chorus_song()
+    duration = segs[-1].end
+    beats = np.repeat(np.arange(0.5, duration, 0.5), 2)
+    sections = analyze_structure(segs, BeatGrid(beats=beats, downbeats=beats[::8], tempo=120.0), duration, None)
+    _check_continuous(sections, duration)
+    same = np.full(20, 3.0)
+    _check_continuous(analyze_structure(segs, BeatGrid(beats=same, downbeats=same[:1], tempo=0.0), duration, None),
+                      duration)

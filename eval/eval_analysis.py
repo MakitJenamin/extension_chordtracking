@@ -49,7 +49,7 @@ def read_keylab(path: Path) -> list[tuple[float, float, str]]:
     out = []
     with open(path, encoding="utf-8") as f:
         for line in f:
-            parts = line.strip().split("\t")
+            parts = line.split()
             if len(parts) < 4 or parts[2] != "Key":
                 continue
             tonic, _, mode = parts[3].partition(":")
@@ -94,7 +94,8 @@ def read_seglab(path: Path) -> tuple[np.ndarray, list[str]]:
 # ---------------------------------------------------------------- chấm
 
 def score_key(ref: str, est: str) -> dict:
-    return {"weighted": float(mir_eval.key.weighted_score(ref, est)), "correct": float(ref == est)}
+    w = float(mir_eval.key.weighted_score(ref, est))
+    return {"weighted": w, "correct": float(w == 1.0)}   # so theo cao độ: C# major = Db major
 
 
 def score_segments(ref_iv: np.ndarray, ref_lab: list[str], est_iv: np.ndarray, est_lab: list[str]) -> dict:
@@ -213,6 +214,8 @@ def run(include_runs: bool = True, verbose: bool = False) -> dict:
     results: dict[str, dict] = {}
     for name, lab, keylab, seglab in songs:
         segs = lab_to_segments(lab)
+        if not segs:
+            continue
         ref_key = main_key(read_keylab(keylab)) if keylab else None
         seg_ref = read_seglab(seglab) if seglab else None
         gt[name] = (ref_key, seg_ref)

@@ -192,12 +192,12 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 
     | Đầu vào | F@0.5 | P@3 | R@3 | **F@3** | **pair F** | S_F (NCE) | Số đoạn đoán / chuẩn |
     |---|---|---|---|---|---|---|---|
-    | chordlab, 180 bài | 0.217 | 0.511 | 0.510 | **0.494** | **0.583** | 0.605 | 10.7 / 10.0 |
+    | chordlab, 180 bài | 0.217 | 0.512 | 0.510 | **0.495** | **0.583** | 0.604 | 10.7 / 10.0 |
     | Baseline chia đều 15 s | 0.047 | 0.298 | 0.303 | 0.292 | 0.355 | 0.526 | 10.8 / 10.0 |
     | ChordMini BTC-PL, 31 bài | 0.207 | 0.494 | 0.462 | 0.466 | 0.568 | 0.610 | 10.8 / 10.7 |
-    | chordlab, cùng 31 bài | 0.236 | 0.503 | 0.487 | 0.479 | 0.582 | 0.618 | 10.8 / 10.7 |
+    | chordlab, cùng 31 bài | 0.237 | 0.508 | 0.487 | 0.481 | 0.580 | 0.617 | 10.7 / 10.7 |
 
-    - ⚠️ Cửa sổ so sánh nhìn về phía trước làm ranh giới sớm hơn đáp án 2–3 s một cách hệ thống. Đã dời ma trận lặp nửa cửa sổ, F@3 tăng từ 0.445 lên 0.494.
+    - ⚠️ Cửa sổ so sánh nhìn về phía trước làm ranh giới sớm hơn đáp án 2–3 s một cách hệ thống. Đã dời ma trận lặp nửa cửa sổ, F@3 tăng từ 0.445 lên 0.495.
     - Chỉ dùng hợp âm nên không tách được intro với verse khi chúng cùng vòng (ví dụ "Let It Be"). Muốn tốt hơn phải thêm đặc trưng âm thanh (năng lượng, âm sắc, có giọng hát hay không).
     - Tên đoạn (intro, verse, chorus, bridge, outro) là heuristic, `mir_eval` không chấm phần này. Đoạn không đặt tên được thì giữ chữ cái.
   - Vòng hợp âm: n-gram 2–8 hợp âm (đã rút gọn về hợp âm ba và bỏ hợp âm trùng liên tiếp), đếm gộp trên mọi đoạn cùng nhãn, phải phủ ít nhất 60% chuỗi. Bậc La Mã: hợp âm đảo ghi theo bậc bass của Harte (`I/5`), không dùng figured bass.

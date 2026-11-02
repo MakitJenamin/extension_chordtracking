@@ -99,7 +99,7 @@ class _Chord:
             return "maj"
         if self.has(5) or self.has(2):
             return "sus"
-        return "5"
+        return "5" if self.has(7) else "1"
 
     def pitch_vector(self) -> np.ndarray:
         """Vector 12 nốt tuyệt đối, nốt gốc và bass được nhấn thêm."""
@@ -130,12 +130,14 @@ def _chord(label: str) -> _Chord:
 def simplify_label(label: str) -> str:
     """Rút gọn nhãn về nốt gốc + kiểu hợp âm ba Harte: 'A:min/b7' -> 'A:min', 'F:maj7' -> 'F:maj'.
 
-    'sus' -> ':sus4' hoặc ':sus2', '5' -> ':5'. N và X giữ nguyên. Tên nốt giữ như nhãn gốc.
+    'sus' -> ':sus4' hoặc ':sus2', '5' -> ':5', chỉ có nốt gốc -> ':1'. N và X giữ nguyên.
+    Nốt gốc viết theo một cách cố định cho mỗi cao độ ('C#:maj' và 'Db:maj' đều thành 'Db:maj'),
+    để cùng một hợp âm viết khác nhau vẫn khớp khi so vòng và so đoạn.
     """
     c = _chord(label)
     if not c.is_chord:
         return label.split("/")[0] if label else "N"
-    root_name = label.split(":")[0].split("/")[0]
+    root_name = MAJOR_TONIC_NAMES[c.root]
     t = c.triad_class()
     if t == "sus":
         t = "sus4" if c.has(5) else "sus2"
@@ -250,7 +252,7 @@ def to_roman(label: str, key: KeyEstimate) -> str:
     suffix = _SUFFIX.get(c.quality)
     if suffix is None:   # quality rỗng (chỉ có ngoặc) hoặc lạ: suy từ các nốt
         t = c.triad_class()
-        suffix = {"dim": "°", "aug": "+", "sus": "sus4" if c.has(5) else "sus2", "5": "5"}.get(t, "")
+        suffix = {"dim": "°", "aug": "+", "sus": "sus4" if c.has(5) else "sus2", "5": "5", "1": "1"}.get(t, "")
         if c.has(10) and t in ("maj", "min"):
             suffix += "7"
         elif c.has(11) and t == "maj":
@@ -275,12 +277,12 @@ SNAP_SECONDS = 1.0          # kéo ranh giới về điểm đổi hợp âm g�
 FALLBACK_BEAT = 0.5         # bước lưới (giây) khi không có phách
 
 
-def _beat_grid(beats: BeatGrid | None, duration: float, segments: list[ChordSegment]) -> np.ndarray:
+def _beat_grid(beats: BeatGrid | None, duration: float) -> np.ndarray:
     """Các mốc thời gian của lưới (đầu mỗi ô), có 0 ở đầu và duration ở cuối."""
     if beats is not None and len(beats.beats) >= 8:
-        b = np.asarray(beats.beats, dtype=float)
+        b = np.unique(np.asarray(beats.beats, dtype=float))
         b = b[(b > 0) & (b < duration)]
-        if len(b) >= 8:
+        if len(b) >= 8 and np.median(np.diff(b)) > 0:
             # ô trước phách đầu và sau phách cuối: chia theo khoảng phách trung vị
             step = float(np.median(np.diff(b)))
             head = np.arange(b[0] - step, 0, -step)[::-1] if b[0] > step * 1.5 else np.array([])
@@ -448,7 +450,8 @@ def find_progression(sequences: list[list[str]] | list[str], min_len: int = 2,
 def _chord_runs(segments: list[ChordSegment], start: float, end: float) -> list[tuple[str, str]]:
     """Chuỗi (nhãn rút gọn, nhãn đầy đủ đại diện) trong [start, end): gộp các hợp âm liên tiếp
     cùng nhãn rút gọn, nhãn đại diện là nhãn chiếm thời lượng lớn nhất trong cụm. Bỏ N/X."""
-    inside = [s for s in segments if min(s.end, end) - max(s.start, start) > 0.05]
+    # Bỏ N/X trước khi gộp, giống _collapse, để "C N C G" thành "C G" như lúc tìm vòng.
+    inside = [s for s in segments if min(s.end, end) - max(s.start, start) > 0.05 and _chord(s.label).is_chord]
     runs: list[tuple[str, str]] = []
     i = 0
     simple = [simplify_label(s.label) for s in inside]
@@ -538,7 +541,7 @@ def analyze_structure(
     if duration <= 0:
         return []
     segs = [s for s in segments if s.end > s.start]
-    grid = _beat_grid(beats, duration, segs)
+    grid = _beat_grid(beats, duration)
     frames = _frame_labels(segs, grid)
     vocab: dict[str, int] = {}
     codes = np.array([-1 if f in ("N", "X") else vocab.setdefault(f, len(vocab)) for f in frames])

@@ -36,3 +36,10 @@ def test_score_segments_perfect_and_uniform():
     assert iv[0, 0] == 0.0 and iv[-1, 1] == 60.0 and len(lab) == 4
     assert E.score_key("C major", "C major") == {"weighted": 1.0, "correct": 1.0}
     assert E.score_key("C major", "G major")["weighted"] == 0.5
+
+
+def test_keylab_with_spaces_and_enharmonic_correct(tmp_path):
+    p = tmp_path / "k.lab"
+    p.write_text("0.0 120.0 Key Db\n", encoding="utf-8")
+    assert E.main_key(E.read_keylab(p)) == "Db major"
+    assert E.score_key("C# major", "Db major")["correct"] == 1.0
