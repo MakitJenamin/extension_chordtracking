@@ -19,7 +19,8 @@ Biến thể có tham số được chọn bằng cross-validation: chia bài th
 (bài thứ i vào phần i mod k), chọn tham số tốt nhất trên các phần còn lại rồi chấm phần giữ lại. Điểm
 CV là trung bình gia quyền thời lượng trên các phần giữ lại ghép lại. Hàm mục tiêu là trung bình của
 majmin, majmin_inv, sevenths, sevenths_inv. Bảng thứ hai là điểm khi chọn tham số trên cả bộ (lạc quan
-hơn, chỉ để tham khảo); bộ này là giá trị mặc định của `FusionParams`.
+hơn, chỉ để tham khảo). Bộ này từng là mặc định của `FusionParams` (đợt 2, chỉ Beatles); mặc định hiện tại
+chọn trên Beatles + Kajiura bằng `eval/refit_fusion.py`.
 """
 from __future__ import annotations
 
@@ -81,7 +82,8 @@ class Song:
         """Giống `fusion.chord_probs` (dùng chung các hàm của fusion), nhớ phần đã tính để chạy nhanh."""
         if w <= 0 and (level != "family" or quality_weight <= 0):
             return self.cm_probs(src)
-        return F.mix_models(self.cm_probs(src), self.cn_probs(src), self.vocab(src), w, level, quality_weight)
+        abstain = F.cnnlstm_abstain(list(self.model("cnnlstm", src).vocabulary), self.vocab(src))
+        return F.mix_models(self.cm_probs(src), self.cn_probs(src), self.vocab(src), w, level, quality_weight, abstain)
 
     def cnn_bass(self, src: str) -> np.ndarray:
         key = ("bass", src)

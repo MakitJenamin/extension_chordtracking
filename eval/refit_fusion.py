@@ -27,7 +27,6 @@ import itertools
 import json
 import sys
 import time
-from dataclasses import asdict
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -36,7 +35,7 @@ import numpy as np
 from chordtrack import fusion as F
 from chordtrack.paths import EVAL_DIR
 from eval import kajiura as K
-from eval.ablation import Song, predict
+from eval.ablation import Song, fusion_cfg as _ablation_fusion_cfg, predict
 from eval.ablation_kajiura import OLD_DEFAULTS, KajiuraSong, features_path as kajiura_features, score_song
 from eval.cache_features import features_path as beatles_features
 from eval.datasets import REF_DIR
@@ -47,12 +46,8 @@ KAJIURA_WEIGHT = 0.6
 BEATLES_WEIGHT = 0.4
 SEQ_METRICS = ("seq_majmin", "seq_sevenths")
 
-# Bộ mặc định cũ của `FusionParams` (chọn chỉ trên Beatles, có stem bass), để so sánh.
-OLD_PARAMS = OLD_DEFAULTS
-
-
 def fusion_cfg(**params) -> dict:
-    return {"kind": "fusion", "src": "mix", "params": asdict(F.FusionParams(**params))}
+    return _ablation_fusion_cfg("mix", **params)
 
 
 def grid(quick: bool = False) -> list[dict]:
@@ -110,8 +105,15 @@ class Scores:
                 if k % 10 == 0 or k == len(songs):
                     print(f"  chấm {k}/{len(songs)} bài ({time.perf_counter() - t0:.0f}s)", flush=True)
 
+    def per_song(self, ci: int, songs: list[str]) -> dict[str, dict]:
+        """Kết quả theo bài của cấu hình thứ `ci`, dạng dùng cho `evaluate_rows`."""
+        return {s: {"correct": self.corr[ci, self.index[s]].tolist(), "weights": self.wts[ci, self.index[s]].tolist()}
+                for s in songs}
+
     def agg(self, songs: list[str]) -> np.ndarray:
         """(cấu hình, mức) WCSR gia quyền thời lượng trên `songs`."""
+        if not songs:
+            raise ValueError("không có bài nào để chấm (phần huấn luyện rỗng?)")
         idx = [self.index[s] for s in songs]
         c, w = self.corr[:, idx].sum(axis=1), self.wts[:, idx].sum(axis=1)
         return np.where(w > 0, c / np.maximum(w, 1e-12), np.nan)
@@ -143,15 +145,6 @@ def evaluate_rows(per_song: dict[str, dict], beatles: list[str], kajiura_ok: lis
         return _metrics(np.array([per_song[s]["correct"] for s in ids]), np.array([per_song[s]["weights"] for s in ids]))
     b, k = part(beatles), part(kajiura_ok)
     return {"beatles": b, "kajiura": k, "objective": KAJIURA_WEIGHT * k["mean4"] + BEATLES_WEIGHT * b["mean4"]}
-
-
-def score_fixed(cfg: dict, song_ids: list[str]) -> dict[str, dict]:
-    out = {}
-    for sid in song_ids:
-        song = _load(sid)
-        r = evaluate_pair(song.ref, predict(song, cfg))
-        out[sid] = {"correct": [r["correct"][m] for m in METRICS], "weights": [r["weights"][m] for m in METRICS]}
-    return out
 
 
 def seq_f1(cfg_for_song, names: list[str], report: dict) -> dict:
@@ -230,14 +223,13 @@ def main(argv: list[str] | None = None) -> int:
     held: dict[str, dict] = {}
     cfg_of_k: dict[str, dict] = {}
     for f in range(args.folds):
-        tb = [s for s in beatles if s not in set(folds_b[f])]
-        tk = [s for s in kajiura if s not in set(folds_k[f])]
-        c = cfgs[int(np.argmax(objective(scores, tb, tk)))]
+        test_b, test_k = set(folds_b[f]), set(folds_k[f])
+        tb = [s for s in beatles if s not in test_b]
+        tk = [s for s in kajiura if s not in test_k]
+        ci = int(np.argmax(objective(scores, tb, tk)))
+        c = cfgs[ci]
         fold_cfgs.append(c)
-        ci = cfgs.index(c)
-        for s in folds_b[f] + folds_k[f]:
-            i = scores.index[s]
-            held[s] = {"correct": scores.corr[ci, i].tolist(), "weights": scores.wts[ci, i].tolist()}
+        held.update(scores.per_song(ci, folds_b[f] + folds_k[f]))
         for n in folds_kn[f]:
             cfg_of_k[n] = c
         print(f"phần {f}: {describe(c)}", flush=True)
@@ -247,14 +239,14 @@ def main(argv: list[str] | None = None) -> int:
     baselines = [
         ("CNN-LSTM một mình", {"kind": "cnnlstm", "src": "mix"}),
         ("ChordMini một mình", {"kind": "chordmini", "src": "mix"}),
-        ("fuse cũ (mặc định cũ, có stem bass)", {"kind": "fusion", "src": "mix", "params": OLD_PARAMS}),
-        ("fuse cũ, bass CNN-LSTM (không tách nguồn)",
-         {"kind": "fusion", "src": "mix", "params": {**OLD_PARAMS, "bass_source": "cnn"}}),
+        ("fuse cũ (mặc định cũ, có stem bass)", fusion_cfg(**OLD_DEFAULTS)),
+        ("fuse cũ, bass CNN-LSTM (không tách nguồn)", fusion_cfg(**{**OLD_DEFAULTS, "bass_source": "cnn"})),
     ]
+    base_scores = Scores([c for _, c in baselines], beatles + kajiura, args.jobs)
     rows = []
     per_song_rows = {}
-    for name, cfg in baselines:
-        ps = score_fixed(cfg, beatles + kajiura)
+    for bi, (name, cfg) in enumerate(baselines):
+        ps = base_scores.per_song(bi, beatles + kajiura)
         r = evaluate_rows(ps, beatles, kajiura)
         r["seq"] = seq_f1(lambda n, c=cfg: c, k_names, report)["mean"]
         rows.append((name, r))
@@ -263,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
     cv["seq"] = seq_f1(lambda n: cfg_of_k[n], k_names, report)["mean"]
     rows.append((f"fuse mới (CV {args.folds} phần)", cv))
     per_song_rows["cv"] = held
-    full = score_fixed(best_full, beatles + kajiura)
+    full = scores.per_song(int(order[0]), beatles + kajiura)
     fr = evaluate_rows(full, beatles, kajiura)
     fr["seq"] = seq_f1(lambda n: best_full, k_names, report)["mean"]
     rows.append(("fuse mới (chọn trên cả bộ)", fr))

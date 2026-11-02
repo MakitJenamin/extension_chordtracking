@@ -142,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--beat-stem", default="mix", choices=STEM_NAMES, help="stem chạy bắt nhịp")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
+    if not args.separation and (args.chord_stem != "mix" or args.beat_stem != "mix"):
+        parser.error("--chord-stem/--beat-stem khác mix cần --separation (mặc định không tách nguồn)")
 
     for stream in (sys.stdout, sys.stderr):
         try:

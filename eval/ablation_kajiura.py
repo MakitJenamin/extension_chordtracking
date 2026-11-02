@@ -14,7 +14,7 @@ không chỉnh lại trên Kajiura, nên đây là phép thử chuyển giao. B�
  3a CNN-LSTM trên mix,  3b CNN-LSTM trên instrumental
  4  fuse() trên mix, bass chỉ từ CNN-LSTM (`bass_source="cnn"`)   <- không cần tách nguồn
  4b fuse() trên mix, không gán bass                               <- không cần tách nguồn
- 5  fuse() trên mix, bass CNN-LSTM + stem bass (mặc định hiện tại)
+ 5  fuse() trên mix, bass CNN-LSTM + stem bass (mặc định cũ)
  6  fuse() chạy model trên instrumental, bass cả hai nguồn
  7  fuse() trộn đặc trưng mix và instrumental (trung bình log xác suất hợp âm), bass cả hai nguồn
  8  thăm dò: như 4 nhưng trọng số CNN-LSTM 0.65, trộn trên cả 170 nhãn (CNN-LSTM một mình tốt hơn fuse
@@ -141,7 +141,7 @@ VARIANTS: list[tuple[str, dict]] = [
     ("3b CNN-LSTM instrumental", {"kind": "cnnlstm", "src": "inst"}),
     ("4 fuse mix, bass CNN-LSTM (không tách nguồn)", _fusion_cfg("mix", bass_source="cnn")),
     ("4b fuse mix, không bass (không tách nguồn)", _fusion_cfg("mix", bass_source="none")),
-    ("5 fuse mix, bass CNN-LSTM + stem (mặc định)", _fusion_cfg("mix")),
+    ("5 fuse mix, bass CNN-LSTM + stem (mặc định cũ)", _fusion_cfg("mix")),
     ("6 fuse instrumental, bass cả hai", _fusion_cfg("inst")),
     ("7 fuse trộn mix + instrumental", {"kind": "fusion_both", "src": "mix", "params": _fusion_cfg("mix")["params"]}),
     # Thăm dò (không phải mặc định): tăng trọng số CNN-LSTM, trộn trên cả 170 nhãn, không tách nguồn.

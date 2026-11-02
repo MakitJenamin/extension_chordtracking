@@ -223,7 +223,14 @@ def chord_probs(models: dict[str, ChordModelOutput], times: np.ndarray, cnn_weig
     if cn is None or cn.frame_probs is None or (cnn_weight <= 0 and (mix_level != "family" or quality_weight <= 0)):
         return p_cm, list(cm.vocabulary)
     p_cn = cnnlstm_on_chordmini(cn, cm, times, p_cm)
-    return mix_models(p_cm, p_cn, list(cm.vocabulary), cnn_weight, mix_level, quality_weight), list(cm.vocabulary)
+    abstain = cnnlstm_abstain(list(cn.vocabulary), list(cm.vocabulary))
+    return (mix_models(p_cm, p_cn, list(cm.vocabulary), cnn_weight, mix_level, quality_weight, abstain),
+            list(cm.vocabulary))
+
+
+def cnnlstm_abstain(cn_vocab: list[str], cm_vocab: list[str]) -> np.ndarray:
+    """Mặt nạ (V,) các nhãn ChordMini mà CNN-LSTM không đoán được (maj6, min6, minmaj7, X...)."""
+    return _mapping_matrix(tuple(cn_vocab), tuple(cm_vocab)).sum(axis=0) == 0
 
 
 def cnnlstm_on_chordmini(cn: ChordModelOutput, cm: ChordModelOutput, times: np.ndarray, p_cm: np.ndarray) -> np.ndarray:
@@ -268,11 +275,13 @@ def _family_matrix(vocab: tuple[str, ...]) -> np.ndarray:
 
 
 def mix_models(p_cm: np.ndarray, p_cn: np.ndarray, vocab: list[str], w: float, level: str = "full",
-               quality_weight: float = 0.0) -> np.ndarray:
+               quality_weight: float = 0.0, abstain: np.ndarray | None = None) -> np.ndarray:
     """Trộn xác suất ChordMini với CNN-LSTM (đã ánh xạ về cùng từ vựng), trọng số `w` cho CNN-LSTM.
 
     `level="family"`: P(nhãn) = P(họ) · P(nhãn | họ). P(họ) trộn log với trọng số `w`; P(nhãn | họ)
-    (C so với Cmaj7, C7) trộn log với trọng số `quality_weight` rồi chuẩn hóa lại trong từng họ."""
+    (C so với Cmaj7, C7) trộn log với trọng số `quality_weight` rồi chuẩn hóa lại trong từng họ.
+    `abstain` (V,): nhãn CNN-LSTM không có ý kiến; trong họ, các nhãn này giữ đúng tỉ lệ của ChordMini và
+    CNN-LSTM chỉ chia phần còn lại giữa các nhãn nó đoán được."""
     if level == "full":
         return mix_log(p_cm, p_cn, w)
     if level != "family":
@@ -282,9 +291,14 @@ def mix_models(p_cm: np.ndarray, p_cn: np.ndarray, vocab: list[str], w: float, l
     fam = mix_log(fam_cm, fam_cn, w)
     within = p_cm / np.maximum(fam_cm @ a.T, 1e-12)   # P(nhãn | họ) theo ChordMini
     if quality_weight > 0:
-        within_cn = p_cn / np.maximum(fam_cn @ a.T, 1e-12)
-        logw = (1 - quality_weight) * np.log(within + EPS) + quality_weight * np.log(within_cn + EPS)
-        within = np.exp(logw - logw.max(axis=1, keepdims=True))
+        if abstain is None:
+            within_cn = p_cn / np.maximum(fam_cn @ a.T, 1e-12)
+        else:
+            cov = ~np.asarray(abstain, dtype=bool)
+            cov_mass = ((p_cn * cov) @ a) @ a.T                # khối CNN-LSTM của các nhãn nó đoán được, theo họ
+            free = 1.0 - ((within * ~cov) @ a) @ a.T           # phần trong họ không thuộc nhãn "không ý kiến"
+            within_cn = np.where(cov, p_cn / np.maximum(cov_mass, 1e-12) * free, within)
+        within = np.exp((1 - quality_weight) * np.log(within + EPS) + quality_weight * np.log(within_cn + EPS))
         within = within / np.maximum((within @ a) @ a.T, 1e-300)
     return _normalize(within * (fam @ a.T))
 

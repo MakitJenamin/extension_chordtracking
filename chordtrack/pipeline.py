@@ -191,7 +191,10 @@ def analyze(
 
 def _fusion_inputs(stems: Stems, config: PipelineConfig) -> tuple[Path | None, fusion.FusionParams]:
     """(file stem bass, tham số fuse). Không tách nguồn: không có stem, bass chỉ từ CNN-LSTM. Có tách
-    nguồn: trộn thêm chroma stem bass với trọng số `stem_weight`."""
+    nguồn: trộn thêm chroma stem bass với trọng số `stem_weight`.
+
+    Lưu ý: bộ mặc định được chọn với `bass_source="cnn"`; tổ hợp với stem bass chưa được đo lại (stem chỉ
+    thêm khoảng +0.1 điểm với bộ tham số cũ)."""
     if not config.use_separation:
         return None, fusion.DEFAULT_PARAMS
     return stems.bass, replace(fusion.DEFAULT_PARAMS, bass_source="both")

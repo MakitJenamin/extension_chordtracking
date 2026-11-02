@@ -344,10 +344,17 @@ def test_cli_writes_json_and_summary(fake_env, tmp_path, capsys):
     assert "separate" not in [c[0] for c in fake_env]
 
 
-@pytest.mark.parametrize("flags, separate", [([], False), (["--no-separation"], False), (["--separation"], True)])
+@pytest.mark.parametrize("flags, separate", [([], False), (["--no-separation"], False), (["--separation"], True),
+                                             (["--separation", "--chord-stem", "no_bass"], True)])
 def test_cli_separation_flags(fake_env, flags, separate):
     assert cli.main(["abcdefghijk", *flags]) == 0
     assert ("separate" in [c[0] for c in fake_env]) is separate
+
+
+def test_cli_rejects_stem_without_separation(fake_env):
+    with pytest.raises(SystemExit):
+        cli.main(["abcdefghijk", "--chord-stem", "instrumental"])
+    assert fake_env == []
 
 
 def test_main_key_replaces_compromise_key():
