@@ -15,6 +15,16 @@
  *   CT.settings                      cài đặt hiện tại (xem DEFAULTS); CT.setSettings(patch) lưu chrome.storage.sync
  *   CT.seekTo(t)                     tua video (do sync.js cài)
  *   CT.state = {videoId, result, video}
+ *
+ * BỔ SUNG (ext-core, chỉ thêm, không đổi phần trên):
+ *   "time" có thêm `ad` (true khi YouTube đang chạy quảng cáo; lúc đó paused = true)
+ *   "song:error" có thêm `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "extension_reloaded"
+ *   CT.settings.panelCollapsed       khung hợp âm đang thu gọn (không có trong DEFAULTS, mặc định falsy)
+ *   CT.api      gọi backend qua background.js (src/api.js)
+ *   CT.theory   dịch giọng, nhãn theo chế độ, nhịp (src/theory.js)
+ *   CT.sync     attach/detach vòng rAF, tick, videoIdFromUrl (src/sync.js)
+ *   CT.ui       strip, panel, sections, fullscreen, layout (src/ui/*)
+ *   CT.app      reload(force), check() (src/content.js)
  */
 (() => {
   const listeners = {};

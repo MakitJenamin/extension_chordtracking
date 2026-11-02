@@ -1,1 +1,398 @@
-/* KHUNG: agent ext-core viết phần thân. Hợp đồng ở src/core.js, yêu cầu ở PLAN.md mục 7. */
+/* ChordTrack panel: khung hợp âm ngay dưới player (trên tiêu đề video).
+ *
+ * CT.ui.panel        {el, show(state)}: trạng thái "hidden" | "loading" | "error" | "ready"
+ * CT.ui.BeatDots     chấm phách 1-2-3-4 (dùng chung với lớp phủ toàn màn hình)
+ * CT.ui.info(song,t) thông tin theo thời điểm: giọng, transpose, cảnh báo sắp đổi giọng
+ * CT.ui.layout       mount()/unmount(): gắn panel và bảng cấu trúc vào DOM YouTube, gắn lại khi YouTube vẽ lại
+ * CT.ui.shortcuts    danh sách phím tắt (Alt+Shift+...), không trùng phím của YouTube
+ *
+ * Panel tự nghe "song:*", "time", "settings". Gọi CT.app.reload(force) để thử lại (content.js cài).
+ */
+(() => {
+  const T = () => CT.theory;
+  const h = (tag, attrs = {}, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === "class") e.className = v;
+      else if (k === "text") e.textContent = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids) if (kid != null) e.append(kid);
+    return e;
+  };
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const SERVER_CMD = "powershell -ExecutionPolicy Bypass -File scripts\\start_server.ps1";
+
+  /* ---------------- Phím tắt ---------------- */
+  const SHORTCUTS = [
+    { code: "Digit1", key: "1", label: "Chế độ Gốc", run: () => CT.setSettings({ mode: "orig" }) },
+    { code: "Digit2", key: "2", label: "Chế độ Phím trắng", run: () => CT.setSettings({ mode: "white" }) },
+    { code: "Digit3", key: "3", label: "Chế độ Bậc La Mã", run: () => CT.setSettings({ mode: "roman" }) },
+    { code: "ArrowUp", key: "↑", label: "Tông +1 (chế độ Gốc)", run: () => stepTranspose(1) },
+    { code: "ArrowDown", key: "↓", label: "Tông −1 (chế độ Gốc)", run: () => stepTranspose(-1) },
+    { code: "KeyM", key: "M", label: "Bật/tắt metronome", run: () => CT.setSettings({ metronome: !CT.settings.metronome }) },
+    { code: "KeyH", key: "H", label: "Thu gọn/mở khung hợp âm", run: () => CT.setSettings({ panelCollapsed: !CT.settings.panelCollapsed }) },
+  ];
+  const sc = (code) => "Alt+Shift+" + SHORTCUTS.find((s) => s.code === code).key;
+  function stepTranspose(d) {
+    const v = Math.max(-6, Math.min(6, (CT.settings.transpose | 0) + d));
+    CT.setSettings({ transpose: v, mode: CT.settings.mode === "white" ? "orig" : CT.settings.mode });
+  }
+  window.addEventListener("keydown", (e) => {
+    if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+    if (!CT.state.videoId || !CT.settings.enabled) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const s = SHORTCUTS.find((x) => x.code === e.code);
+    if (!s) return;
+    e.preventDefault();
+    e.stopPropagation();
+    s.run();
+  }, true);
+
+  /* ---------------- Chấm phách ---------------- */
+  class BeatDots {
+    constructor() { this.el = h("span", { class: "ct-beats", title: "Phách trong ô nhịp (phách 1 màu đỏ)" }); this.n = 0; this.pos = -1; }
+    setMeter(n) {
+      if (n === this.n) return;
+      this.n = n;
+      this.el.textContent = "";
+      for (let i = 1; i <= n; i++) this.el.append(h("i", { class: i === 1 ? "ct-first" : null, text: String(i) }));
+      this.pos = -1;
+    }
+    set(pos) {
+      if (pos === this.pos) return;
+      const kids = this.el.children;
+      if (this.pos > 0 && kids[this.pos - 1]) kids[this.pos - 1].classList.remove("ct-on");
+      if (pos > 0 && kids[pos - 1]) kids[pos - 1].classList.add("ct-on");
+      this.pos = pos;
+    }
+  }
+
+  /** Thông tin theo thời điểm t, dùng chung cho panel và lớp phủ. */
+  function info(song, t) {
+    const ki = T().keyIndexAt(song, t);
+    const key = song.keys[ki] || null;
+    const next = T().nextModulation(song, t);
+    const warn = CT.settings.modulationWarnSeconds || 8;
+    const soonIn = next && next.time - t <= warn ? next.time - t : null;
+    const bi = T().lastLE(song.beats, t);
+    return { ki, key, next, soonIn, beatPos: bi >= 0 ? song.beatPos[bi] : 0, beatIndex: bi };
+  }
+  function soonText(i, withTranspose) {
+    if (i.soonIn == null) return "";
+    const to = T().keyName(T().parseKeyText(i.next.to));
+    let s = `Sắp đổi giọng sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${to}`;
+    if (withTranspose) s += ` · transpose ${T().signed(i.next.transpose_from)} → ${T().signed(i.next.transpose_to)}`;
+    return s;
+  }
+
+  /* ---------------- Panel ---------------- */
+  const panel = {
+    el: null, state: "hidden", song: null, last: {},
+    build() {
+      const modeBtn = (m, text, tip) => h("button", { "data-m": m, type: "button", title: tip, onclick: () => CT.setSettings({ mode: m }) }, text);
+      this.dots = new BeatDots();
+      this.keyEl = h("b", { class: "ct-key", text: "–" });
+      this.tempoEl = h("span", { class: "ct-chip", title: "Tốc độ (phách mỗi phút)" });
+      this.meterEl = h("span", { class: "ct-chip", title: "Số chỉ nhịp: số phách trong một ô nhịp" });
+      this.soonEl = h("span", { class: "ct-chip ct-warn", hidden: true });
+      this.metroBtn = h("button", { type: "button", class: "ct-btn", title: `Bật/tắt tiếng phách theo nhịp bài (${sc("KeyM")})`,
+        onclick: () => CT.setSettings({ metronome: !CT.settings.metronome }) });
+      this.volEl = h("input", { type: "range", min: 0, max: 100, class: "ct-vol", title: "Âm lượng tiếng phách",
+        oninput: (e) => CT.setSettings({ metronomeVolume: e.target.value / 100 }) });
+      this.seg = h("div", { class: "ct-seg", role: "group", "aria-label": "Cách hiện hợp âm" },
+        modeBtn("orig", "Gốc", `Hợp âm đúng tông bài, có thể dịch tông (${sc("Digit1")})`),
+        modeBtn("white", "🎹 Phím trắng", `Chơi trên phím trắng, đặt transpose của đàn theo ô bên dưới (${sc("Digit2")})`),
+        modeBtn("roman", "Bậc La Mã", `Bậc hợp âm trong giọng (I, IV, V, vi…) (${sc("Digit3")})`));
+      this.trEl = h("b", { class: "ct-tr" });
+      this.stepper = h("span", { class: "ct-stepper", title: "Dịch tông hợp âm hiển thị" }, "Tông",
+        h("button", { type: "button", class: "ct-btn ct-sq", title: `Hạ nửa cung (${sc("ArrowDown")})`, onclick: () => stepTranspose(-1) }, "−"),
+        this.trEl,
+        h("button", { type: "button", class: "ct-btn ct-sq", title: `Nâng nửa cung (${sc("ArrowUp")})`, onclick: () => stepTranspose(1) }, "+"));
+      this.collapseBtn = h("button", { type: "button", class: "ct-btn ct-icon", onclick: () => CT.setSettings({ panelCollapsed: !CT.settings.panelCollapsed }) });
+      this.miniEl = h("span", { class: "ct-mini" });
+
+      this.head = h("div", { class: "ct-head" },
+        h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, "ChordTrack"),
+        this.miniEl,
+        h("span", { class: "ct-keywrap" }, "Giọng ", this.keyEl),
+        this.tempoEl, this.meterEl, this.dots.el, this.soonEl,
+        h("span", { class: "ct-grow" }),
+        h("span", { class: "ct-metro" }, this.metroBtn, this.volEl),
+        this.collapseBtn);
+
+      this.tval = h("span", { class: "ct-tval" });
+      this.tkey = h("span", { class: "ct-tkey" });
+      this.tnext = h("span", { class: "ct-tnext" });
+      this.tbox = h("div", { class: "ct-tbox", title: "Đặt nút transpose của đàn điện theo số này, rồi bấm hợp âm trên phím trắng" },
+        h("span", {}, "Đặt transpose đàn"), this.tval, this.tkey, this.tnext);
+
+      this.slot = h("div", { class: "ct-strip-slot" });
+      this.fsNote = h("div", { class: "ct-fs-note", text: "Dải hợp âm đang hiện trên video (toàn màn hình)." });
+      const check = (key, text, tip) => h("label", { title: tip },
+        h("input", { type: "checkbox", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), " " + text);
+      this.opts = h("div", { class: "ct-controls" },
+        this.seg, this.stepper, h("span", { class: "ct-grow" }),
+        h("span", { class: "ct-opts" },
+          check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
+          check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C")));
+      const legend = h("div", { class: "ct-legend" },
+        "⚠ model không chắc, nên nghe lại · vạch cao: phách 1 (kèm số ô nhịp) · vạch vàng: đổi giọng · bấm hợp âm để tua · phím tắt Alt+Shift+1/2/3, ↑/↓, M, H");
+      this.body = h("div", { class: "ct-body" }, this.opts, this.tbox, this.slot, this.fsNote, legend);
+      this.status = h("div", { class: "ct-status" });
+      this.el = h("div", { id: "ct-panel", class: "ct-root ct-panel", hidden: true }, this.head, this.status, this.body);
+      this.slot.append(CT.ui.strip.el);
+      this.applySettings(CT.settings);
+    },
+
+    show(state) {
+      this.state = state;
+      this.el.hidden = state === "hidden" || !CT.settings.enabled;
+      this.el.dataset.state = state;
+    },
+
+    setSong(song) {
+      this.sawSeparation = false;
+      this.song = song;
+      this.last = {};
+      const r = song.result;
+      this.tempoEl.textContent = r.tempo ? `${Math.round(r.tempo)} BPM` : "";
+      this.tempoEl.hidden = !r.tempo;
+      this.meterEl.textContent = `Nhịp ${song.meter}/4`;
+      this.meterEl.hidden = !song.beats.length;
+      this.dots.setMeter(song.beats.length ? song.meter : 0);
+      CT.ui.strip.setSong(song);
+      this.show("ready");
+      this.onTime(CT.ui.lastTime || { t: 0 });
+    },
+
+    applySettings(s) {
+      if (!this.el) return;
+      for (const b of this.seg.children) b.classList.toggle("ct-on", b.dataset.m === s.mode);
+      this.el.dataset.mode = s.mode;
+      this.trEl.textContent = T().signed(s.transpose | 0);
+      this.stepper.hidden = s.mode === "white";
+      this.metroBtn.textContent = s.metronome ? "🔊 Metronome" : "🔈 Metronome";
+      this.metroBtn.classList.toggle("ct-on", !!s.metronome);
+      this.volEl.value = Math.round((s.metronomeVolume ?? 0.6) * 100);
+      for (const c of this.opts.querySelectorAll("input[data-k]")) c.checked = !!s[c.dataset.k];
+      const col = !!s.panelCollapsed;
+      this.el.classList.toggle("ct-collapsed", col);
+      this.collapseBtn.textContent = col ? "▾" : "▴";
+      this.collapseBtn.title = (col ? "Mở khung hợp âm" : "Thu gọn khung hợp âm") + ` (${sc("KeyH")})`;
+      if (this.state !== "hidden") this.show(this.state);
+      this.last = {};
+      if (this.song) {
+        CT.ui.strip.relabel();
+        this.onTime(CT.ui.lastTime || { t: 0 });
+      }
+    },
+
+    onTime({ t, ad }) {
+      const s = this.song;
+      if (!s || this.state !== "ready") return;
+      if (!CT.ui.fullscreenOn) CT.ui.strip.update(t);
+      this.el.classList.toggle("ct-ad", !!ad);
+      const i = info(s, t);
+      this.dots.set(i.beatPos);
+      const L = this.last;
+      if (L.ki !== i.ki || L.mode !== CT.settings.mode) {
+        L.ki = i.ki; L.mode = CT.settings.mode;
+        const k = i.key;
+        this.keyEl.textContent = T().keyName(k);
+        const w = k ? k.white_key_transpose | 0 : 0;
+        this.tval.textContent = T().signed(w);
+        this.tkey.textContent = k ? `${T().keyName(k)} → chơi như ${k.mode === "minor" ? "A thứ" : "C trưởng"}` : "";
+        this.tbox.hidden = !k;
+      }
+      // Chế độ phím trắng: cảnh báo nằm trong ô transpose (đếm ngược), không lặp lại ở hàng đầu.
+      const white = CT.settings.mode === "white";
+      const nextText = !i.next ? (s.modulations.length ? "Không còn chỗ đổi giọng" : "")
+        : i.soonIn != null
+          ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${T().keyName(T().parseKeyText(i.next.to))}: transpose ${T().signed(i.next.transpose_to)}`
+          : `Kế tiếp ${fmt(i.next.time)}: ${T().signed(i.next.transpose_from)} → ${T().signed(i.next.transpose_to)}`;
+      if (L.next !== nextText) { L.next = nextText; this.tnext.textContent = nextText; }
+      const soon = white ? "" : soonText(i, false);
+      if (L.soon !== soon) {
+        L.soon = soon;
+        this.soonEl.textContent = soon;
+        this.soonEl.hidden = !soon;
+      }
+      const isSoon = i.soonIn != null;
+      if (L.isSoon !== isSoon) { L.isSoon = isSoon; this.tbox.classList.toggle("ct-soon", isSoon); }
+      // Hợp âm hiện tại khi thu gọn.
+      const ci = CT.ui.strip.idx;
+      if (L.ci !== ci) {
+        L.ci = ci;
+        const c = s.chords[ci];
+        this.miniEl.textContent = c ? T().chordLabels(s, c, CT.settings).main : "";
+      }
+    },
+
+    /* ----- trạng thái đang phân tích / lỗi ----- */
+    showLoading(job) {
+      this.song = null;
+      CT.ui.strip.setSong(null);
+      // Tách nguồn mặc định tắt: chỉ hiện bước này khi server thật sự chạy nó.
+      if (job.step === "separation") this.sawSeparation = true;
+      const STEPS = [["fetch", "Tải audio"], ...(this.sawSeparation ? [["separation", "Tách nguồn"]] : []),
+        ["beats", "Tìm phách"], ["chords", "Nhận hợp âm"], ["fusion", "Ghép kết quả"], ["analysis", "Giọng và đoạn"]];
+      const pct = Math.round((job.progress || 0) * 100);
+      const cur = STEPS.findIndex(([k]) => k === job.step);
+      const eta = job.eta_seconds;
+      const etaText = eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
+        : `còn khoảng ${Math.round(eta / 60)} phút`;
+      const queued = job.status === "queued";
+      this.status.replaceChildren(
+        h("div", { class: "ct-st-title" },
+          h("span", { class: "ct-spinner" }), queued ? (job.message || "Đang chờ tới lượt") : "Đang phân tích hợp âm bài này",
+          h("span", { class: "ct-st-pct", text: queued ? "" : `${pct}%` })),
+        h("div", { class: "ct-progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 },
+          h("div", { style: `width:${queued ? 2 : Math.max(2, pct)}%` })),
+        h("ol", { class: "ct-steps" }, ...STEPS.map(([k, label], i) =>
+          h("li", { class: cur < 0 ? (queued ? "" : "") : i < cur ? "ct-done" : i === cur ? "ct-now" : "" },
+            (cur >= 0 && i < cur ? "✓ " : "") + label))),
+        h("div", { class: "ct-st-note" },
+          [etaText && etaText[0].toUpperCase() + etaText.slice(1), "Video vẫn xem bình thường, hợp âm sẽ hiện khi xong. Lần sau mở lại bài này là có ngay."]
+            .filter(Boolean).join(" · ")));
+      this.show("loading");
+    },
+
+    showError(err) {
+      const key = `${err.code}|${err.message}`;
+      if (this.state === "error" && this.errKey === key) return; // lần tự thử lại ra cùng lỗi: không vẽ lại
+      this.errKey = key;
+      this.song = null;
+      CT.ui.strip.setSong(null);
+      const retry = (force, text = "Thử lại") => h("button", { type: "button", class: "ct-btn ct-primary",
+        title: force ? "Bỏ kết quả cũ, phân tích lại từ đầu" : "Gọi lại server", onclick: () => CT.app && CT.app.reload(force) }, text);
+      const code = (cmd) => {
+        const btn = h("button", { type: "button", class: "ct-btn", title: "Chép lệnh vào clipboard" }, "Chép lệnh");
+        btn.addEventListener("click", async () => {
+          try { await navigator.clipboard.writeText(cmd); btn.textContent = "Đã chép ✓"; } catch { btn.textContent = "Không chép được"; }
+          setTimeout(() => { btn.textContent = "Chép lệnh"; }, 1500);
+        });
+        return h("div", { class: "ct-code" }, h("code", { text: cmd }), btn);
+      };
+      let kids;
+      if (err.code === "server_down") {
+        kids = [
+          h("div", { class: "ct-st-title" }, "⚠ Chưa kết nối được server ChordTrack"),
+          h("p", {}, `Extension cần backend chạy trên máy (${CT.settings.serverUrl}). Mở PowerShell ở thư mục repo và chạy:`),
+          code(SERVER_CMD),
+          h("div", { class: "ct-st-actions" }, retry(false), h("span", { class: "ct-st-note", text: "Tự thử lại mỗi 5 giây." })),
+        ];
+      } else if (err.code === "youtube_blocked") {
+        kids = [
+          h("div", { class: "ct-st-title" }, "⚠ YouTube chặn tải audio"),
+          h("p", { text: err.message }),
+          h("ol", { class: "ct-howto" },
+            h("li", {}, "Cài extension “Get cookies.txt LOCALLY”, mở youtube.com (đã đăng nhập), xuất cookie ra file cookies.txt."),
+            h("li", {}, "Tắt server rồi chạy lại kèm file cookie:")),
+          code(SERVER_CMD + " -Cookies C:\\duong\\dan\\cookies.txt"),
+          h("div", { class: "ct-st-actions" }, retry(false)),
+        ];
+      } else if (err.code === "extension_reloaded") {
+        kids = [h("div", { class: "ct-st-title" }, "Extension vừa được cập nhật"),
+          h("div", { class: "ct-st-actions" }, h("button", { type: "button", class: "ct-btn ct-primary", onclick: () => location.reload() }, "Tải lại trang"))];
+      } else {
+        kids = [
+          h("div", { class: "ct-st-title" }, "⚠ Không phân tích được bài này"),
+          h("p", { text: err.message || "Lỗi không rõ" }),
+          h("div", { class: "ct-st-actions" }, retry(false), retry(true, "Phân tích lại")),
+        ];
+      }
+      this.status.replaceChildren(...kids);
+      this.show("error");
+    },
+  };
+
+  /* ---------------- Gắn vào DOM YouTube ---------------- */
+  const layout = {
+    mo: null, timer: 0, mounted: false,
+    flexy: () => document.querySelector("ytd-watch-flexy"),
+    /** Bảng cấu trúc ở cột phải khi trang hai cột và không ở chế độ rạp hát. */
+    sideBySide() {
+      const f = this.flexy();
+      if (!f) return true;
+      const theater = f.hasAttribute("theater") || f.hasAttribute("theater-requested_");
+      const twoCols = f.hasAttribute("is-two-columns_");
+      const secondary = document.querySelector("#secondary");
+      return twoCols && !theater && !!secondary && secondary.offsetWidth > 0;
+    },
+    place() {
+      this.timer = 0;
+      if (!this.mounted) return;
+      const p = panel.el, secs = CT.ui.sections && CT.ui.sections.el;
+      const below = document.querySelector("ytd-watch-flexy #below") || document.querySelector("#below");
+      if (below) {
+        const meta = [...below.children].find((c) => c.tagName === "YTD-WATCH-METADATA");
+        if (p.parentNode !== below || (meta ? p.nextSibling !== meta && p.nextSibling !== secs : below.firstChild !== p)) {
+          below.insertBefore(p, meta || below.firstChild);
+        }
+      }
+      if (!secs) return;
+      const side = this.sideBySide();
+      secs.classList.toggle("ct-side", side);
+      if (side) {
+        const host = document.querySelector("#secondary #secondary-inner") || document.querySelector("#secondary");
+        if (host && host.firstChild !== secs) host.insertBefore(secs, host.firstChild);
+      } else if (p.parentNode && p.nextSibling !== secs) {
+        p.parentNode.insertBefore(secs, p.nextSibling);
+      }
+    },
+    schedule() { if (!this.timer) this.timer = setTimeout(() => this.place(), 200); },
+    mount() {
+      if (!panel.el) panel.build();
+      this.mounted = true;
+      this.place();
+      if (!this.mo) {
+        this.mo = new MutationObserver((muts) => {
+          for (const m of muts) {
+            const n = m.target;
+            if (n.closest && n.closest(".ct-root")) continue; // thay đổi bên trong khung của ta
+            this.schedule();
+            return;
+          }
+        });
+        this.mo.observe(document.body, { childList: true, subtree: true });
+        const f = this.flexy();
+        if (f) {
+          this.mo2 = new MutationObserver(() => this.schedule());
+          this.mo2.observe(f, { attributes: true, attributeFilter: ["theater", "is-two-columns_", "fullscreen"] });
+        }
+        window.addEventListener("resize", this.onResize = () => this.schedule());
+      }
+    },
+    unmount() {
+      this.mounted = false;
+      this.mo?.disconnect(); this.mo = null;
+      this.mo2?.disconnect(); this.mo2 = null;
+      if (this.onResize) window.removeEventListener("resize", this.onResize);
+      panel.el?.remove();
+      CT.ui.sections?.el?.remove();
+    },
+  };
+
+  CT.ui = CT.ui || {};
+  Object.assign(CT.ui, { panel, layout, BeatDots, info, soonText, shortcuts: SHORTCUTS, lastTime: null, fullscreenOn: false });
+
+  CT.bus.on("settings", (s) => panel.applySettings(s));
+  CT.bus.on("time", (p) => { CT.ui.lastTime = p; panel.onTime(p); });
+  CT.bus.on("song:loading", ({ job }) => { if (panel.el) panel.showLoading(job || {}); });
+  CT.bus.on("song:error", (e) => { if (panel.el) panel.showError(e); });
+  CT.bus.on("song:ready", ({ result }) => {
+    if (!panel.el) return;
+    try {
+      CT.ui.song = T().buildSong(result);
+      panel.setSong(CT.ui.song);
+    } catch (e) {
+      console.error("[ChordTrack] result lỗi", e);
+      panel.showError({ code: "bad_result", message: "Kết quả từ server không đọc được: " + e.message });
+    }
+  });
+  CT.bus.on("song:none", () => { CT.ui.song = null; if (panel.el) { panel.song = null; CT.ui.strip.setSong(null); panel.show("hidden"); } });
+})();

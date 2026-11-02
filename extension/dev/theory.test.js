@@ -1,0 +1,133 @@
+// Test cho extension/src/theory.js. Chạy: node --test extension/dev/
+// Dùng thêm result.json thật ở data/cache nếu có (bỏ qua nếu máy không có dữ liệu).
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const T = require("../src/theory.js");
+
+const DATA = process.env.CHORDTRACK_DATA || "C:\\Users\\MakitJenamin\\Documents\\extension_chordtracking\\data";
+const loadResult = (id) => {
+  const p = path.join(DATA, "cache", id, "result.json");
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+};
+const K = (tonic, mode = "major") => ({ tonic, mode });
+
+test("pcOf và noteName theo giọng", () => {
+  assert.equal(T.pcOf("C"), 0);
+  assert.equal(T.pcOf("Bb"), 10);
+  assert.equal(T.pcOf("F#"), 6);
+  assert.equal(T.pcOf("Cb"), 11);
+  assert.equal(T.noteName(6, K("D")), "F#");
+  assert.equal(T.noteName(10, K("D")), "Bb");      // bậc mượn bVI của D... (Bb = bVI) viết giáng
+  assert.equal(T.noteName(3, K("Bb")), "Eb");
+  assert.equal(T.noteName(1, K("E")), "C#");
+  assert.equal(T.noteName(6, null), "F#");
+  assert.equal(T.noteName(1, null), "Db");
+});
+
+test("shiftSym: dịch giọng giữ loại hợp âm và bass", () => {
+  assert.equal(T.shiftSym("C", 2, K("D")), "D");
+  assert.equal(T.shiftSym("Am7/G", 2, K("D")), "Bm7/A");
+  assert.equal(T.shiftSym("C/E", 1, K("Db")), "Db/F");
+  assert.equal(T.shiftSym("F#m7b5", -1, K("F")), "Fm7b5");
+  assert.equal(T.shiftSym("C6/9", 2, K("D")), "D6/9");   // 6/9 không phải hợp âm đảo
+  assert.equal(T.shiftSym("N.C.", 3), "N.C.");
+  assert.equal(T.shiftSym("?", 3), "?");
+  assert.equal(T.shiftSym("G", 0), "G");
+  // Cm (giọng C thứ) -> phím trắng (transpose +3): dịch -3, viết theo A thứ
+  assert.equal(T.shiftSym("Cm", -3, K("A", "minor")), "Am");
+  assert.equal(T.shiftSym("Ab", -3, K("A", "minor")), "F");
+  assert.equal(T.shiftSym("Bb", -3, K("A", "minor")), "G");
+});
+
+test("stripBass và simplify", () => {
+  assert.equal(T.stripBass("C/G"), "C");
+  assert.equal(T.stripBass("Am7/G"), "Am7");
+  assert.equal(T.stripBass("C6/9"), "C6/9");
+  assert.equal(T.stripBass("I/5"), "I");
+  assert.equal(T.stripBass("V7/b7"), "V7");
+  assert.equal(T.simplify("Am7/G"), "Am");
+  assert.equal(T.simplify("Csus4"), "C");
+  assert.equal(T.simplify("Cmaj7"), "C");
+  assert.equal(T.simplify("Bm7b5"), "Bdim");
+  assert.equal(T.simplify("Bdim7"), "Bdim");
+  assert.equal(T.simplify("Fm(maj7)"), "Fm");
+  assert.equal(T.simplify("N.C."), "N.C.");
+});
+
+test("keyName, signed, parseKeyText", () => {
+  assert.equal(T.keyName(K("C", "minor")), "C thứ");
+  assert.equal(T.keyName(K("D")), "D trưởng");
+  assert.equal(T.signed(3), "+3");
+  assert.equal(T.signed(-2), "−2");
+  assert.equal(T.signed(0), "±0");
+  assert.deepEqual(T.parseKeyText("D minor"), { tonic: "D", mode: "minor" });
+});
+
+test("nhịp: vị trí phách, số chỉ nhịp suy ra và result.meter", () => {
+  const beats = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+  const downbeats = [1.5, 3.5];
+  const { pos } = T.beatPositions(beats, downbeats);
+  assert.deepEqual(pos, [0, 0, 1, 2, 3, 4, 1, 2, 3, 4]);
+  assert.equal(T.meterOf({ beats, downbeats }), 4);
+  assert.equal(T.meterOf({ beats, downbeats, meter: 3 }), 3);
+  assert.equal(T.meterOf({ beats, downbeats, meter: { beats_per_bar: 6 } }), 6);
+  const song = T.buildSong({ beats, downbeats, duration: 6, chords: [], sections: [] });
+  assert.deepEqual(song.beatPos, [3, 4, 1, 2, 3, 4, 1, 2, 3, 4]); // pickup đếm lùi
+  assert.deepEqual(song.bar, [0, 0, 1, 1, 1, 1, 2, 2, 2, 2]);
+  const waltz = T.buildSong({ beats: [0, 1, 2, 3, 4, 5], downbeats: [0, 3], duration: 6 });
+  assert.equal(waltz.meter, 3);
+});
+
+test("lastLE tìm nhị phân", () => {
+  const a = [0, 1, 2, 3];
+  assert.equal(T.lastLE(a, -1), -1);
+  assert.equal(T.lastLE(a, 0), 0);
+  assert.equal(T.lastLE(a, 2.5), 2);
+  assert.equal(T.lastLE(a, 9), 3);
+});
+
+const magia = loadResult("magia-f18f50a2");
+test("Magia: phím trắng dùng white_key_symbol, vùng giọng, chỗ đổi giọng", { skip: !magia && "không có dữ liệu" }, () => {
+  const song = T.buildSong(magia);
+  assert.equal(song.meter, 4);
+  const white = { mode: "white", transpose: 0 };
+  for (const c of song.chords) {
+    assert.equal(T.chordLabels(song, c, white).main, c.white_key_symbol);
+  }
+  // Vùng giọng đầu C thứ (+3), sau 50.99 s là D thứ (+5)
+  assert.equal(T.keyAt(song, 10).tonic, "C");
+  assert.equal(T.keyAt(song, 60).tonic, "D");
+  assert.equal(T.keyAt(song, 60).white_key_transpose, 5);
+  const m = T.nextModulation(song, 45);
+  assert.equal(m.time, 50.991);
+  assert.equal(m.transpose_to, 5);
+  // Bảng cấu trúc ở chế độ phím trắng: vòng hợp âm chỉ còn phím trắng (không có # hay b) với hợp âm trong giọng
+  for (const sec of song.sections) {
+    const L = T.sectionLabels(song, sec, white);
+    assert.equal(L.main.length, sec.progression.length);
+  }
+  const s1 = T.sectionLabels(song, song.sections[1], white);
+  assert.deepEqual(s1.main.slice(0, 3), ["Am", "F", "Gm"]); // Cm Ab Bbm dịch -3
+  // Chế độ gốc + transpose
+  const c = song.chords.find((x) => x.symbol === "Cm");
+  assert.equal(T.chordLabels(song, c, { mode: "orig", transpose: 2 }).main, "Dm");
+  assert.equal(T.chordLabels(song, c, { mode: "roman", transpose: 0 }).main, "i");
+});
+
+const letItBe = loadResult("QDYfEBY9NM4");
+test("Let It Be: C – G – Am – F, ẩn hợp âm đảo", { skip: !letItBe && "không có dữ liệu" }, () => {
+  const song = T.buildSong(letItBe);
+  assert.equal(song.meter, 4);
+  const first = T.sectionLabels(song, song.sections[0], { mode: "orig", transpose: 0 });
+  assert.deepEqual(first.main.slice(0, 4), ["C", "G", "Am", "F"]);
+  assert.deepEqual(first.sub.slice(0, 4), ["I", "V", "vi", "IV"]);
+  const inv = song.chords.find((c) => c.symbol.includes("/"));
+  if (inv) {
+    const L = T.chordLabels(song, inv, { mode: "orig", transpose: 0, hideInversions: true });
+    assert.ok(!L.main.includes("/"));
+  }
+  const up = T.sectionLabels(song, song.sections[0], { mode: "orig", transpose: 2 });
+  assert.deepEqual(up.main.slice(0, 4), ["D", "A", "Bm", "G"]);
+});

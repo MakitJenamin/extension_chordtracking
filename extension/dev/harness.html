@@ -1,0 +1,313 @@
+<!doctype html>
+<!--
+  Harness kiểm thử ChordTrack: trang giả lập cấu trúc DOM tối thiểu của trang xem video YouTube
+  (#movie_player chứa <video> thật, #below với ytd-watch-metadata, #secondary), nạp các script của
+  content script theo đúng thứ tự trong manifest.json, cùng background.js và shim chrome.runtime/chrome.storage.
+
+  Chạy (xem extension/README.md):
+    1. Backend:  powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1
+    2. Harness:  <venv python> extension\dev\serve.py
+    3. Mở http://127.0.0.1:8770/watch?v=QDYfEBY9NM4
+  Tham số: ?v=<videoId>  &dark=1|0  &down=1 (giả lập server tắt)  &theater=1  &w=900 (giả lập trang hẹp)
+-->
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChordTrack harness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* Biến màu giống YouTube (giá trị thật của --yt-spec-* ở hai theme). */
+  html {
+    --yt-spec-base-background: #fff; --yt-spec-raised-background: #fff;
+    --yt-spec-text-primary: #0f0f0f; --yt-spec-text-secondary: #606060; --yt-spec-text-primary-inverse: #fff;
+    --yt-spec-badge-chip-background: rgba(0,0,0,0.05); --yt-spec-10-percent-layer: rgba(0,0,0,0.1);
+    --yt-spec-call-to-action: #065fd4;
+  }
+  html[dark] {
+    --yt-spec-base-background: #0f0f0f; --yt-spec-raised-background: #212121;
+    --yt-spec-text-primary: #f1f1f1; --yt-spec-text-secondary: #aaa; --yt-spec-text-primary-inverse: #0f0f0f;
+    --yt-spec-badge-chip-background: rgba(255,255,255,0.1); --yt-spec-10-percent-layer: rgba(255,255,255,0.2);
+    --yt-spec-call-to-action: #3ea6ff;
+  }
+  body { margin: 0; background: var(--yt-spec-base-background); color: var(--yt-spec-text-primary);
+         font-family: Roboto, Arial, sans-serif; font-size: 14px; }
+  #masthead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 16px; position: sticky; top: 0; z-index: 100;
+              background: var(--yt-spec-base-background); border-bottom: 1px solid var(--yt-spec-10-percent-layer); font-size: 13px; }
+  #masthead b { margin-right: 6px; }
+  #masthead a, #masthead button { color: inherit; background: var(--yt-spec-badge-chip-background); border: 0; border-radius: 8px;
+              padding: 5px 10px; text-decoration: none; cursor: pointer; font: inherit; }
+  #masthead a.on { background: var(--yt-spec-text-primary); color: var(--yt-spec-text-primary-inverse); }
+  #masthead .sp { flex: 1; }
+  #masthead #wsize { color: var(--yt-spec-text-secondary); font-variant-numeric: tabular-nums; }
+
+  /* Bố cục trang xem video (rút gọn từ YouTube) */
+  ytd-watch-flexy { display: block; }
+  #columns { display: flex; gap: 24px; max-width: 1754px; margin: 0 auto; padding: 24px 24px 0; }
+  #primary { flex: 1; min-width: 0; }
+  #secondary { width: 402px; flex: none; }
+  ytd-watch-flexy:not([is-two-columns_]) #secondary { display: none; }
+  ytd-watch-flexy[theater] #full-bleed-container { display: block; }
+  #full-bleed-container { display: none; background: #000; }
+  ytd-watch-flexy[theater] #full-bleed-container #movie_player { border-radius: 0; max-height: calc(100vh - 169px); margin: 0 auto; }
+  ytd-watch-flexy[theater] #columns { padding-top: 12px; }
+
+  /* Player giả */
+  #movie_player { position: relative; aspect-ratio: 16/9; background: radial-gradient(circle at 30% 30%, #3a1f4d, #0b0711 70%);
+                  border-radius: 12px; overflow: hidden; color: #fff; user-select: none; }
+  #movie_player video { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ytp-title-card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+  .ytp-title-card .t { font-size: 28px; font-weight: 700; } .ytp-title-card .s { opacity: .7; margin-top: 6px; }
+  .ytp-gradient-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; background: linear-gradient(transparent, rgba(0,0,0,.6)); transition: opacity .25s; pointer-events: none; }
+  .ytp-chrome-bottom { position: absolute; left: 12px; right: 12px; bottom: 0; height: 48px; display: flex; align-items: center; gap: 10px;
+                       transition: opacity .25s; z-index: 59; }
+  .ytp-autohide .ytp-chrome-bottom, .ytp-autohide .ytp-gradient-bottom { opacity: 0; }
+  .ytp-chrome-bottom button, .ytp-chrome-bottom select { background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
+  .ytp-chrome-bottom select { font-size: 13px; background: rgba(255,255,255,.15); border-radius: 6px; }
+  .ytp-chrome-bottom input[type=range] { flex: 1; accent-color: #f03; }
+  .ytp-time { font-variant-numeric: tabular-nums; font-size: 13px; min-width: 96px; text-align: right; }
+  .ytp-caption-window-bottom { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); background: rgba(8,8,8,.75);
+                               padding: 2px 8px; font-size: 20px; pointer-events: none; }
+  ytd-watch-flexy[fullscreen] #movie_player { position: fixed; inset: 0; z-index: 1000; border-radius: 0; aspect-ratio: auto; }
+  ytd-watch-flexy[fullscreen] .ytp-chrome-bottom { left: 24px; right: 24px; height: 60px; }
+
+  /* Phần dưới player */
+  ytd-watch-metadata { display: block; margin-top: 12px; }
+  ytd-watch-metadata h1 { font-size: 20px; line-height: 28px; font-weight: 700; margin: 0; }
+  .owner { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .owner i { width: 40px; height: 40px; border-radius: 50%; background: #c00; display: inline-block; }
+  .desc { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--yt-spec-badge-chip-background); line-height: 20px; }
+  .rel { display: flex; gap: 8px; margin-bottom: 8px; }
+  .rel i { width: 168px; height: 94px; border-radius: 8px; background: var(--yt-spec-10-percent-layer); flex: none; }
+  .rel div { font-size: 14px; font-weight: 500; line-height: 20px; }
+  .rel span { display: block; color: var(--yt-spec-text-secondary); font-size: 12px; font-weight: 400; }
+</style>
+<script>
+  // Theme và cờ trước khi vẽ trang.
+  const Q = new URLSearchParams(location.search);
+  if (Q.get("dark") !== "0") document.documentElement.setAttribute("dark", "");
+</script>
+</head>
+<body>
+<div id="masthead">
+  <b>ChordTrack harness</b>
+  <a data-v="QDYfEBY9NM4" title="Let It Be: C – G – Am – F, một giọng">Let It Be</a>
+  <a data-v="devmagia_01" title="Magia (Kajiura): 5 chỗ đổi giọng">Magia</a>
+  <a data-v="devslow_001" title="Job giả ~15 s: thanh tiến độ">Đang phân tích</a>
+  <a data-v="devblock_01" title="Job giả lỗi: YouTube đòi cookie">Lỗi YouTube</a>
+  <a data-v="QDYfEBY9NM4" data-down="1" title="Proxy đóng kết nối: như server chưa chạy">Server tắt</a>
+  <a data-home="1" title="Trang không phải video">Trang chủ</a>
+  <span class="sp"></span>
+  <button id="themeBtn" title="Đổi theme sáng/tối (thuộc tính dark trên html)">Theme</button>
+  <button id="theaterBtn" title="Chế độ rạp hát">Rạp hát</button>
+  <span id="wsize"></span>
+</div>
+
+<ytd-app>
+<ytd-watch-flexy id="flexy">
+  <div id="full-bleed-container"></div>
+  <div id="columns">
+    <div id="primary"><div id="primary-inner">
+      <div id="player"><div id="player-container">
+        <div id="movie_player" class="html5-video-player">
+          <video class="html5-main-video" preload="auto"></video>
+          <div class="ytp-title-card"><div class="t" id="cardTitle"></div><div class="s">khung video giả · audio thật</div></div>
+          <div class="ytp-caption-window-bottom" id="caption" hidden>Phụ đề mẫu (YouTube)</div>
+          <div class="ytp-gradient-bottom"></div>
+          <div class="ytp-chrome-bottom">
+            <button id="play" title="Phát / dừng (k)">▶</button>
+            <input id="seek" type="range" min="0" max="1000" value="0" title="Tua">
+            <span class="ytp-time" id="time">0:00 / 0:00</span>
+            <select id="rate" title="Tốc độ phát"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select>
+            <button id="cc" title="Phụ đề">CC</button>
+            <button id="fsBtn" title="Toàn màn hình (f)">⛶</button>
+          </div>
+        </div>
+      </div></div>
+      <div id="below">
+        <ytd-watch-metadata>
+          <h1 id="vtitle"></h1>
+          <div class="owner"><i></i><div><b>Kênh giả lập</b><div style="color:var(--yt-spec-text-secondary);font-size:12px">1,2 Tr người đăng ký</div></div></div>
+          <div class="desc">Mô tả video. Trang này chỉ dựng phần DOM mà extension cần: <code>#movie_player</code>, <code>#below</code>, <code>ytd-watch-metadata</code>, <code>#secondary</code>.</div>
+        </ytd-watch-metadata>
+        <div id="comments" style="margin-top:24px;color:var(--yt-spec-text-secondary)">Bình luận…</div>
+      </div>
+    </div></div>
+    <div id="secondary"><div id="secondary-inner"><div id="related"></div></div></div>
+  </div>
+</ytd-watch-flexy>
+</ytd-app>
+
+<script>
+(() => {
+  const TITLES = { QDYfEBY9NM4: "The Beatles – Let It Be (Remastered 2009)", devmagia_01: "Kalafina – Magia",
+                   devslow_001: "Bài chưa phân tích (job giả)", devblock_01: "Video bị YouTube chặn (job giả)" };
+  const v = Q.get("v");
+  const down = Q.get("down") === "1";
+  const flexy = document.getElementById("flexy");
+  const player = document.getElementById("movie_player");
+  const video = player.querySelector("video");
+  const $ = (id) => document.getElementById(id);
+
+  // ---- masthead
+  for (const a of document.querySelectorAll("#masthead a")) {
+    const u = new URL(location.href);
+    if (a.dataset.home) { u.pathname = "/dev/harness.html"; u.search = ""; }
+    else { u.pathname = "/watch"; u.searchParams.set("v", a.dataset.v); u.searchParams.delete("down"); if (a.dataset.down) u.searchParams.set("down", "1"); }
+    for (const k of ["dark", "w"]) if (Q.has(k)) u.searchParams.set(k, Q.get(k));
+    a.href = u.pathname + u.search;
+    a.classList.toggle("on", !a.dataset.home && a.dataset.v === v && !!a.dataset.down === down);
+  }
+  $("themeBtn").onclick = () => document.documentElement.toggleAttribute("dark");
+  $("theaterBtn").onclick = () => setTheater(!flexy.hasAttribute("theater"));
+  function setTheater(on) {
+    flexy.toggleAttribute("theater", on);
+    (on ? $("full-bleed-container") : $("player-container")).append(player);
+  }
+  if (Q.get("theater") === "1") setTheater(true);
+  // ?w=900: giả lập trang hẹp khi không đổi được kích thước cửa sổ (trang bị bó vào bề rộng đó).
+  const forcedW = +Q.get("w") || 0;
+  if (forcedW) { document.body.style.maxWidth = forcedW + "px"; document.body.style.margin = "0 auto";
+                 document.body.style.outline = "1px dashed #888"; }
+  function layout() {
+    const w = forcedW || innerWidth;
+    flexy.toggleAttribute("is-two-columns_", w >= 1000);
+    $("wsize").textContent = `${w}px${forcedW ? " (giả lập)" : ""} · ${w >= 1000 ? "2 cột" : "1 cột"}`;
+  }
+  addEventListener("resize", layout); layout();
+
+  // ---- trang không phải video
+  if (location.pathname !== "/watch") {
+    player.style.display = "none"; $("vtitle").textContent = "Trang chủ (không phải trang video)";
+  } else {
+    $("vtitle").textContent = TITLES[v] || v; $("cardTitle").textContent = TITLES[v] || v;
+    video.src = "/media/" + encodeURIComponent(v);
+  }
+  $("related").innerHTML = Array.from({ length: 8 }, (_, i) =>
+    `<div class="rel"><i></i><div>Video đề xuất ${i + 1}<span>Kênh ${i + 1} · 1 Tr lượt xem</span></div></div>`).join("");
+
+  // ---- điều khiển player giả
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const toggle = () => (video.paused ? video.play() : video.pause());
+  $("play").onclick = toggle;
+  player.addEventListener("click", (e) => { if (e.target === player || e.target === video) toggle(); });
+  video.addEventListener("play", () => ($("play").textContent = "⏸"));
+  video.addEventListener("pause", () => ($("play").textContent = "▶"));
+  video.addEventListener("loadedmetadata", () => ($("time").textContent = `0:00 / ${fmt(video.duration)}`));
+  video.addEventListener("timeupdate", () => {
+    $("time").textContent = `${fmt(video.currentTime)} / ${fmt(video.duration || 0)}`;
+    if (!seeking) $("seek").value = (video.currentTime / (video.duration || 1)) * 1000;
+  });
+  let seeking = false;
+  $("seek").oninput = () => { seeking = true; };
+  $("seek").onchange = () => { video.currentTime = ($("seek").value / 1000) * (video.duration || 0); seeking = false; };
+  $("rate").onchange = () => (video.playbackRate = +$("rate").value);
+  $("cc").onclick = () => ($("caption").hidden = !$("caption").hidden);
+  // Toàn màn hình như YouTube: phần tử fullscreen là ytd-app, ytd-watch-flexy có thuộc tính [fullscreen].
+  const app = document.querySelector("ytd-app");
+  // Trình duyệt điều khiển tự động có thể từ chối requestFullscreen ("not granted"): khi đó giả lập
+  // (player phủ kín cửa sổ, phát thẳng sự kiện "fullscreen" như sync.js) để vẫn xem được lớp phủ.
+  let pseudoFs = false;
+  function setPseudoFs(on) {
+    pseudoFs = on;
+    flexy.toggleAttribute("fullscreen", on);
+    window.CT && CT.bus.emit("fullscreen", { on, container: player });
+  }
+  window.harnessFullscreen = setPseudoFs;
+  $("fsBtn").onclick = () => {
+    if (pseudoFs) return setPseudoFs(false);
+    if (document.fullscreenElement) return document.exitFullscreen();
+    app.requestFullscreen().catch((e) => { console.info("[harness] fullscreen bị từ chối, giả lập:", e.message); setPseudoFs(true); });
+  };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && pseudoFs) setPseudoFs(false); });
+  document.addEventListener("fullscreenchange", () => flexy.toggleAttribute("fullscreen", !!document.fullscreenElement));
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || /INPUT|SELECT/.test(e.target.tagName)) return;
+    if (e.key === "k" || e.key === " ") { e.preventDefault(); toggle(); }
+    if (e.key === "f") $("fsBtn").click();
+  });
+  // Tự ẩn thanh điều khiển sau 3 s không rê chuột khi đang phát (class ytp-autohide như YouTube).
+  let idle = 0;
+  const wake = () => { player.classList.remove("ytp-autohide"); clearTimeout(idle);
+    idle = setTimeout(() => { if (!video.paused) player.classList.add("ytp-autohide"); }, 3000); };
+  player.addEventListener("mousemove", wake); video.addEventListener("play", wake);
+  video.addEventListener("pause", () => player.classList.remove("ytp-autohide"));
+
+  // ---- shim chrome.* cho script của extension
+  const KEY = "ct-harness-storage";
+  let store = {};
+  try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch {}
+  store.settings = { ...(store.settings || {}), serverUrl: location.origin + (down ? "/api-down" : "/api") };
+  const changeFns = [], msgFns = [];
+  window.chrome = window.chrome || {};
+  chrome.storage = {
+    sync: {
+      async get(k) { return k == null ? { ...store } : { [k]: store[k] }; },
+      async set(obj) {
+        const changes = {};
+        for (const [k, nv] of Object.entries(obj)) changes[k] = { oldValue: store[k], newValue: nv };
+        Object.assign(store, obj);
+        try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {}
+        // chrome.storage.onChanged chỉ báo cho các trang/khung khác; trang đổi cũng nhận, nên mô phỏng y vậy.
+        setTimeout(() => changeFns.forEach((fn) => fn(changes, "sync")), 0);
+      },
+    },
+    onChanged: { addListener: (fn) => changeFns.push(fn) },
+  };
+  chrome.runtime = {
+    lastError: undefined,
+    onMessage: { addListener: (fn) => msgFns.push(fn) },
+    sendMessage(msg, cb) {
+      for (const fn of msgFns) { if (fn(msg, {}, (res) => setTimeout(() => cb && cb(res), 0))) return; }
+      cb && cb(undefined);
+    },
+  };
+
+  // ---- nạp background.js rồi các content script đúng thứ tự trong manifest.json
+  function loadScript(src) {
+    return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res;
+      s.onerror = () => rej(new Error("không nạp được " + src)); document.head.append(s); });
+  }
+  (async () => {
+    const mf = await (await fetch("/manifest.json")).json();
+    await loadScript("/" + mf.background.service_worker);
+    const cs = mf.content_scripts[0];
+    for (const css of cs.css) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "/" + css; document.head.append(l); }
+    for (const js of cs.js) await loadScript("/" + js);
+    console.info("[harness] đã nạp", cs.js.length, "script theo manifest");
+    window.__harnessReady = true;
+  })().catch((e) => console.error("[harness]", e));
+
+  // ---- đo độ lệch đồng bộ: mỗi lần hợp âm hiện tại đổi, so currentTime thật với mốc start của hợp âm.
+  window.ctSync = { samples: [] };
+  const poll = (fromInterval) => {
+    const ui = window.CT && CT.ui, d = ui && ui.debugLastChange;
+    if (d && d !== ctSync.last && CT.ui.song && d.idx >= 0 && !video.paused) {
+      ctSync.last = d;
+      const c = CT.ui.song.chords[d.idx];
+      // Lệch = thời điểm (theo video.currentTime) class đổi - mốc start của hợp âm.
+      // Chỉ tính khi đang phát liên tục (bỏ lần tua).
+      const err = (d.ct - c.start) * 1000;
+      if (Math.abs(err) < 500) ctSync.samples.push(err);
+    }
+    if (fromInterval !== true) requestAnimationFrame(poll);
+  };
+  requestAnimationFrame(poll);
+  // ?measure=1: Chrome bóp requestAnimationFrame ở cửa sổ bị che/không hiện (còn 1–3 khung/giây), nên khi
+  // đo độ lệch ở chế độ đó, gọi chính CT.sync.tick (thân vòng rAF) thêm ở 60 Hz bằng setInterval.
+  if (Q.get("measure") === "1") {
+    setInterval(() => window.CT && CT.sync && CT.sync.attached && CT.sync.tick(performance.now()), 1000 / 60);
+    setInterval(() => poll.call(null, true), 1000 / 60);
+  }
+  ctSync.report = () => {
+    const a = ctSync.samples.slice(), n = a.length;
+    if (!n) return "chưa có mẫu";
+    const abs = a.map(Math.abs).sort((x, y) => x - y);
+    return { n, mean_ms: +(a.reduce((s, x) => s + x, 0) / n).toFixed(1), median_abs_ms: +abs[n >> 1].toFixed(1),
+             p95_abs_ms: +abs[Math.floor(n * 0.95)].toFixed(1), max_abs_ms: +abs[n - 1].toFixed(1) };
+  };
+})();
+</script>
+</body>
+</html>
