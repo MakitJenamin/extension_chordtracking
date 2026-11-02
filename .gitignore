@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Audio, model weights, data, cache (không đưa lên repo public)
+*.wav
+*.mp3
+*.m4a
+*.webm
+*.flac
+*.opus
+models/
+weights/
+data/
+cache/
+output/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.db
+*.sqlite
+
+# Môi trường / IDE
+.env
+.vscode/
+.idea/
+.codegraph/
+Thumbs.db
