@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thử metronome ChordTrack</title>
+<!--
+  Trang kiểm chứng đồng bộ metronome (không cần cài extension).
+
+  Chạy một server tĩnh phục vụ thư mục repo, sao cho đường dẫn /data/ trỏ tới data/ của checkout chính
+  (audio và cache không nằm trong git), rồi mở:
+    http://127.0.0.1:<port>/extension/dev/metronome_test.html?song=QDYfEBY9NM4
+  Tham số: ?audio=<url wav>&result=<url result.json> nếu muốn đổi bài. Hoặc chọn file bằng hai ô bên dưới.
+
+  Trang nạp src/core.js và src/metronome.js y như content script, tự phát sự kiện "time" (mỗi khung hình)
+  và "seek" từ phần tử <video>. Cách đo: ghi liên tục cặp (đồng hồ tiếng đang ra loa của AudioContext,
+  video.currentTime), mỗi chặng (giữa hai lần tua/đổi tốc độ) khớp một đường thẳng bằng bình phương tối
+  thiểu, rồi với mỗi tiếng gõ đã lên lịch ở thời điểm x tính thời gian video tại x theo đường đó và trừ
+  thời điểm phách trong JSON. Độ lệch đó là sai số lên lịch so với đồng hồ media. Nó không đo được độ trễ
+  của thiết bị âm thanh khác nhau giữa trình phát video và AudioContext (cần thu loopback), phần đó
+  metronome.js bù bằng getOutputTimestamp()/outputLatency.
+-->
+<style>
+  :root { color-scheme: light dark; --bg:#fafafa; --fg:#1d1d1f; --mut:#666; --card:#fff; --bd:#ddd; --ok:#1a7f37; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#15161a; --fg:#e8e8ea; --mut:#9a9aa2; --card:#1f2026; --bd:#33343b; --ok:#4ade80; --bad:#f87171; } }
+  body { font: 14px/1.5 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 20px; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.mut, .mut { color: var(--mut); }
+  .card { background: var(--card); border: 1px solid var(--bd); border-radius: 10px; padding: 14px; margin: 12px 0; }
+  video { width: 100%; height: 48px; background: transparent; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+  button { font: inherit; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--bd); background: var(--card); color: var(--fg); cursor: pointer; }
+  button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  button:disabled { opacity: .5; cursor: default; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--bd); }
+  th:first-child, td:first-child { text-align: left; }
+  .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+  #beatDots i { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--bd); margin-right: 6px; }
+  #beatDots i.on { background: #2563eb; } #beatDots i.on.first { background: #e53935; }
+  pre { white-space: pre-wrap; font-size: 12px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Thử metronome</h1>
+  <p class="mut">Nạp <code>core.js</code> và <code>metronome.js</code>, phát sự kiện <code>time</code>/<code>seek</code> từ <code>&lt;video&gt;</code>, đo độ lệch giữa tiếng gõ được lên lịch và phách trong JSON.</p>
+
+  <div class="card">
+    <div class="row"><span id="status" class="mut">Đang nạp…</span></div>
+    <video id="v" controls preload="auto"></video>
+    <div class="row">
+      <label>Audio <input type="file" id="fAudio" accept="audio/*,video/*"></label>
+      <label>result.json <input type="file" id="fResult" accept=".json,application/json"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <button id="metro">🔈 Bật metronome</button>
+      <label>Âm lượng <input type="range" id="vol" min="0" max="100" value="60"></label>
+      <label>Tiếng <select id="sound"><option value="wood">Woodblock</option><option value="sine">Sine</option></select></label>
+      <button id="previewStrong">Nghe phách mạnh</button>
+      <button id="previewWeak">Nghe phách nhẹ</button>
+    </div>
+    <div class="row">
+      Tốc độ: <button data-rate="0.5">0,5×</button><button data-rate="0.75">0,75×</button><button data-rate="1">1×</button>
+      <button id="seekBack">Tua −20 s</button><button id="seekFwd">Tua +30 s</button>
+      <span id="beatDots"></span>
+    </div>
+    <div class="row">
+      <button id="auto" class="primary">Chạy đo tự động (~70 s)</button>
+      <button id="measure">Tính số đo đến giờ</button>
+      <button id="reset">Xóa số đo</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <table id="tbl"><thead><tr><th>Chặng</th><th>Số tiếng</th><th>TB (ms)</th><th>|lệch| TB</th><th>p95 |lệch|</th><th>Max |lệch|</th><th>Kết luận</th></tr></thead><tbody></tbody></table>
+    <pre id="info" class="mut"></pre>
+  </div>
+</main>
+
+<script src="../src/core.js"></script>
+<script src="../src/metronome.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const v = $("v");
+  const qs = new URLSearchParams(location.search);
+  const song = qs.get("song") || "QDYfEBY9NM4";
+  const audioUrl = qs.get("audio") || `/data/audio/${song}.wav`;
+  const resultUrl = qs.get("result") || `/data/cache/${song}/result.json`;
+  let result = null;
+  CT.state.video = v;
+  CT.settings.metronome = false;
+
+  // ---- nạp dữ liệu. Audio nạp thành blob: server tĩnh đơn giản không hỗ trợ Range, blob thì tua được.
+  async function loadUrls() {
+    try {
+      const [ra, rr] = await Promise.all([fetch(audioUrl), fetch(resultUrl)]);
+      if (!ra.ok || !rr.ok) throw new Error(`audio ${ra.status}, result ${rr.status}`);
+      setResult(await rr.json());
+      v.src = URL.createObjectURL(await ra.blob());
+      $("status").textContent = `Đã nạp ${song}: ${result.beats.length} phách, ${result.downbeats.length} phách mạnh, meter ${result.meter ?? "?"}.`;
+    } catch (e) {
+      $("status").textContent = `Không nạp được (${e.message}). Chọn file audio và result.json bên dưới.`;
+    }
+  }
+  function setResult(r) {
+    result = r;
+    CT.state.result = r;
+    CT.bus.emit("song:ready", { videoId: song, result: r });
+  }
+  $("fAudio").onchange = (e) => { const f = e.target.files[0]; if (f) v.src = URL.createObjectURL(f); };
+  $("fResult").onchange = async (e) => { const f = e.target.files[0]; if (f) setResult(JSON.parse(await f.text())); };
+
+  // ---- giả lập sync.js: "time" mỗi khung hình, "seek" khi tua
+  (function frame() {
+    CT.bus.emit("time", { t: v.currentTime, rate: v.playbackRate, paused: v.paused || v.ended });
+    requestAnimationFrame(frame);
+  })();
+  let autoRunning = false;     // chạy đo tự động thì tự đặt tên chặng
+  const autoPhase = (name) => { if (!autoRunning) phase(name); };
+  v.addEventListener("seeking", () => { autoPhase(`tua tới ${v.currentTime.toFixed(1)} s`); CT.bus.emit("seek", { t: v.currentTime }); });
+  v.addEventListener("ratechange", () => autoPhase(`tốc độ ${v.playbackRate}×`));
+  v.addEventListener("play", () => autoPhase(`phát ${v.playbackRate}×`));
+
+  // ---- chấm phách
+  const meter = () => result?.meter || 4;
+  CT.bus.on("time", ({ t }) => {
+    if (!result) return;
+    const b = result.beats; let i = 0, lo = 0, hi = b.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (b[m] <= t) lo = m + 1; else hi = m; }
+    i = lo - 1;
+    let pos = 0;
+    if (i >= 0) {
+      const downs = result.downbeats; let d = -1;
+      for (let k = 0; k < downs.length && downs[k] <= b[i] + 1e-3; k++) d = k;
+      const dIdx = d >= 0 ? b.findIndex((x) => Math.abs(x - downs[d]) < 2e-3) : -1;
+      pos = dIdx >= 0 ? ((i - dIdx) % meter()) + 1 : 0;
+    }
+    $("beatDots").innerHTML = Array.from({ length: meter() }, (_, k) => `<i class="${k + 1 === pos ? "on" : ""} ${k === 0 ? "first" : ""}"></i>`).join("");
+  });
+
+  // ---- điều khiển
+  $("metro").onclick = () => {
+    CT.setSettings({ metronome: !CT.settings.metronome });
+    $("metro").textContent = CT.settings.metronome ? "🔊 Tắt metronome" : "🔈 Bật metronome";
+  };
+  $("vol").oninput = (e) => CT.setSettings({ metronomeVolume: e.target.value / 100 });
+  $("sound").onchange = (e) => { CT.metronome.sound = e.target.value; };
+  $("previewStrong").onclick = () => CT.metronome.preview(true);
+  $("previewWeak").onclick = () => CT.metronome.preview(false);
+  document.querySelectorAll("[data-rate]").forEach((b) => (b.onclick = () => { v.playbackRate = Number(b.dataset.rate); }));
+  $("seekBack").onclick = () => { v.currentTime = Math.max(0, v.currentTime - 20); };
+  $("seekFwd").onclick = () => { v.currentTime = Math.min(v.duration - 1, v.currentTime + 30); };
+
+  // ---- đo
+  let phases = [];      // {name, samples: [[x, t]], clicks: [{beat, when}]}
+  let cur = null;
+  function phase(name) { cur = { name, samples: [], clicks: [], start: performance.now() }; phases.push(cur); }
+  phase("đầu");
+  const ctxOf = () => CT.metronome.context;
+  function heard(ctx) {
+    const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
+    if (ts && ts.contextTime > 0 && ts.performanceTime > 0) return ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+    return ctx.currentTime - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
+  }
+  // Lấy mẫu dày bằng setInterval (độc lập với rAF mà metronome dùng để đặt mốc).
+  setInterval(() => {
+    const ctx = ctxOf();
+    if (!ctx || ctx.state !== "running" || v.paused || v.seeking || !cur) return;
+    if (performance.now() - cur.start < 300) return;   // bỏ 0,3 s đầu chặng: media vừa tua/đổi tốc độ
+    cur.samples.push([heard(ctx), v.currentTime, v.playbackRate]);
+  }, 4);
+  CT.metronome.onSchedule = (e) => { cur?.clicks.push(e); };
+
+  function fit(samples) {
+    const n = samples.length; if (n < 20) return null;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    const x0 = samples[0][0];
+    for (const [x, y] of samples) { const X = x - x0; sx += X; sy += y; sxx += X * X; sxy += X * y; }
+    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+    const icpt = (sy - slope * sx) / n;
+    let res = 0; for (const [x, y] of samples) res = Math.max(res, Math.abs(y - (icpt + slope * (x - x0))));
+    return { at: (x) => icpt + slope * (x - x0), slope, maxResidual: res };
+  }
+  const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+
+  function measure() {
+    const rows = [], all = [];
+    for (const ph of phases) {
+      const f = fit(ph.samples);
+      if (!f) continue;
+      const lo = ph.samples[0][0], hi = ph.samples[ph.samples.length - 1][0];
+      const errs = ph.clicks.filter((c) => c.when >= lo && c.when <= hi).map((c) => (f.at(c.when) - c.beat) / f.slope * 1000);
+      if (!errs.length) continue;
+      const abs = errs.map(Math.abs);
+      const r = {
+        name: ph.name, n: errs.length, mean: errs.reduce((a, b) => a + b, 0) / errs.length,
+        absMean: abs.reduce((a, b) => a + b, 0) / abs.length, p95: pct(abs, 0.95), max: Math.max(...abs),
+        slope: f.slope, res: f.maxResidual * 1000, rate: ph.samples[0][2],
+      };
+      rows.push(r); all.push(...abs);
+    }
+    $("tbl").tBodies[0].innerHTML = rows.map((r) => `<tr><td>${r.name}</td><td>${r.n}</td><td>${r.mean.toFixed(2)}</td><td>${r.absMean.toFixed(2)}</td><td>${r.p95.toFixed(2)}</td><td>${r.max.toFixed(2)}</td><td class="${r.max < 15 ? "ok" : "bad"}">${r.max < 15 ? "đạt (&lt;15 ms)" : "chưa đạt"}</td></tr>`).join("");
+    const ctx = ctxOf();
+    $("info").textContent = [
+      ctx ? `AudioContext: ${ctx.sampleRate} Hz, baseLatency ${((ctx.baseLatency || 0) * 1000).toFixed(1)} ms, outputLatency ${((ctx.outputLatency || 0) * 1000).toFixed(1)} ms` : "Chưa có AudioContext",
+      ...rows.map((r) => `${r.name}: độ dốc media/audio ${r.slope.toFixed(4)} (tốc độ ${r.rate}), phần dư lớn nhất của đường khớp ${r.res.toFixed(1)} ms`),
+    ].join("\n");
+    window.__metroReport = { rows, ctx: ctx && { sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency, outputLatency: ctx.outputLatency } };
+    return window.__metroReport;
+  }
+  $("measure").onclick = measure;
+  $("reset").onclick = () => { phases = []; phase("đầu"); measure(); };
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const seekTo = (t) => new Promise((r) => { v.addEventListener("seeked", r, { once: true }); v.currentTime = t; });
+  $("auto").onclick = async () => {
+    $("auto").disabled = true;
+    autoRunning = true;
+    if (!CT.settings.metronome) $("metro").click();
+    phases = [];
+    v.playbackRate = 1;
+    await seekTo(20);
+    await v.play();
+    phase("1× (từ 20 s)"); await wait(16000);
+    v.playbackRate = 0.75; phase("0,75×"); await wait(16000);
+    v.playbackRate = 1; await seekTo(120); phase("1× sau khi tua tới 120 s"); await wait(16000);
+    v.playbackRate = 0.75; await seekTo(60); phase("0,75× sau khi tua lùi tới 60 s"); await wait(16000);
+    v.pause();
+    autoRunning = false;
+    measure();
+    $("auto").disabled = false;
+  };
+
+  loadUrls();
+})();
+</script>
+</body>
+</html>

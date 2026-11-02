@@ -18,12 +18,13 @@ SEPARATION_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm"]
 
 def check_schema(result: dict) -> None:
     """Dạng JSON mà extension sẽ đọc."""
-    assert set(result) == {"version", "song_id", "source", "duration", "tempo", "key", "keys", "modulations",
+    assert set(result) == {"version", "song_id", "source", "duration", "tempo", "meter", "key", "keys", "modulations",
                            "beats", "downbeats", "chords", "sections", "timing", "pipeline"}
     assert result["version"] == 1
     assert isinstance(result["song_id"], str)
     assert {"type", "title", "url"} <= set(result["source"])
     assert isinstance(result["duration"], float)
+    assert isinstance(result["meter"], int) and result["meter"] >= 1
     assert result["key"] is None or set(result["key"]) == {"tonic", "mode", "confidence"}
     keys = result["keys"]
     for k in keys:
@@ -121,6 +122,7 @@ def test_analyze_order_stems_and_schema(fake_env):
                                 "url": "https://www.youtube.com/watch?v=abcdefghijk"}
     assert result["duration"] == pytest.approx(DURATION)
     assert result["tempo"] == 120.0
+    assert result["meter"] == 4
     assert result["key"]["tonic"] == "C" and result["key"]["mode"] == "major"
     assert [c["symbol"] for c in result["chords"]] == ["N.C.", "C", "G", "Am7", "F/A", "N.C."]
     by_symbol = {c["symbol"]: c for c in result["chords"]}
@@ -379,3 +381,28 @@ def test_relabel_transposed_renames_whole_cluster():
             {"label": "A", "key_index": 1, "transposed_from": 1, "semitones": 2}]
     pipeline._relabel_transposed(secs)
     assert [s["label"] for s in secs] == ["A", "B", "B"]
+
+
+def _grid(beats, downbeats):
+    return BeatGrid(beats=np.asarray(beats, dtype=float), downbeats=np.asarray(downbeats, dtype=float), tempo=0.0)
+
+
+def test_estimate_meter_most_common_bar_length():
+    beats = np.arange(0.0, 30.0, 0.5)
+    assert pipeline.estimate_meter(_grid(beats, beats[::4])) == 4
+    assert pipeline.estimate_meter(_grid(beats, beats[::3])) == 3
+    # nhịp 3/4 có vài ô 2 và 4 phách (bắt nhịp sai chỗ): vẫn là 3
+    downs = [beats[i] for i in (0, 3, 6, 9, 11, 14, 17, 21, 24, 27)]
+    assert pipeline.estimate_meter(_grid(beats, downs)) == 3
+    # phách mạnh lệch phách vì làm tròn vẫn đếm đúng
+    assert pipeline.estimate_meter(_grid(beats, beats[::4] + 0.0004)) == 4
+    # hòa: lấy số nhỏ hơn
+    assert pipeline.estimate_meter(_grid(beats, [beats[i] for i in (0, 3, 6, 10, 14)])) == 3
+
+
+def test_estimate_meter_defaults_to_4():
+    beats = np.arange(0.0, 10.0, 0.5)
+    assert pipeline.estimate_meter(None) == 4
+    assert pipeline.estimate_meter(_grid(beats, [])) == 4
+    assert pipeline.estimate_meter(_grid(beats, beats[:1])) == 4
+    assert pipeline.estimate_meter(_grid([], [])) == 4

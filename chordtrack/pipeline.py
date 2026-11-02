@@ -25,6 +25,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 import soundfile as sf
 
 from chordtrack import analysis, fusion, paths
@@ -41,6 +42,7 @@ from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstima
 log = logging.getLogger(__name__)
 
 RESULT_VERSION = 1
+DEFAULT_METER = 4           # số phách mỗi ô nhịp khi không suy ra được từ phách mạnh
 UNCERTAIN_THRESHOLD = 0.5   # hợp âm có confidence nhỏ hơn mức này bị đánh dấu "uncertain"
 STEM_NAMES = ("mix", "vocals", "instrumental", "bass", "no_bass")
 CHORD_MODELS = ("chordmini-btc", "cnnlstm")
@@ -246,6 +248,23 @@ def _measure_vram(fn, *args):
     return out, peak
 
 
+def estimate_meter(grid: BeatGrid | None) -> int:
+    """Số phách mỗi ô nhịp phổ biến nhất: đếm số phách trong mỗi khoảng [phách mạnh i, phách mạnh i+1).
+    Hòa thì lấy số nhỏ hơn. Không có ít nhất hai phách mạnh thì trả `DEFAULT_METER`."""
+    if grid is None or len(grid.downbeats) < 2 or len(grid.beats) == 0:
+        return DEFAULT_METER
+    beats = np.sort(np.asarray(grid.beats, dtype=float))
+    downs = np.sort(np.asarray(grid.downbeats, dtype=float))
+    # Dung sai 1 ms: phách mạnh trùng phách nhưng lệch chút do làm tròn vẫn được tính là phách đó.
+    idx = np.searchsorted(beats, downs - 1e-3)
+    counts = np.diff(idx)
+    counts = counts[counts > 0]
+    if counts.size == 0:
+        return DEFAULT_METER
+    values, freq = np.unique(counts, return_counts=True)
+    return int(values[np.argmax(freq)])
+
+
 def _confidence(c: float | None) -> float | None:
     return None if c is None else round(float(c), 3)
 
@@ -382,6 +401,7 @@ def build_result(
         "source": src.to_json(),
         "duration": round(duration, 3),
         "tempo": round(float(grid.tempo), 1) if grid is not None else None,
+        "meter": estimate_meter(grid),
         "key": None if key is None else {
             "tonic": key.tonic, "mode": key.mode, "confidence": _confidence(key.confidence),
         },
