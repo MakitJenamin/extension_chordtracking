@@ -20,7 +20,7 @@
   function describe(secs) {
     const total = {}, seen = {}, order = {};
     let nOther = 0;
-    for (const x of secs) total[x.label] = (total[x.label] || 0) + 1;
+    for (const x of secs) { const l = x.label || "?"; total[l] = (total[l] || 0) + 1; }
     return secs.map((x) => {
       const l = x.label || "?";
       const occ = (seen[l] = (seen[l] || 0) + 1);
