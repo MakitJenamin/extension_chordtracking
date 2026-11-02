@@ -115,7 +115,9 @@ class KajiuraSong(Song):
             else:
                 t, c = F.bass_chroma(self.stems_dir / "bass.wav")
                 c = c.astype(np.float32)
-                np.savez_compressed(path, times=t, chroma=c)
+                tmp = path.with_name(path.stem + ".part.npz")   # ghi tạm rồi đổi tên, tránh file hỏng
+                np.savez_compressed(tmp, times=t, chroma=c)
+                tmp.replace(path)
             self._cache["stem"] = F.resample_probs(t, c, self.times)
         return self._cache["stem"]
 
@@ -140,7 +142,6 @@ VARIANTS: list[tuple[str, dict]] = [
     ("8 fuse mix, CNN-LSTM 0.65 cả 170 nhãn, bass CNN-LSTM (thăm dò)",
      _fusion_cfg("mix", cnn_weight=0.65, mix_level="full", bass_source="cnn")),
 ]
-NEEDS_SEPARATION = {"2", "3b", "5", "6", "7"}
 
 
 def predict_variant(song: Song, cfg: dict) -> list[ChordSegment]:
@@ -171,7 +172,7 @@ def score_song(song: KajiuraSong, sheet: K.Sheet, align: dict, est: list[ChordSe
         out[f"seq_{level}_p"] = fixed["precision"]
         out[f"seq_{level}_r"] = fixed["recall"]
         out[f"bigram_{level}"] = fixed["bigram_f1"]
-        out[f"free_shift_{level}"] = free["shift"]
+        out[f"free_shift_{level}"] = (free["shift"] + align["seq_shift"]) % 12   # độ dịch tuyệt đối so với sheet
         out[f"seq_{level}_free"] = free["f1"]
     if align["ok"]:
         out["time"] = evaluate_pair(song.ref, est)
@@ -207,6 +208,18 @@ def time_weighted_diff(ra: dict, rb: dict, names: list[str], metric: str, n: int
 
 
 # ---------------------------------------------------------------- thời gian xử lý
+
+def cold_fuse_seconds(name: str, cfg: dict) -> float:
+    """Thời gian `fuse` của một bài khi chưa có gì trong cache: tính lại xác suất trên lưới khung và
+    chroma stem bass từ file WAV (không đọc npz đã cache), giống pipeline thật."""
+    p = F.FusionParams(**cfg["params"])
+    song = KajiuraSong(name)
+    t = time.perf_counter()
+    if p.bass_source in ("stem", "both"):
+        song._cache["stem"] = F.resample_probs(*F.bass_chroma(song.stems_dir / "bass.wav"), song.times)
+    predict_variant(song, cfg)
+    return time.perf_counter() - t
+
 
 def timing_summary(songs: list[KajiuraSong], fuse_seconds: dict[str, list[float]]) -> dict:
     """Thời gian mỗi bài (giây) của từng bước, đọc từ đặc trưng và separation_stats.json."""
@@ -269,22 +282,23 @@ def run(n_boot: int, beatles: bool, jobs: int) -> int:
     if not names:
         print("Chưa có đặc trưng hoặc chưa căn (chạy `cache` và `python -m eval.kajiura align`)", file=sys.stderr)
         return 1
+    skipped = [n for n in names if report[n]["end"] <= report[n]["start"]]
+    if skipped:   # bản hợp âm quá ngắn hoặc không căn được: không có vùng để chấm
+        print(f"Bỏ {len(skipped)} bài không có vùng căn: {', '.join(skipped)}", flush=True)
+        names = [n for n in names if n not in skipped]
     ok_names = [n for n in names if report[n]["ok"]]
     print(f"{len(names)} bài có đặc trưng, {len(ok_names)} bài căn tốt (dùng cho chấm theo thời gian)", flush=True)
 
     songs = {n: KajiuraSong(n) for n in names}
     sheets = {n: K.load_sheet(n) for n in names}
     scores: dict[str, dict[str, dict]] = {}
-    fuse_seconds: dict[str, list[float]] = {}
     for vname, cfg in VARIANTS:
         key = vname.split()[0]
-        scores[key] = {}
-        for n in names:
-            t = time.perf_counter()
-            est = predict_variant(songs[n], cfg)
-            fuse_seconds.setdefault(key, []).append(time.perf_counter() - t)
-            scores[key][n] = score_song(songs[n], sheets[n], report[n], est)
+        scores[key] = {n: score_song(songs[n], sheets[n], report[n], predict_variant(songs[n], cfg)) for n in names}
         print(f"{vname}: xong", flush=True)
+    cfgs = dict(VARIANTS)
+    fuse_seconds = {key: [cold_fuse_seconds(n, cfgs[v]) for n in names]
+                    for key, v in (("4", VARIANTS[4][0]), ("5", VARIANTS[6][0]))}
 
     # Bảng tổng
     keys = [v.split()[0] for v, _ in VARIANTS]

@@ -169,7 +169,8 @@ Bản hợp âm do người dùng tự ghi: có thể đơn giản hóa, sai, gh
 1. **Căn vào audio (DTW chroma, không dùng model).** Gộp hợp âm trùng liên tiếp, dựng chroma mẫu (nốt của
    hợp âm, cộng 0.5 cho nốt bass), so cosine với chroma CENS của mix (khung ~93 ms). DTW chỉ cho đứng yên
    hoặc sang hợp âm kế tiếp; thêm trạng thái "ngoài bản hợp âm" ở đầu và cuối với chi phí cố định 0.55,
-   để intro/outro không ghi trong bản hợp âm không bị kéo giãn. Thử 12 độ dịch giọng, chọn độ dịch có
+   để intro/outro không ghi trong bản hợp âm không bị kéo giãn; các khung này ghi nhãn `X` (không tính
+   điểm), không phải `N`. Thử 12 độ dịch giọng, chọn độ dịch có
    cosine trung bình cao nhất: đó là **độ dịch của đáp án** (khác 0 thì có thể đáp án ghi theo capo).
    Độ dịch này lấy từ audio nên không thiên vị phương án nào.
 2. **Theo chuỗi (mọi bài):** rút gọn về `majmin` (theo quãng ba: dim -> min, aug/7 -> maj, sus riêng) hoặc

@@ -276,16 +276,16 @@ Bảng ánh xạ: `eval/kajiura_youtube.csv`. Lệnh: `python -m eval.ablation_k
 
 | phương án | tách nguồn | Kajiura F1 chuỗi majmin | Kajiura F1 chuỗi sevenths | Kajiura majmin | Kajiura majmin_inv | Kajiura sevenths | Kajiura sevenths_inv | Beatles majmin | Beatles majmin_inv | Beatles sevenths_inv |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 ChordMini mix | không | 81.9 | 69.2 | 75.44 | 72.37 | 61.98 | 59.68 | 86.69 | 82.50 | 76.63 |
-| 2 ChordMini instrumental | có | 80.4 | 68.3 | 72.90 | 69.87 | 59.91 | 57.54 | 85.61 | 81.82 | 73.87 |
-| 3a CNN-LSTM mix | không | 85.4 | 73.7 | **79.36** | **77.32** | **68.00** | **66.52** | 84.72 | 82.33 | 75.52 |
-| 3b CNN-LSTM instrumental | có | 84.6 | 73.2 | 77.86 | 76.10 | 66.43 | 65.16 | 81.61 | 79.43 | 71.32 |
-| **4 fuse mix, bass CNN-LSTM** | **không** | 84.4 | 71.4 | 78.30 | 76.12 | 64.14 | 62.77 | 88.84 | 85.51 | 79.56 |
-| 4b fuse mix, không bass | không | 84.4 | 71.4 | 78.30 | 75.07 | 64.14 | 61.67 | 88.84 | 84.48 | 78.61 |
-| 5 fuse mix, bass CNN-LSTM + stem (mặc định hiện tại) | có | 84.4 | 71.4 | 78.30 | 76.23 | 64.14 | 62.83 | 88.84 | 85.60 | 79.64 |
-| 6 fuse instrumental, bass cả hai | có | 82.6 | 70.2 | 75.62 | 73.68 | 62.05 | 60.82 | 87.87 | 84.69 | 76.40 |
-| 7 fuse trộn mix + instrumental | có | 84.4 | 72.3 | 77.58 | 75.52 | 64.12 | 62.87 | 89.13 | 86.02 | 79.28 |
-| 8 thăm dò: như 4, CNN-LSTM 0.65, trộn cả 170 nhãn | không | 85.2 | 74.4 | 79.30 | 77.18 | 67.26 | 65.93 | 88.05 | 84.70 | 77.95 |
+| 1 ChordMini mix | không | 81.9 | 69.2 | 75.16 | 72.05 | 61.54 | 59.20 | 86.69 | 82.50 | 76.63 |
+| 2 ChordMini instrumental | có | 80.4 | 68.3 | 72.58 | 69.52 | 59.44 | 57.05 | 85.61 | 81.82 | 73.87 |
+| 3a CNN-LSTM mix | không | 85.4 | 73.7 | **79.12** | **77.05** | **67.62** | **66.13** | 84.72 | 82.33 | 75.52 |
+| 3b CNN-LSTM instrumental | có | 84.6 | 73.2 | 77.60 | 75.83 | 66.03 | 64.75 | 81.61 | 79.43 | 71.32 |
+| **4 fuse mix, bass CNN-LSTM** | **không** | 84.4 | 71.4 | 78.05 | 75.85 | 63.72 | 62.33 | 88.84 | 85.51 | 79.56 |
+| 4b fuse mix, không bass | không | 84.4 | 71.4 | 78.05 | 74.78 | 63.72 | 61.22 | 88.84 | 84.48 | 78.61 |
+| 5 fuse mix, bass CNN-LSTM + stem (mặc định hiện tại) | có | 84.4 | 71.4 | 78.05 | 75.95 | 63.72 | 62.39 | 88.84 | 85.60 | 79.64 |
+| 6 fuse instrumental, bass cả hai | có | 82.6 | 70.2 | 75.34 | 73.37 | 61.60 | 60.36 | 87.87 | 84.69 | 76.40 |
+| 7 fuse trộn mix + instrumental | có | 84.4 | 72.3 | 77.32 | 75.23 | 63.70 | 62.43 | 89.13 | 86.02 | 79.28 |
+| 8 thăm dò: như 4, CNN-LSTM 0.65, trộn cả 170 nhãn | không | 85.2 | 74.4 | 79.06 | 76.92 | 66.88 | 65.53 | 88.05 | 84.70 | 77.95 |
 
 Kajiura theo thời gian: WCSR gia quyền thời lượng (%) trên 25 bài. Beatles: 42 bài, cùng phương án. Cột F1 chuỗi
 là trung bình theo bài trên 32 bài.
@@ -294,17 +294,17 @@ là trung bình theo bài trên 32 bài.
 
 | so sánh | chỉ số | chênh | CI 95% | thắng/thua |
 |---|---|---|---|---|
-| 5 (có stem bass) − 4 (không) | majmin_inv | +0.10 | [+0.01, +0.20] | 7/1, 17 bài bằng nhau |
+| 5 (có stem bass) − 4 (không) | majmin_inv | +0.10 | [+0.01, +0.21] | 7/1, 17 bài bằng nhau |
 | 5 − 4 | sevenths_inv | +0.06 | [−0.01, +0.15] | 5/1 |
 | 5 − 4 | F1 chuỗi majmin, sevenths | 0 | 0 | không bài nào khác (bass không đổi hợp âm gốc) |
-| 4 − 4b (bass CNN-LSTM) | majmin_inv | +1.06 | [−0.53, +2.75] | 12/8 |
-| 1 − 2 (ChordMini mix − inst) | majmin | +2.55 | [+1.07, +4.14] | 18/7; F1 chuỗi +1.54, p Wilcoxon 0.017 |
-| 3a − 3b (CNN-LSTM mix − inst) | majmin | +1.50 | [+0.45, +2.85] | 19/6 |
-| 5 − 6 (fuse mix − inst) | majmin | +2.68 | [+0.83, +4.75] | 15/10; F1 chuỗi +1.75, p 0.015 |
-| 7 (trộn mix + inst) − 5 | majmin | −0.73 | [−2.00, +0.39] | không khác có ý nghĩa |
-| 4 − 1 (fuse − ChordMini) | majmin_inv | +3.75 | [+1.88, +5.57] | 23/2; F1 chuỗi +2.44, p < 0.001 |
-| 3a − 4 (CNN-LSTM một mình − fuse) | sevenths | +3.86 | [+1.82, +5.88] | 21/4; F1 chuỗi sevenths +2.22, p 0.017 |
-| 8 − 4 (CNN-LSTM 0.65 − mặc định) | sevenths | +3.13 | [+1.84, +4.52] | 22/3; F1 chuỗi sevenths +2.91, p < 0.001 |
+| 4 − 4b (bass CNN-LSTM) | majmin_inv | +1.07 | [−0.54, +2.78] | 12/8 |
+| 1 − 2 (ChordMini mix − inst) | majmin | +2.58 | [+1.09, +4.19] | 18/7; F1 chuỗi +1.54, p Wilcoxon 0.017 |
+| 3a − 3b (CNN-LSTM mix − inst) | majmin | +1.52 | [+0.46, +2.90] | 19/6 |
+| 5 − 6 (fuse mix − inst) | majmin | +2.71 | [+0.84, +4.82] | 15/10; F1 chuỗi +1.75, p 0.015 |
+| 7 (trộn mix + inst) − 5 | majmin | −0.73 | [−2.02, +0.39] | không khác có ý nghĩa |
+| 4 − 1 (fuse − ChordMini) | majmin_inv | +3.80 | [+1.90, +5.63] | 23/2; F1 chuỗi +2.44, p < 0.001 |
+| 3a − 4 (CNN-LSTM một mình − fuse) | sevenths | +3.91 | [+1.84, +5.96] | 21/4; F1 chuỗi sevenths +2.22, p 0.017 |
+| 8 − 4 (CNN-LSTM 0.65 − mặc định) | sevenths | +3.16 | [+1.86, +4.59] | 22/3; F1 chuỗi sevenths +2.91, p < 0.001 |
 
 **Thời gian mỗi bài** (32 bài, trung bình 282 giây audio; không tính thời gian chờ khóa GPU):
 
@@ -315,8 +315,8 @@ là trung bình theo bài trên 32 bài.
 | HTDemucs (tách bass) | 29.9 | 552 MiB |
 | Bắt nhịp (beat_this) | 1.1 | |
 | ChordMini + CNN-LSTM trên mix | 0.7 + 2.4 | |
-| `fuse()` có stem bass / không stem | 0.54 / 0.10 | CPU |
-| **Tổng có tách nguồn (phương án 5)** | **88.6** | 1.6 GB |
+| `fuse()` có stem bass / không stem | 0.63 / 0.10 | CPU |
+| **Tổng có tách nguồn (phương án 5)** | **88.7** | 1.6 GB |
 | **Tổng không tách nguồn (phương án 4)** | **4.3** | khoảng 0.5 GB (CNN-LSTM) |
 
 (Chưa tính tải audio và thời gian nạp model lần đầu của mỗi tiến trình.)
@@ -324,15 +324,15 @@ là trung bình theo bài trên 32 bài.
 **Khuyến nghị: tắt tách nguồn mặc định**, tức là dùng phương án 4: `fuse()` trên mix với
 `bass_source="cnn"`, không chạy BS-Roformer và HTDemucs. Có thể giữ tách nguồn làm tùy chọn cho người muốn thử.
 Lý do bằng số đo:
-1. **Stem bass gần như không đóng góp.** Trên Kajiura chỉ +0.10 điểm majmin_inv (CI [+0.01, +0.20], 17/25
+1. **Stem bass gần như không đóng góp.** Trên Kajiura chỉ +0.10 điểm majmin_inv (CI [+0.01, +0.21], 17/25
    bài không đổi gì) và +0.06 sevenths_inv (CI chứa 0). Trên Beatles là +0.09 và +0.08. Mức này nhỏ hơn nhiều
-   so với độ nhiễu của đáp án. Hợp âm đảo chủ yếu đến từ `bass_probs` của CNN-LSTM (4 − 4b: +1.06 trên
+   so với độ nhiễu của đáp án. Hợp âm đảo chủ yếu đến từ `bass_probs` của CNN-LSTM (4 − 4b: +1.07 trên
    Kajiura, +1.03 trên Beatles), và phần này không cần tách nguồn.
 2. **Chạy model trên instrumental luôn kém hơn mix**, với cả ChordMini, CNN-LSTM và `fuse()`, trên cả hai bộ,
    kể cả với nhạc Kajiura có giọng và hợp xướng rất nổi. Trên Kajiura, mức giảm 1.5–2.7 điểm majmin có ý nghĩa
    (CI không chứa 0). Trộn mix với instrumental (7) cũng không hơn mix một mình. Vậy tách giọng không giúp nhận
    hợp âm ở bất kỳ cách dùng nào đã thử.
-3. **Tiết kiệm khoảng 95% thời gian xử lý**: từ 88.6 xuống 4.3 giây mỗi bài. VRAM đỉnh giảm từ 1.6 GB xuống
+3. **Tiết kiệm khoảng 95% thời gian xử lý**: từ 88.7 xuống 4.3 giây mỗi bài. VRAM đỉnh giảm từ 1.6 GB xuống
    khoảng 0.5 GB.
 4. **Không cần dùng có điều kiện** (ví dụ chỉ tách khi giọng hát lấn át): bộ Kajiura toàn bài giọng và hợp xướng
    nổi mà instrumental vẫn thua mix, nên không có nhóm bài nào cho thấy tách nguồn có lợi.
@@ -342,7 +342,7 @@ Lý do bằng số đo:
 code; người dùng quyết định.**
 
 **Phát hiện phụ:** trên Kajiura, CNN-LSTM một mình (3a) hơn `fuse()` mặc định 3.9 điểm sevenths, và tăng trọng số
-CNN-LSTM lên 0.65 (8) hơn mặc định 3.1 điểm (22/25 bài). Trên Beatles thì ngược lại: 8 kém mặc định 1.7 điểm
+CNN-LSTM lên 0.65 (8) hơn mặc định 3.2 điểm (22/25 bài). Trên Beatles thì ngược lại: 8 kém mặc định 1.7 điểm
 sevenths_inv. Bộ tham số của `FusionParams` có thể đã thiên về ChordMini, vì Beatles có thể nằm trong dữ liệu
 huấn luyện của ChordMini. Việc nên làm tiếp: chọn tham số trên cả hai bộ (Beatles + Kajiura) bằng
 cross-validation, thay vì chỉ trên Beatles.

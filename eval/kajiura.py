@@ -96,6 +96,8 @@ def normalize_symbol(s: str) -> str:
     s = re.sub(r"on(?=[A-G])", "/", s)
     # "A7(sus4)" -> "A7sus4"
     s = re.sub(r"\((sus[24]?)\)", r"\1", s)
+    # "C6/9" là hợp âm 6 thêm 9, không phải bass
+    s = s.replace("6/9", "69")
     return s
 
 
@@ -328,7 +330,7 @@ def reduce_label(label: str, level: str) -> str | None:
         ("min", "", ""): "min", ("min", "", "b7"): "min7", ("min", "", "7"): "minmaj7",
         ("min", "dim", ""): "dim", ("min", "dim", "b7"): "hdim7", ("min", "dim", "bb7"): "dim7",
         ("maj", "aug", ""): "aug", ("maj", "aug", "b7"): "aug7", ("maj", "dim", ""): "maj",
-        ("maj", "dim", "b7"): "7", ("sus", "", ""): "sus", ("sus", "", "b7"): "sus7",
+        ("maj", "dim", "b7"): "7", ("sus", "", ""): "sus", ("sus", "", "b7"): "sus7", ("sus", "", "7"): "susmaj7",
     }
     q = table.get((third, fifth, sev), f"{third}{fifth}{sev}" or third)
     return f"{name}:{q}"
@@ -511,6 +513,9 @@ def align_sheet(sheet: Sheet, audio: Path) -> tuple[AlignResult, list[ChordSegme
         trials.append((q, k, path, inside))
     trials.sort(key=lambda x: -x[0])
     q, k, path, inside = trials[0]
+    if not inside.any():   # DTW không khả thi (audio ngắn hơn số hợp âm)
+        res.reason = "không căn được (audio quá ngắn so với bản hợp âm)"
+        return res, [ChordSegment(0.0, duration, "X")]
     res.shift, res.quality, res.runner_up = k, q, trials[1][0]
     res.seq_shift = k if q - res.runner_up >= MIN_SHIFT_MARGIN else 0
     rng = np.random.default_rng(0)
@@ -529,7 +534,8 @@ def align_sheet(sheet: Sheet, audio: Path) -> tuple[AlignResult, list[ChordSegme
     for t in range(1, len(path) + 1):
         if t == len(path) or path[t] != path[t0]:
             st = path[t0]
-            lab = transpose(labels[st - 1], k) if 1 <= st <= len(labels) else "N"
+            # Khung nằm ngoài bản hợp âm là "không có đáp án" (X, không tính điểm), không phải im lặng (N).
+            lab = transpose(labels[st - 1], k) if 1 <= st <= len(labels) else "X"
             segs.append(ChordSegment(t0 * hop, t * hop, lab))
             t0 = t
     if res.quality < MIN_ALIGN_QUALITY:
@@ -715,17 +721,19 @@ def _cmd_align(names: list[str]) -> int:
         if names and name not in names:
             continue
         audio = AUDIO_DIR / f"{name}.wav"
-        if not audio.exists():
-            print(f"{name}: thiếu audio")
+        sheet_path = SHEETS_DIR / f"{name}.cho"
+        if not audio.exists() or not sheet_path.exists():
+            print(f"{name}: thiếu {'audio' if not audio.exists() else 'bản hợp âm'}")
             continue
         res, segs = align_sheet(load_sheet(name), audio)
         write_lab(REF_DIR / f"{name}.lab", segs)
         report[name] = asdict(res)
+        # Ghi sau mỗi bài, để lỗi ở bài sau không làm mất kết quả các bài trước.
+        REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"{name:28s} dịch {res.shift:2d}  cosine {res.quality:.3f} (thứ hai {res.runner_up:.3f}, "
               f"xáo trộn {res.shuffled:.3f})  "
               f"phủ {100 * res.coverage:3.0f}%  {res.start:6.1f}–{res.end:6.1f}s  "
               f"{'OK' if res.ok else 'loại: ' + res.reason}", flush=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     return 0
 
 

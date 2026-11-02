@@ -48,6 +48,7 @@ from eval.kajiura import (
     ("C6", "C:maj6"),
     ("Cm6", "C:min6"),
     ("C69", "C:maj6(9)"),
+    ("C6/9", "C:maj6(9)"),
     ("C9", "C:9"),
     ("C7(9)", "C:9"),
     ("CM7(9)", "C:maj9"),
@@ -125,6 +126,8 @@ def test_reduce_label():
     assert reduce_label("G:9", "sevenths") == "G:7"
     assert reduce_label("B:hdim7", "sevenths") == "B:hdim7"
     assert reduce_label("B:dim7", "sevenths") == "B:dim7"
+    assert reduce_label("C:sus4(7)", "sevenths") == "C:susmaj7"
+    assert reduce_label("C:sus4(b7)", "sevenths") == "C:sus7"
     assert reduce_label("C:maj(9)", "sevenths") == "C:maj"
     assert reduce_label("C#:min7", "sevenths") == "Db:min7"
     assert reduce_label("N", "majmin") is None
