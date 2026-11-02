@@ -1,6 +1,6 @@
 # Kế hoạch: Extension nhận diện hợp âm cho YouTube
 
-Cập nhật lần cuối: 2026-11-02
+Cập nhật lần cuối: 2026-11-03
 Trạng thái: **đã chốt kế hoạch, chưa bắt đầu code.** Việc tiếp theo là cài môi trường rồi làm bước 1.
 
 ---
@@ -19,7 +19,7 @@ Làm Chrome extension hiện hợp âm chạy theo video YouTube. Ưu tiên số
 | Nguồn audio | `yt-dlp` cho server tự tải audio. **Chỉ dùng cá nhân.** Nếu phát hành công khai thì phải xem lại, có thể chuyển sang `tabCapture`, vì tự tải audio vi phạm điều khoản của YouTube |
 | Phần cứng | Chạy local trên **RTX 3060 Ti, 8 GB VRAM**. Sau này cần thì đưa lên cloud |
 | Mức chi tiết hợp âm | Đầy đủ: 7, sus, dim, hợp âm đảo. Đơn giản hóa làm sau |
-| Tách bass (bước 3) | **Giữ, bật mặc định.** Bắt buộc phải có để nhận hợp âm đảo |
+| Tách bass (bước 3) | **Tắt mặc định, giữ tùy chọn** (`--separation`), từ 2026-11-03. Hợp âm đảo đến từ `bass_probs` của CNN-LSTM; stem bass chỉ thêm +0.1 điểm mà tốn 84/89 giây mỗi bài (mục "Kết quả đánh giá Kajiura") |
 | Nơi đặt code | `C:\Users\MakitJenamin\Documents\extension_chordtracking` |
 | Hàng đợi job | Bản local dùng hàng đợi lưu bằng SQLite, vì Redis chạy trên Windows khá phiền. Khi lên cloud mới đổi sang Redis |
 | VRAM 8 GB | Chạy từng model một và giải phóng VRAM sau mỗi model. BS-Roformer xử lý audio theo từng đoạn ngắn |
@@ -201,7 +201,7 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - [x] Bắt nhịp bằng beat_this (checkpoint `final0`, hậu xử lý minimal, không cần madmom) chạy được trên Windows, Python 3.11, numpy 1.26. "Let It Be": 279 phách, 78 phách mạnh (tỉ lệ 0,28), tempo trung vị 69,8 BPM, khoảng 1 giây trên GPU, VRAM đỉnh khoảng 270 MB.
   - Tempo trôi từ khoảng 73 BPM (phút đầu) xuống khoảng 68 BPM (cuối bài). Đầu ra theo khung 50 fps nên khoảng cách phách bị lượng tử 20 ms, tempo lệch theo bước khoảng 1,5 BPM.
   - ⚠️ Đoạn 95–118 giây, beat_this đặt phách mạnh cách 2 phách thay vì 4. Bước hậu xử lý hợp âm không nên tin tuyệt đối vào phách mạnh, có thể ép lại chu kỳ 4 phách.
-- [x] Pipeline end-to-end và CLI (2026-11-03): `python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--no-separation] [--chord-stem ...] [--beat-stem ...]`. Kết quả cache ở `data/cache/<song_id>/result.json`; dạng JSON kiểm tra trong `tests/test_pipeline.py::check_schema`.
+- [x] Pipeline end-to-end và CLI (2026-11-03): `python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--separation] [--chord-stem ...] [--beat-stem ...]` (từ 2026-11-03 mặc định không tách nguồn; `--no-separation` vẫn nhận). Kết quả cache ở `data/cache/<song_id>/result.json`; dạng JSON kiểm tra trong `tests/test_pipeline.py::check_schema`.
   - Bài mới hoàn toàn "Nơi này có anh" (`FN7ALfpGxiI`, 278 giây), tính cả thời gian chờ khóa GPU do agent khác: tải 9,6 s, tách nguồn 178 s (Roformer 58 s + Demucs 47 s chạy thật, chờ khóa 57 s), bắt nhịp 17 s, hợp âm 6,8 s, tổng 211 s. VRAM đỉnh 1,6 GB (Roformer).
   - "Let It Be" khi đã có stem: tổng 44 s, phần lớn là bắt nhịp (27 s, gồm cả chờ khóa và nạp model).
   - `audio-separator` chạy được khi không có mạng: nạp BS-Roformer thẳng từ ckpt và yaml trong `data/models/audio-separator`, không đọc `download_checks.json`.
@@ -294,6 +294,13 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     Beatles), trong khi tách nguồn chiếm 84 trên 89 giây xử lý mỗi bài. Đề xuất tắt tách nguồn mặc định.
   - Trên Kajiura, CNN-LSTM một mình tốt hơn `fuse()` mặc định (sevenths +3.9). Bộ tham số chọn trên Beatles
     có thể đã thiên về ChordMini (Beatles có thể nằm trong dữ liệu huấn luyện của ChordMini).
+- [x] **Tắt tách nguồn mặc định và chọn lại `FusionParams` trên Beatles + Kajiura** (2026-11-03,
+  `eval/refit_fusion.py`). Chi tiết ở mục "Chọn lại tham số fuse trên Beatles + Kajiura" bên dưới.
+  - Pipeline mặc định: chuẩn hóa ffmpeg → mix.wav, bắt nhịp và 2 model hợp âm trên mix, `fuse()` không có stem.
+    Khoảng **10 giây mỗi bài** (trước đây khoảng 90 giây), VRAM đỉnh khoảng 0.6 GB (CNN-LSTM).
+  - Thêm cách trộn loại hợp âm 7 (`quality_weight`): bộ mới lấy loại hợp âm trong họ (C so với C7, Cmaj7) hoàn
+    toàn từ CNN-LSTM, gốc + họ trộn 0.6 CNN-LSTM. `fuse` mới gần ngang CNN-LSTM trên Kajiura (CV −0.5),
+    Beatles giảm 1.45 (CV) so với `fuse` cũ: chưa đạt trọn mục tiêu, xem đánh đổi ở mục bên dưới.
 
 - [x] **Backend local** (bước 3 của mục 9, 2026-11-03). "Let It Be" khi đã có stem: lần đầu trong tiến trình
   16,5 s (hợp âm 13,0 s, gồm nạp model), lần sau 7,6 s (hợp âm 4,6 s, bắt nhịp 1,3 s). Bài mới "akeboshi" (273 s,
@@ -442,6 +449,60 @@ cross-validation, thay vì chỉ trên Beatles.
 **Giới hạn:** đáp án do người dùng ghi, có thể đơn giản hóa hoặc bỏ đoạn lặp. Mốc thời gian sau khi căn chỉ gần
 đúng, nên điểm theo thời gian thấp hơn Beatles khoảng 10 điểm. 7 bài chỉ lặp một vòng 2–3 hợp âm không căn được
 theo thời gian. Bộ chỉ có 32 bài.
+
+## Chọn lại tham số fuse trên Beatles + Kajiura (2026-11-03)
+
+Lệnh: `python -m eval.refit_fusion` (khoảng 40 phút, 6 tiến trình). Chỉ dùng đặc trưng của **mix**, không có stem
+(tách nguồn đã tắt mặc định), nên mọi cấu hình dùng `bass_source="cnn"`.
+
+- **Hàm mục tiêu:** `0.6 × mean4(Kajiura theo thời gian, 25 bài căn tốt) + 0.4 × mean4(Beatles, 42 bài)`, với
+  mean4 = trung bình WCSR gia quyền thời lượng của majmin, majmin_inv, sevenths, sevenths_inv. Kajiura nặng hơn vì
+  người dùng chủ yếu nghe Kajiura và Beatles có thể nằm trong dữ liệu huấn luyện của các model.
+- **Lưới** (2016 cấu hình, HMM theo khung): `cnn_weight` 0.35, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0; `mix_level` "full" hoặc
+  "family" với `quality_weight` 0, 0.35, 0.5, 0.7, 1.0 (trọng số CNN-LSTM cho **loại hợp âm trong họ**, tham số mới);
+  `self_prob` 0.7, 0.8, 0.9, 0.95; `min_duration` 0.25, 0.5, 1.0; `bass_threshold` 0.3–0.6.
+- **Cross-validation 3 phần**, chia theo bài và riêng từng bộ (bài thứ i vào phần i mod 3), nên phần nào cũng có
+  14 bài Beatles và 8–9 bài Kajiura căn tốt (10–11 bài Kajiura tính F1 chuỗi). Ba phần chọn: (0.5, family,
+  q 1.0, sp 0.8, bass 0.5), (0.7, family, q 0.5, sp 0.7, bass 0.5), (0.6, family, q 1.0, sp 0.7, bass 0.5).
+- Khi trộn loại hợp âm, nhãn CNN-LSTM không đoán được (maj6, min6, minmaj7) giữ đúng tỉ lệ trong họ của ChordMini
+  (`fusion.cnnlstm_abstain`); thiếu bước này thì maj6 có thể thắng sai khi CNN-LSTM gần như không đặt khối nào vào họ.
+
+| phương án | K majmin | K majmin_inv | K sevenths | K sevenths_inv | **K mean4** | K F1 chuỗi majmin | K F1 chuỗi sevenths | B majmin | B majmin_inv | B sevenths | B sevenths_inv | **B mean4** | mục tiêu |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CNN-LSTM một mình | 79.12 | 77.05 | 67.62 | 66.13 | **72.48** | 85.43 | 73.67 | 84.72 | 82.33 | 76.65 | 75.52 | 79.81 | 75.41 |
+| ChordMini một mình | 75.16 | 72.05 | 61.54 | 59.20 | 66.99 | 81.92 | 69.16 | 86.69 | 82.50 | 79.16 | 76.63 | 81.25 | 72.69 |
+| fuse cũ (mặc định cũ, có stem bass) | 78.05 | 75.95 | 63.72 | 62.39 | 70.03 | 84.36 | 71.44 | 88.84 | 85.60 | 81.13 | 79.64 | **83.80** | 75.54 |
+| fuse cũ, bass CNN-LSTM (không tách nguồn) | 78.05 | 75.85 | 63.72 | 62.33 | 69.99 | 84.36 | 71.44 | 88.84 | 85.51 | 81.13 | 79.56 | 83.76 | 75.50 |
+| **fuse mới (CV 3 phần)** | 78.85 | 76.69 | 66.90 | 65.56 | **72.00** | 85.05 | 73.50 | 87.87 | 84.61 | 79.18 | 77.72 | **82.35** | 76.14 |
+| fuse mới (chọn trên cả bộ, mặc định mới, lạc quan) | 79.01 | 76.89 | 67.38 | 66.07 | 72.34 | 85.18 | **73.91** | 88.58 | 85.31 | 79.73 | 78.29 | 82.98 | 76.59 |
+
+K = Kajiura theo thời gian (25 bài), F1 chuỗi trên 32 bài; B = Beatles (42 bài). Hai dòng "cũ" khớp số ở các mục trước.
+
+**Mặc định mới của `FusionParams`:** `cnn_weight=0.6, mix_level="family", quality_weight=1.0, smoothing="hmm",
+self_prob=0.7, min_duration=0.25, bass_source="cnn", bass_threshold=0.5`. Khi bật `--separation`, pipeline đổi
+`bass_source` thành "both" (trộn 0.3 stem bass).
+
+**Đối chiếu với mục tiêu:**
+- *Không kém CNN-LSTM một mình trên Kajiura:* **chưa đạt, kém ít.** Điểm CV kém 0.48 mean4 (majmin −0.27,
+  majmin_inv −0.37, sevenths −0.72, sevenths_inv −0.57); CI bootstrap 95% theo bài chứa 0 trừ sevenths
+  ([−1.49, −0.03], 9/16 bài thắng/thua). Bộ chọn trên cả bộ kém 0.14 mean4 (sevenths_inv −0.05, CI chứa 0). F1 chuỗi
+  sevenths của bộ mặc định hơn CNN-LSTM (73.91 so với 73.67). So với `fuse` cũ trên Kajiura: **+2.0 mean4**, sevenths +3.2.
+- *Không kém `fuse` cũ trên Beatles quá 1 điểm:* **CV chưa đạt** (−1.45 mean4: majmin −1.0, majmin_inv −1.0,
+  sevenths −2.0, sevenths_inv −1.9), vì một phần CV chọn bộ nghiêng hẳn về CNN-LSTM (0.7, q 0.5). Bộ mặc định chọn
+  trên cả bộ kém 0.82 mean4 (sevenths −1.4). Vẫn hơn CNN-LSTM một mình trên Beatles 2.5–3 điểm.
+- **Đánh đổi:** mặt mục tiêu rất phẳng ở đỉnh; các bộ gần đỉnh chỉ đổi Kajiura lấy Beatles. Ví dụ (chọn trên cả bộ)
+  `cnn_weight=0.5, family, q 1.0`: Kajiura 71.98, Beatles 83.31; `cnn_weight=0.6, "full"`: Kajiura 72.07, Beatles
+  83.14 (mục tiêu đều khoảng 76.5). Không bộ nào trong lưới vừa hơn CNN-LSTM trên Kajiura vừa giữ Beatles trong 1 điểm.
+  Muốn đạt cả hai chắc cần thêm thông tin mới (model khác), không chỉ chỉnh trọng số.
+- Phần lớn lợi ích trên Kajiura đến từ việc lấy **loại hợp âm 7 từ CNN-LSTM** (`quality_weight` 1.0 so với 0 ở cùng
+  `cnn_weight` 0.6: Kajiura +1.5 mean4, Beatles −0.5).
+- Thăm dò thêm (không nằm trong lưới CV, chọn trên cả bộ): `self_prob` 0.3–0.7 gần như bằng nhau (±0.03),
+  `beat_hmm` kém HMM theo khung 1.2 điểm mục tiêu.
+- Thời gian end-to-end mặc định (CLI, `--force`, máy rảnh GPU): "Let It Be" 9.6 s (bắt nhịp 1.4, hợp âm 6.1 gồm nạp
+  model, fuse 0.12, analysis 0.16), "空は高く風は歌う" (280 s audio) 10.0 s. VRAM đỉnh: CNN-LSTM 509–586 MiB, beat_this
+  263–291 MiB, ChordMini 80 MiB. "Let It Be" vẫn ra `C:maj/5` ở 40.50–42.08 s, vòng C – G – Am – F, 4 đoạn C/G.
+- Việc còn mở: model thứ ba hoặc model mới (ví dụ 2E1D của ChordMini) có thể phá thế đánh đổi; thêm bài Kajiura để
+  CI hẹp hơn.
 
 ## Nguồn tham khảo
 

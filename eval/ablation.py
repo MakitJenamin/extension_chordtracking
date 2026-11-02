@@ -19,7 +19,8 @@ Biến thể có tham số được chọn bằng cross-validation: chia bài th
 (bài thứ i vào phần i mod k), chọn tham số tốt nhất trên các phần còn lại rồi chấm phần giữ lại. Điểm
 CV là trung bình gia quyền thời lượng trên các phần giữ lại ghép lại. Hàm mục tiêu là trung bình của
 majmin, majmin_inv, sevenths, sevenths_inv. Bảng thứ hai là điểm khi chọn tham số trên cả bộ (lạc quan
-hơn, chỉ để tham khảo); bộ này là giá trị mặc định của `FusionParams`.
+hơn, chỉ để tham khảo). Bộ này từng là mặc định của `FusionParams` (đợt 2, chỉ Beatles); mặc định hiện tại
+chọn trên Beatles + Kajiura bằng `eval/refit_fusion.py`.
 """
 from __future__ import annotations
 
@@ -77,11 +78,12 @@ class Song:
                                                        self.times, self.cm_probs(src))
         return self._cache[key]
 
-    def chord(self, src: str, w: float, level: str) -> np.ndarray:
+    def chord(self, src: str, w: float, level: str, quality_weight: float = 0.0) -> np.ndarray:
         """Giống `fusion.chord_probs` (dùng chung các hàm của fusion), nhớ phần đã tính để chạy nhanh."""
-        if w <= 0:
+        if w <= 0 and (level != "family" or quality_weight <= 0):
             return self.cm_probs(src)
-        return F.mix_models(self.cm_probs(src), self.cn_probs(src), self.vocab(src), w, level)
+        abstain = F.cnnlstm_abstain(list(self.model("cnnlstm", src).vocabulary), self.vocab(src))
+        return F.mix_models(self.cm_probs(src), self.cn_probs(src), self.vocab(src), w, level, quality_weight, abstain)
 
     def cnn_bass(self, src: str) -> np.ndarray:
         key = ("bass", src)
@@ -141,7 +143,7 @@ def predict(song: Song, cfg: dict) -> list[ChordSegment]:
     if kind == "fusion":
         cnn_bass = song.cnn_bass(src) if p.bass_source in ("cnn", "both") else None
         stem = song.stem_chroma() if p.bass_source in ("stem", "both") else None
-        return F.fuse_probs(song.chord(src, p.cnn_weight, p.mix_level), song.vocab(src), song.times, song.beats, song.duration, p,
+        return F.fuse_probs(song.chord(src, p.cnn_weight, p.mix_level, p.quality_weight), song.vocab(src), song.times, song.beats, song.duration, p,
                             cnn_bass=cnn_bass, stem_chroma=stem)
     raise ValueError(kind)
 
@@ -218,7 +220,9 @@ def chord_grid(srcs=("mix", "inst"), weights=(0.0, 0.2, 0.35, 0.5), levels=("ful
     for src, w, sm in itertools.product(srcs, weights, smoothings):
         sps = (0.9,) if sm == "beat" else self_probs
         for sp, lv in itertools.product(sps, levels if w > 0 else ("family",)):
-            out.append(fusion_cfg(src, cnn_weight=w, mix_level=lv, smoothing=sm, self_prob=sp, bass_source="none"))
+            # quality_weight=0: cách trộn "family" của đợt 2 (giữ loại hợp âm 7 của ChordMini).
+            out.append(fusion_cfg(src, cnn_weight=w, mix_level=lv, quality_weight=0.0, smoothing=sm, self_prob=sp,
+                                  bass_source="none"))
     return out
 
 

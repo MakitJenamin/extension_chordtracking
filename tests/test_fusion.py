@@ -291,3 +291,49 @@ def test_beats_outside_song_fall_back_to_frames():
 def test_invalid_bass_source_raises():
     with pytest.raises(ValueError):
         F.bass_distribution(None, None, F.FusionParams(bass_source="stems"))
+
+
+def test_family_mix_quality_weight():
+    """quality_weight: 0 giữ loại hợp âm (C so với C7) của ChordMini, 1 lấy của CNN-LSTM; phân bố họ
+    (gốc + maj/min) vẫn trộn theo cnn_weight và không đổi khi quality_weight đổi."""
+    vocab = ["N", "C:maj", "C:7", "A:min"]
+    p_cm = np.array([[0.05, 0.6, 0.15, 0.2]])
+    p_cn = np.array([[0.05, 0.1, 0.6, 0.25]])
+    fam_idx = [[0], [1, 2], [3]]
+    q0 = F.mix_models(p_cm, p_cn, vocab, 0.5, "family", 0.0)
+    q1 = F.mix_models(p_cm, p_cn, vocab, 0.5, "family", 1.0)
+    qh = F.mix_models(p_cm, p_cn, vocab, 0.5, "family", 0.5)
+    for m in (q0, q1, qh):
+        np.testing.assert_allclose(m.sum(axis=1), 1.0)
+    for f in fam_idx:   # phân bố họ như nhau
+        np.testing.assert_allclose(q0[0, f].sum(), q1[0, f].sum(), atol=1e-9)
+        np.testing.assert_allclose(q0[0, f].sum(), qh[0, f].sum(), atol=1e-9)
+    assert q0[0, 1] / q0[0, 2] == pytest.approx(0.6 / 0.15, rel=1e-4)    # tỉ lệ C : C7 của ChordMini
+    assert q1[0, 1] / q1[0, 2] == pytest.approx(0.1 / 0.6, rel=1e-4)     # tỉ lệ C : C7 của CNN-LSTM
+    assert q0[0, 1] / q0[0, 2] > qh[0, 1] / qh[0, 2] > q1[0, 1] / q1[0, 2]
+    np.testing.assert_allclose(q0, F.mix_models(p_cm, p_cn, vocab, 0.5, "family"))   # mặc định như cũ
+
+
+def test_quality_weight_alone_still_mixes():
+    """cnn_weight=0 nhưng quality_weight>0: vẫn dùng CNN-LSTM cho loại hợp âm."""
+    vocab = ["N", "C:maj", "C:7"]
+    cm = _model("chordmini_btc", [0.05], [[0.0, 0.8, 0.2]], vocab)
+    cn = _model("cnnlstm", [0.05], [[0.0, 0.1, 0.9]], vocab)
+    times = np.array([0.05])
+    p, _ = F.chord_probs({"chordmini": cm, "cnnlstm": cn}, times, 0.0, "family", 1.0)
+    assert np.argmax(p[0]) == 2
+    p, _ = F.chord_probs({"chordmini": cm, "cnnlstm": cn}, times, 0.0, "family", 0.0)
+    assert np.argmax(p[0]) == 1
+
+
+def test_quality_weight_keeps_chordmini_share_for_abstained_labels():
+    """CNN-LSTM không có maj6: trong họ C, maj6 giữ tỉ lệ của ChordMini, không bị đẩy lên khi CNN-LSTM
+    gần như không đặt khối nào vào họ C."""
+    vocab = ["N", "C:maj", "C:maj6", "G:maj"]
+    p_cm = np.array([[0.0, 0.9, 0.05, 0.05]])
+    p_cn = np.array([[0.0, 0.001, 0.05, 0.949]])     # cột maj6 đã chép từ ChordMini (cnnlstm_on_chordmini)
+    abstain = np.array([False, False, True, False])
+    m = F.mix_models(p_cm, p_cn, vocab, 0.0, "family", 1.0, abstain)
+    assert m[0, 1] / m[0, 2] == pytest.approx(0.9 / 0.05, rel=1e-3)
+    bad = F.mix_models(p_cm, p_cn, vocab, 0.0, "family", 1.0)   # không có mặt nạ: maj6 thắng sai
+    assert bad[0, 2] > bad[0, 1]

@@ -1,8 +1,13 @@
 """Ghép pipeline end-to-end: nguồn audio (videoId, URL, file) -> JSON hợp âm.
 
-    fetch_audio -> separate (cache ở CACHE_DIR/<song_id>/) -> track_beats
+    fetch_audio -> chuẩn hóa thành mix.wav (cache ở CACHE_DIR/<song_id>/) -> track_beats
     -> run_chordmini + run_cnnlstm -> fusion.fuse -> analysis.estimate_key, analyze_structure,
     estimate_key_regions -> JSON (xem `build_result`)
+
+Mặc định **không tách nguồn**: model hợp âm và bắt nhịp chạy trên mix, bass lấy từ `bass_probs` của
+CNN-LSTM. Tách nguồn (BS-Roformer + HTDemucs) chỉ thêm khoảng +0.1 điểm hợp âm đảo mà tốn khoảng
+84 trên 89 giây mỗi bài (PLAN.md, "Kết quả đánh giá Kajiura"), nên chỉ bật khi `use_separation=True`;
+khi đó stem bass được trộn thêm vào phân bố bass (`bass_source="both"`).
 
 Mỗi bước dùng GPU tự lấy `gpu_lock()` riêng bên trong hàm của nó (separate, track_beats,
 run_chordmini, run_cnnlstm), nên ở đây không lồng khóa; giữa các bước gọi `free_vram()`.
@@ -16,7 +21,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -60,7 +65,7 @@ def code_revision() -> str:
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    use_separation: bool = True
+    use_separation: bool = False       # tách nguồn: tắt mặc định (PLAN.md, mục 2)
     chord_stem: str = "mix"            # stem chạy model hợp âm. Mix tốt hơn instrumental (PLAN.md, kết quả đợt 2)
     beat_stem: str = "mix"             # stem chạy bắt nhịp
 
@@ -86,7 +91,7 @@ def analyze(
     source: str,
     *,
     force: bool = False,
-    use_separation: bool = True,
+    use_separation: bool = False,
     chord_stem: str = "mix",
     beat_stem: str = "mix",
     progress: Callable[[str, float], None] | None = None,
@@ -160,8 +165,8 @@ def analyze(
 
     report("fusion", 0.0)
     t0 = time.perf_counter()
-    bass_audio = stems.bass if config.use_separation else None
-    segments = fusion.fuse(models, grid, bass_audio, duration)
+    bass_audio, fusion_params = _fusion_inputs(stems, config)
+    segments = fusion.fuse(models, grid, bass_audio, duration, fusion_params)
     timing["fusion"] = time.perf_counter() - t0
     report("fusion", 1.0)
 
@@ -184,13 +189,32 @@ def analyze(
     return result
 
 
+def _fusion_inputs(stems: Stems, config: PipelineConfig) -> tuple[Path | None, fusion.FusionParams]:
+    """(file stem bass, tham số fuse). Không tách nguồn: không có stem, bass chỉ từ CNN-LSTM. Có tách
+    nguồn: trộn thêm chroma stem bass với trọng số `stem_weight`.
+
+    Lưu ý: bộ mặc định được chọn với `bass_source="cnn"`; tổ hợp với stem bass chưa được đo lại (stem chỉ
+    thêm khoảng +0.1 điểm với bộ tham số cũ)."""
+    if not config.use_separation:
+        return None, fusion.DEFAULT_PARAMS
+    return stems.bass, replace(fusion.DEFAULT_PARAMS, bass_source="both")
+
+
 def _cached_result(song_id: str, config: PipelineConfig) -> dict | None:
     path = paths.CACHE_DIR / song_id / config.result_filename()
     cached = read_json(path)
     if cached is None or cached.get("version") != RESULT_VERSION:
         return None
-    if (cached.get("pipeline") or {}).get("code_revision") != code_revision():
+    meta = cached.get("pipeline") or {}
+    if meta.get("code_revision") != code_revision():
         log.info("%s tạo bởi mã cũ, chạy lại", path)
+        return None
+    # Phòng khi tên file trùng nhưng cấu hình khác (vd. result.json do bản cũ ghi khi mặc định còn tách nguồn).
+    # Chỉ so các trường có mặt trong file.
+    separated = meta.get("separation_model", "?" if config.use_separation else None) is not None
+    if (separated != config.use_separation or meta.get("chord_stem", config.chord_stem) != config.chord_stem
+            or meta.get("beat_stem", config.beat_stem) != config.beat_stem):
+        log.info("%s tạo với cấu hình khác, chạy lại", path)
         return None
     log.info("Dùng kết quả có sẵn %s", path)
     return cached
