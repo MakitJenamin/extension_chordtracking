@@ -3,7 +3,7 @@
 Tái hiện `chord_recognition.py`:
 1. Audio mono 22050 Hz, `librosa.hybrid_cqt` (hop 512, 288 bin, 36 bin/quãng tám, từ F#0).
 2. Chạy 5 model, lấy trung bình từng nhóm xác suất: triad (T, 73), bass (T, 13),
-   7th (T, 4), 9th (T, 4), 11th (T, 3), 13th (T, 4).
+   7th (T, 4), 9th (T, 4), 11th (T, 3), 13th (T, 3).
 3. Giải mã HMM (`XHMMDecoder`, không dùng beat) trên từ điển hợp âm `chord_dict`.
 
 `frame_probs`: từ điển của HMM (`vocabulary`) gồm "N" và mọi hợp âm trong file
@@ -16,6 +16,7 @@ model, còn phần giải mã thì giữ nguyên như gốc.
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import os
 import sys
@@ -38,33 +39,33 @@ MODEL_FILES = [
 N_BIAS = 0.5
 
 
-@contextlib.contextmanager
-def _in_repo_dir():
-    """Mã gốc đọc file theo đường dẫn tương đối (lúc import và lúc nạp weights)."""
-    root = str(CNNLSTM_DIR)
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    old = os.getcwd()
-    os.chdir(root)
-    try:
-        yield
-    finally:
-        os.chdir(old)
-
-
+@functools.lru_cache(maxsize=1)
 def _import_modules():
-    with _in_repo_dir(), contextlib.redirect_stdout(io.StringIO()):
-        # train_eval_test_split (import gián tiếp) gọi np.random.seed lúc import; giữ nguyên
-        # trạng thái RNG toàn cục của người gọi.
-        state = np.random.get_state()
-        try:
+    """Import mã gốc một lần cho cả tiến trình.
+
+    `train_eval_test_split` (import gián tiếp) đọc file theo đường dẫn tương đối ngay lúc
+    import, nên phải chdir vào repo trong lúc import (chdir có tác dụng cho cả tiến trình,
+    nhưng chỉ xảy ra một lần ở đây). Sau đó gỡ repo khỏi `sys.path` để các tên chung chung
+    trong đó (`datasets`, `settings`, ...) không che gói thật về sau. Module đã import vẫn
+    nằm trong `sys.modules`.
+    """
+    root = str(CNNLSTM_DIR)
+    old_cwd = os.getcwd()
+    sys.path.insert(0, root)
+    os.chdir(root)
+    # import đó còn gọi np.random.seed; giữ nguyên trạng thái RNG của người gọi.
+    state = np.random.get_state()
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
             import mir.nn.train as mir_train
             from chordnet_ismir_naive import ChordNet
             from extractors.xhmm_ismir import XHMMDecoder
-        finally:
-            np.random.set_state(state)
-    # WORKING_PATH được chốt bằng cwd lúc import mir; đặt lại cho chắc.
-    mir_train.WORKING_PATH = str(CNNLSTM_DIR)
+    finally:
+        np.random.set_state(state)
+        os.chdir(old_cwd)
+        sys.path.remove(root)
+    # NetworkInterface tìm weights theo WORKING_PATH (= cwd lúc import mir); đặt tuyệt đối.
+    mir_train.WORKING_PATH = root
     return mir_train.NetworkInterface, ChordNet, XHMMDecoder
 
 
@@ -79,8 +80,7 @@ def _compute_cqt(audio_path: str | Path) -> np.ndarray:
     return np.abs(cqt).astype(np.float32)
 
 
-def _run_ensemble(cqt: np.ndarray) -> list[np.ndarray]:
-    NetworkInterface, ChordNet, _ = _import_modules()
+def _run_ensemble(cqt: np.ndarray, NetworkInterface, ChordNet) -> list[np.ndarray]:
     use_gpu = _device_name() == "cuda"
     all_probs = []
     with gpu_lock():
@@ -91,7 +91,7 @@ def _run_ensemble(cqt: np.ndarray) -> list[np.ndarray]:
                 raise FileNotFoundError(weight_path)
             net = ChordNet(None)
             net.use_gpu = use_gpu
-            with _in_repo_dir(), contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(io.StringIO()):
                 iface = NetworkInterface(net, name, load_checkpoint=False)
             if not iface.finalized:
                 raise RuntimeError(f"Không nạp được weights {weight_path}")
@@ -129,10 +129,10 @@ def run_cnnlstm(audio_path: str | Path, chord_dict: str = "submission") -> Chord
     if chord_dict not in CHORD_DICTS:
         raise ValueError(f"chord_dict phải là một trong {CHORD_DICTS}, nhận được {chord_dict!r}")
     template = CNNLSTM_DIR / "data" / f"{chord_dict}_chord_list.txt"
-    _, _, XHMMDecoder = _import_modules()
+    NetworkInterface, ChordNet, XHMMDecoder = _import_modules()
 
     cqt = _compute_cqt(audio_path)
-    probs = _run_ensemble(cqt)
+    probs = _run_ensemble(cqt, NetworkInterface, ChordNet)
     triad, bass, p7, p9, p11, p13 = probs
     n_frames = triad.shape[0]
     frame_duration = HOP_LENGTH / SR
@@ -143,7 +143,8 @@ def run_cnnlstm(audio_path: str | Path, chord_dict: str = "submission") -> Chord
         beat_arr = np.ones((n_frames,), dtype=np.int8)
         tags = hmm.decode(probs, beat_arr)
         # Quan sát không có hệ số giảm "N": nhân trước 1/N_BIAS để triệt tiêu hệ số bên trong.
-        unbiased = [p.copy() for p in probs]
+        unbiased = list(probs)
+        unbiased[0] = triad.copy()
         unbiased[0][:, 0] /= N_BIAS
         vocab, logprob = hmm.get_chord_tag_obs(unbiased)
 

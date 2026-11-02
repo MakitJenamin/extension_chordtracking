@@ -160,15 +160,19 @@ def run_chordmini(audio_path: str | Path, variant: str = "btc") -> ChordModelOut
     import torch
     from src.evaluation.utils.common import extract_song_features, majority_filter_indices
     from src.models import load_model
-    from src.utils import HParams, extract_normalization_stats, get_config_value, idx2voca_chord
+    from src.utils import HParams, extract_normalization_stats, get_config_value
 
     config = HParams.load(str(config_path))
-    vocab = [to_harte(idx2voca_chord()[i]) for i in range(N_CLASSES)]
+    vocab = vocabulary()
 
     # Tiền xử lý chạy trên CPU, để ngoài khóa GPU.
     features, frame_duration = extract_song_features(str(audio_path), config)
     features = np.asarray(features, dtype=np.float32)
-    song_duration = float(librosa.get_duration(path=str(audio_path)))
+    try:
+        song_duration = float(librosa.get_duration(path=str(audio_path)))
+    except Exception:  # giống _song_duration_seconds của script gốc
+        y, sr = librosa.load(str(audio_path), sr=get_config_value(config, "mp3", "song_hz", 22050))
+        song_duration = len(y) / float(sr)
 
     checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     mean, std = extract_normalization_stats(checkpoint)
@@ -180,10 +184,17 @@ def run_chordmini(audio_path: str | Path, variant: str = "btc") -> ChordModelOut
         model, _, _ = load_model(str(ckpt_path), model_type, config, dev)
         model.eval()
         # Thứ tự ưu tiên giống `_resolve_seq_len`: checkpoint > thuộc tính model > config > 108.
-        seq_len = ckpt_seq_len or getattr(model, "timestep", None) or get_config_value(
-            config, "model", "seq_len", get_config_value(config, "model", "timestep", 108)
-        )
-        seq_len = int(seq_len) if int(seq_len) > 0 else 108
+        seq_len = ckpt_seq_len
+        if seq_len is None:
+            seq_len = getattr(model, "timestep", None)
+        if seq_len is None:
+            seq_len = get_config_value(config, "model", "seq_len", get_config_value(config, "model", "timestep", 108))
+        try:
+            seq_len = int(seq_len)
+        except (TypeError, ValueError):
+            seq_len = 108
+        if seq_len <= 0:
+            seq_len = 108
         try:
             mean_logits = _sliding_window_logits(model, features, mean, std, seq_len)
         finally:
