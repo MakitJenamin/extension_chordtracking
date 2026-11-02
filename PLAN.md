@@ -131,7 +131,9 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 - ✅ Python 3.11.9, gọi bằng `py -3.11`. Lệnh `python` có thể vẫn trỏ tới bản giả của Microsoft Store, nên luôn dùng venv.
 - ✅ ffmpeg 9.0.2 (Gyan.FFmpeg, qua `winget`).
 - ✅ git 2.49, gh 2.103 (đã đăng nhập tài khoản `MakitJenamin`).
-- ⏳ Còn cần cài: PyTorch bản CUDA, `yt-dlp`, git-lfs (để tải weights từ ChordMiniApp).
+- ✅ venv `.venv` (Python 3.11), PyTorch 2.14.1+cu126 nhận GPU, `yt-dlp`, các thư viện trong `requirements.txt`.
+- ⚠️ ffmpeg được thêm vào PATH của user, nên shell cũ phải nạp lại PATH thì `yt-dlp` mới tìm thấy ffmpeg.
+- ⚠️ Phải giữ **numpy 1.26.4**. Cài `seaborn` sẽ kéo numpy lên 2.x và pandas lên 3.x, gây xung đột (đã ghim `pandas<3`).
 
 ## Quy ước làm việc
 
@@ -141,8 +143,14 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 
 ## 11. Việc cần kiểm tra khi bắt đầu
 
-- [ ] Clone ChordMiniApp, `git lfs pull`, xác nhận weights của ChordMini và Chord-CNN-LSTM chạy được.
-- [ ] Xác nhận định dạng đầu ra nốt bass của Chord-CNN-LSTM.
+- [x] Lấy weights. Không cần ChordMiniApp: clone thẳng 2 repo model vào `third_party_src/` (đã gitignore). Weights có sẵn trong repo, không cần LFS.
+  - `https://github.com/ptnghia-j/ChordMini`, `checkpoints/`: `btc_model_best.pth` (BTC-PL, model chính), `2e1d_model_best.pth` (ChordNet 2E1D), `btc_model_large_voca.pt` (BTC gốc).
+  - `https://github.com/ptnghia-j/chord-cnn-lstm-model`, `cache_data/`: 5 file `.sdict`, là ensemble 5 model chạy rồi lấy trung bình.
+- [x] Chạy thử cả hai model trên "Let It Be" (videoId `QDYfEBY9NM4`, dài 243 giây). **Cả hai ra đúng vòng C – G – Am – F.**
+  - ChordMini BTC-PL: khoảng **12 giây** mỗi bài trên GPU, bắt được `F:maj7`. Lệnh chạy: `src/evaluation/test.py --model_type BTC --checkpoint checkpoints/btc_model_best.pth --config config/ChordMini.yaml --smooth_logits --use_overlap --use_gaussian --kernel_size 9 --vote_aggregation logit --min_segment_duration 0.5 --smooth_predictions`
+  - Chord-CNN-LSTM: `chord_recognition.py <audio> <out.lab> [submission|ismir2017|full]`.
+- [x] Định dạng nốt bass của Chord-CNN-LSTM: ký hiệu Harte có **bậc của bass**, ví dụ `C:maj/5` = C/G, `C:maj/3` = C/E, `F:maj/2` = F/G. Đã bắt đúng **C/G** ở đoạn điệp khúc Am – C/G – F – C.
+- [ ] Đầu ra hiện là `.lab` (bắt đầu, kết thúc, hợp âm). Cần lấy thêm xác suất từng khung để kết hợp model và tính độ tin cậy.
 - [ ] Kiểm tra BS-Roformer-Viperx-1297 chạy vừa 8 GB VRAM (qua `audio-separator`).
 - [ ] Tìm nguồn dữ liệu đánh giá: file nhãn hợp âm cùng audio tương ứng.
 

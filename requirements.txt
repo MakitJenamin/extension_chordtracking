@@ -1,0 +1,26 @@
+# PyTorch bản CUDA, cài riêng trước:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+# (đã kiểm tra: torch 2.14.1+cu126 trên RTX 3060 Ti)
+
+# Giữ numpy 1.x vì scipy 1.13, ChordMini và Chord-CNN-LSTM đều cần
+numpy==1.26.4
+scipy==1.13.1
+pandas<3
+librosa==0.10.1
+soundfile==0.12.1
+setuptools==80.9.0
+PyYAML==6.0.2
+mir_eval==0.8.2
+scikit-learn
+matplotlib
+seaborn==0.13.2
+tqdm
+
+# Chord-CNN-LSTM
+pretty_midi
+h5py
+pydub
+joblib
+
+# Tải audio
+yt-dlp

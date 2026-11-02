@@ -31,3 +31,6 @@ output/
 .idea/
 .codegraph/
 Thumbs.db
+
+# Mã nguồn bên thứ ba clone về (có weights)
+third_party_src/
