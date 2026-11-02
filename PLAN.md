@@ -140,6 +140,7 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 4. **Extension:** giao diện và đồng bộ theo video.
 5. **Chế độ dự phòng** khi server bận hoặc không có GPU.
 6. (Sau này) Đơn giản hóa hợp âm, deploy lên cloud, cân nhắc ChordFormer nếu có weights.
+   - **Tạm gác (người dùng quyết định 2026-11-03):** thêm ChordMini 2E1D làm model thứ ba vào bộ kết hợp. Chỉ làm lại khi người dùng yêu cầu.
 
 ## 10. Môi trường máy (kiểm tra ngày 2026-11-02)
 
