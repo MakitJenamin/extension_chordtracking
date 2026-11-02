@@ -1,0 +1,251 @@
+"""Test logic fusion, không cần GPU hay weights: dữ liệu giả lập."""
+import numpy as np
+import pytest
+
+from chordtrack import fusion as F
+from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment
+
+CM_VOCAB = ["N", "C:maj", "G:maj", "A:min", "F:maj", "C:7"]
+
+
+def _covers(segs, duration):
+    assert segs[0].start == 0.0
+    assert segs[-1].end == pytest.approx(duration)
+    for a, b in zip(segs, segs[1:]):
+        assert a.end == pytest.approx(b.start)
+        assert b.end > b.start
+
+
+def _model(name, times, probs, vocab, extras=None):
+    return ChordModelOutput(name, [], np.asarray(times), np.asarray(probs, dtype=float), vocab, extras or {})
+
+
+def _one_hot_track(plan, hop, vocab, conf=0.9):
+    """plan: [(nhãn, giây)] -> (times, probs) với nhãn đúng có xác suất conf."""
+    labels = []
+    for lab, dur in plan:
+        labels += [vocab.index(lab)] * int(round(dur / hop))
+    n = len(labels)
+    probs = np.full((n, len(vocab)), (1 - conf) / (len(vocab) - 1))
+    probs[np.arange(n), labels] = conf
+    return (np.arange(n) + 0.5) * hop, probs
+
+
+# ---------------------------------------------------------------- gán bass
+
+def test_with_bass_adds_degree_for_chord_tones():
+    assert F.with_bass("C:maj", 7) == "C:maj/5"       # C/G
+    assert F.with_bass("C:maj", 4) == "C:maj/3"       # C/E
+    assert F.with_bass("A:min", 0) == "A:min/b3"      # Am/C
+    assert F.with_bass("G:7", 5) == "G:7/b7"          # G7/F
+    assert F.with_bass("C:aug", 8) == "C:aug/#5"
+
+
+def test_with_bass_keeps_label_for_root_non_chord_tone_or_no_chord():
+    assert F.with_bass("C:maj", 0) == "C:maj"         # bass là nốt gốc
+    assert F.with_bass("C:maj", 2) == "C:maj"         # D không thuộc C
+    assert F.with_bass("C:maj", 11) == "C:maj"        # B không thuộc C (không phải maj7)
+    assert F.with_bass("N", 4) == "N"
+    assert F.with_bass("C:maj/3", 7) == "C:maj/3"     # đã có bass thì giữ nguyên
+
+
+def test_harte_bass_labels_are_valid_for_mir_eval():
+    import mir_eval
+
+    for lab, pc in [("C:maj", 7), ("A:min", 0), ("G:7", 5), ("C:dim7", 9), ("C:aug", 8), ("F:maj7", 4)]:
+        out = F.with_bass(lab, pc)
+        root, _bitmap, bass = mir_eval.chord.encode(out)
+        assert (root + bass) % 12 == pc, out
+
+
+def test_pick_bass_threshold():
+    dist = np.zeros(12)
+    dist[7], dist[0] = 0.45, 0.35
+    assert F.pick_bass(dist, "C:maj", 0.4) == "C:maj/5"
+    assert F.pick_bass(dist, "C:maj", 0.5) == "C:maj"
+
+
+def test_assign_bass_per_segment_and_per_beat():
+    hop = 0.1
+    times = (np.arange(40) + 0.5) * hop
+    bass = np.full((40, 12), 0.01)
+    bass[:24, 0] = 0.9    # 0–2.4 s bass C
+    bass[24:, 4] = 0.9    # 2.4–4 s bass E
+    bass = bass / bass.sum(axis=1, keepdims=True)
+    segs = [(0.0, 4.0, 1)]  # C:maj cả 4 giây
+    vocab = CM_VOCAB
+    # Cả đoạn: C nhiều hơn E, argmax là C (nốt gốc) -> không đảo
+    assert [s[3] for s in F.assign_bass(segs, vocab, bass, times, 0.3)] == ["C:maj"]
+    # Theo phách: tách thành C rồi C/E
+    beats = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0), (3.0, 4.0)]
+    out = F.assign_bass(segs, vocab, bass, times, 0.3, beats)
+    assert [(s[0], s[1], s[3]) for s in out] == [(0.0, 2.0, "C:maj"), (2.0, 4.0, "C:maj/3")]
+
+
+def test_bass_distribution_sources():
+    cnn = np.tile(np.eye(12)[0], (5, 1))
+    chroma = np.tile(np.eye(12)[7] * 10, (5, 1))
+    p = F.FusionParams(bass_source="both", stem_weight=0.5)
+    d = F.bass_distribution(cnn, chroma, p)
+    assert d[0, 0] == pytest.approx(0.5) and d[0, 7] == pytest.approx(0.5)
+    assert F.bass_distribution(cnn, chroma, F.FusionParams(bass_source="none")) is None
+    assert np.argmax(F.bass_distribution(cnn, chroma, F.FusionParams(bass_source="stem"))[0]) == 7
+    # thiếu một nguồn thì dùng nguồn còn lại
+    assert np.argmax(F.bass_distribution(None, chroma, p)[0]) == 7
+
+
+def test_stem_bass_probs_silence_is_uniform():
+    chroma = np.zeros((4, 12))
+    chroma[:3, 9] = 1.0
+    p = F.stem_bass_probs(chroma)
+    assert p[0, 9] == pytest.approx(1.0)
+    np.testing.assert_allclose(p[3], np.full(12, 1 / 12))
+
+
+# ---------------------------------------------------------------- ánh xạ và trộn
+
+def test_cnnlstm_mapping_drops_inversions_and_reduces_quality():
+    src = ["N", "C:maj", "C:maj/5", "Eb:min9", "G:9", "D:sus4(b7)"]
+    dst = ["N", "C:maj", "D#:min7", "G:7", "D:sus4", "C:min"]
+    probs = np.array([[0.1, 0.2, 0.3, 0.1, 0.2, 0.1]])
+    out = F.cnnlstm_to_chordmini(probs, src, dst)
+    np.testing.assert_allclose(out, [[0.1, 0.5, 0.1, 0.2, 0.1, 0.0]])
+
+
+def test_resample_probs_averages_and_fills():
+    src_t = np.array([0.05, 0.15, 0.25, 0.35])
+    src = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 0.0]])
+    out = F.resample_probs(src_t, src, np.array([0.1, 0.3, 0.5, 0.7]))
+    np.testing.assert_allclose(out[0], [0.5, 0.5])
+    np.testing.assert_allclose(out[1], [1.0, 0.0])
+    np.testing.assert_allclose(out[3], [1.0, 0.0])  # ngoài phạm vi: khung gần nhất
+
+
+def test_mix_log_weights():
+    a = np.array([[0.9, 0.1]])
+    b = np.array([[0.1, 0.9]])
+    np.testing.assert_allclose(F.mix_log(a, b, 0.0), a, atol=1e-5)
+    np.testing.assert_allclose(F.mix_log(a, b, 0.5), [[0.5, 0.5]], atol=1e-5)
+
+
+# ---------------------------------------------------------------- làm mượt
+
+def test_viterbi_removes_flicker():
+    obs = np.full((20, 2), np.log(0.4))
+    obs[:, 0] = np.log(0.6)
+    obs[10] = [np.log(0.3), np.log(0.7)]   # một khung chớp nháy
+    path = F.viterbi_uniform(obs, 0.9)
+    assert (path == 0).all()
+    assert (F.viterbi_uniform(obs, 0.5)[10] == 1)
+
+
+def test_beat_voting_snaps_changes_to_beats():
+    hop = 0.1
+    times = (np.arange(40) + 0.5) * hop
+    probs = np.full((40, 3), 0.05)
+    probs[:, 0] = 0.9
+    probs[23:, :] = 0.05
+    probs[23:, 1] = 0.9  # model đổi hợp âm ở 2.3 s, phách ở 2.0 s
+    beats = BeatGrid(np.array([0.0, 1.0, 2.0, 3.0]), np.array([0.0]), 60.0)
+    p = F.FusionParams(smoothing="beat")
+    labels = F.decode(probs, times, beats, 4.0, p)
+    segs = F.frames_to_segments(labels, times, 4.0)
+    # phách 2–3 s: 3 khung C, 7 khung G -> G; đổi hợp âm đúng ở phách 2.0 s
+    assert [(round(a, 6), round(b, 6), i) for a, b, i in segs] == [(0.0, 2.0, 0), (2.0, 4.0, 1)]
+    labels = F.decode(probs, times, beats, 4.0, F.FusionParams(smoothing="beat_hmm", self_prob=0.9))
+    assert [i for *_, i in F.frames_to_segments(labels, times, 4.0)] == [0, 1]
+
+
+def test_beat_smoothing_without_beats_falls_back():
+    probs = np.array([[0.9, 0.1]] * 5)
+    times = (np.arange(5) + 0.5) * 0.1
+    assert (F.decode(probs, times, None, 0.5, F.FusionParams(smoothing="beat")) == 0).all()
+
+
+def test_merge_short_absorbs_into_better_neighbour():
+    times = (np.arange(30) + 0.5) * 0.1
+    probs = np.full((30, 3), 0.1)
+    probs[:, 0] = 0.8
+    probs[10:12, 2] = 0.85   # đoạn 1.0–1.2 s nhãn 2, ngắn
+    segs = [(0.0, 1.0, 0), (1.0, 1.2, 2), (1.2, 3.0, 1)]
+    out = F.merge_short(segs, probs, times, 0.5)
+    assert out == [(0.0, 1.2, 0), (1.2, 3.0, 1)]
+
+
+# ---------------------------------------------------------------- fill_gaps và fuse
+
+def test_fill_gaps_covers_whole_duration():
+    segs = [ChordSegment(0.5, 1.0, "C:maj"), ChordSegment(1.2, 2.0, "G:maj")]
+    out = F.fill_gaps(segs, 3.0)
+    _covers(out, 3.0)
+    assert [s.label for s in out] == ["N", "C:maj", "G:maj", "N"]
+
+
+def test_fill_gaps_clips_past_duration():
+    out = F.fill_gaps([ChordSegment(0.0, 5.0, "C:maj")], 3.0)
+    assert [(s.start, s.end) for s in out] == [(0.0, 3.0)]
+
+
+def _synthetic_models(duration=16.0):
+    hop_cm = F.FRAME_HOP
+    plan = [("C:maj", 4.0), ("G:maj", 4.0), ("A:min", 4.0), ("F:maj", 4.0)]
+    t_cm, p_cm = _one_hot_track(plan, hop_cm, CM_VOCAB)
+    cn_vocab = ["N", "C:maj", "C:maj/5", "G:maj", "A:min", "F:maj"]
+    cn_plan = [("C:maj/5", 4.0), ("G:maj", 4.0), ("A:min", 4.0), ("F:maj", 4.0)]
+    t_cn, p_cn = _one_hot_track(cn_plan, 0.025, cn_vocab, conf=0.8)
+    bass = np.full((len(t_cn), 13), 0.01)
+    bass_pc = {0: 7, 1: 7, 2: 9, 3: 5}  # C/G, G, Am, F
+    for i, t in enumerate(t_cn):
+        bass[i, 1 + bass_pc[min(3, int(t // 4))]] = 0.9
+    bass /= bass.sum(axis=1, keepdims=True)
+    return {
+        "chordmini": _model("chordmini_btc", t_cm, p_cm, CM_VOCAB),
+        "cnnlstm": _model("cnnlstm", t_cn, p_cn, cn_vocab, {"bass_probs": bass}),
+    }
+
+
+@pytest.mark.parametrize("smoothing", ["frame", "beat", "hmm", "beat_hmm"])
+def test_fuse_synthetic_progression_with_inversion(smoothing):
+    duration = 16.5
+    models = _synthetic_models()
+    beats = BeatGrid(np.arange(0.0, 16.0, 1.0), np.arange(0.0, 16.0, 4.0), 60.0)
+    p = F.FusionParams(cnn_weight=0.3, smoothing=smoothing, bass_source="cnn", bass_threshold=0.5)
+    out = F.fuse(models, beats, None, duration, params=p)
+    _covers(out, duration)
+    labels = [s.label for s in out]
+    assert labels[:4] == ["C:maj/5", "G:maj", "A:min", "F:maj"]
+    for s in out:
+        assert s.confidence is None or 0.0 <= s.confidence <= 1.0
+    assert out[0].confidence > 0.5
+
+
+def test_fuse_default_params_and_missing_inputs():
+    models = _synthetic_models()
+    out = F.fuse(models, None, None, 16.0)
+    _covers(out, 16.0)
+    # chỉ có CNN-LSTM: dùng từ vựng của nó (đã có hợp âm đảo)
+    out = F.fuse({"cnnlstm": models["cnnlstm"]}, None, None, 16.0)
+    _covers(out, 16.0)
+    assert out[0].label == "C:maj/5"
+    # không có xác suất theo khung: lấp khoảng trống cho đoạn sẵn có
+    seg_only = ChordModelOutput("x", [ChordSegment(1.0, 2.0, "C:maj", 0.7)])
+    out = F.fuse({"chordmini": seg_only}, None, None, 3.0)
+    _covers(out, 3.0)
+    assert [s.label for s in out] == ["N", "C:maj", "N"]
+
+
+def test_fuse_with_bass_stem_file(tmp_path):
+    import soundfile as sf
+
+    sr = 11025
+    t = np.arange(int(sr * 8.0)) / sr
+    # 0–4 s bass G2 (98 Hz) dưới hợp âm C -> C/G; 4–8 s bass G2 dưới G -> G (nốt gốc)
+    y = 0.5 * np.sin(2 * np.pi * 98.0 * t)
+    sf.write(tmp_path / "bass.wav", y, sr)
+    plan = [("C:maj", 4.0), ("G:maj", 4.0)]
+    t_cm, p_cm = _one_hot_track(plan, F.FRAME_HOP, CM_VOCAB)
+    models = {"chordmini": _model("chordmini_btc", t_cm, p_cm, CM_VOCAB)}
+    p = F.FusionParams(smoothing="hmm", bass_source="stem", bass_threshold=0.3)
+    out = F.fuse(models, None, tmp_path / "bass.wav", 8.0, params=p)
+    _covers(out, 8.0)
+    assert [s.label for s in out] == ["C:maj/5", "G:maj"]

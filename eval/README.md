@@ -47,15 +47,19 @@ Lệnh này ghi ra `EVAL_DIR/isophonics/youtube_candidates.csv`, không ghi đè
 Nhãn Isophonics khớp bản CD gốc. Audio YouTube có thể là bản master khác: khoảng lặng đầu bài khác
 nhau, đuôi fade-out dài ngắn khác nhau, đôi khi là bản mix khác hẳn. Cách xử lý:
 
-1. **So độ dài.** `|độ dài audio − độ dài nhãn| > 2 s` thì loại bài, vì nhiều khả năng là bản khác.
-2. **Ước lượng độ lệch đầu bài bằng tương quan chroma.** Dựng "chroma mẫu" từ nhãn (vector 12 nốt,
+1. **Ước lượng độ lệch đầu bài bằng tương quan chroma.** Dựng "chroma mẫu" từ nhãn (vector 12 nốt,
    bằng 1 ở các nốt của hợp âm, giải mã bằng `mir_eval.chord.encode`), tính chroma CENS của audio
    (22050 Hz, hop 512 ≈ 23 ms), rồi trượt nhãn trong khoảng ±2 s, chọn độ lệch có cosine trung bình
    cao nhất trên các khung có hợp âm. Cách này không phụ thuộc khoảng lặng hay tiếng đếm nhịp ở đầu bài.
-3. **Loại bài không căn được:** đỉnh nằm ở biên ±2 s, cosine tốt nhất < 0.5, hoặc sau khi dịch thì cuối nhãn
-   lệch cuối audio quá 2 s. Mọi lag được chấm trên cùng một tập khung, để lag lớn không được lợi vì bỏ bớt khung.
-4. **Dịch nhãn** theo độ lệch tìm được (bỏ qua nếu < 0.03 s), cắt về `[0, độ dài audio]`, lấp đầu bài
-   bằng `N`, ghi vào `ref/`.
+2. **Đo độ trôi:** ước lượng lại độ lệch chỉ trên 60 s đầu và 60 s cuối của vùng chung (`head_offset`,
+   `tail_offset` trong `alignment.json`).
+3. **Loại bài** (`check_alignment`) khi: đỉnh nằm ở biên ±2 s, cosine tốt nhất < 0.5, độ lệch cuối bài
+   khác đầu bài quá `MAX_DRIFT` = 0.6 s (bản khác tốc độ hoặc cắt ghép khác), hoặc độ dài lệch quá 15 s
+   (chắc chắn là bản khác). **Không loại bài chỉ vì độ dài lệch vài giây**: phần lớn là do đuôi fade-out.
+   Mọi lag được chấm trên cùng một tập khung, để lag lớn không được lợi vì bỏ bớt khung.
+4. **Dịch nhãn** theo độ lệch tìm được (bỏ qua nếu < 0.03 s), **cắt về vùng chung**
+   `[0, min(độ dài audio, cuối nhãn + độ lệch)]` (`common_end`), lấp đầu bài bằng `N`, ghi vào `ref/`.
+   Phần audio sau cuối nhãn không được chấm vì `evaluate_pair` chỉ chấm trong khoảng của nhãn chuẩn.
 
 Đã thử và bỏ:
 - Dò khoảng lặng đầu bài (RMS): sai với bài có tiếng đếm nhịp hoặc tiếng nói ở đầu
@@ -70,13 +74,16 @@ làm điểm majmin của ChordMini cao nhất ("oracle"; chỉ để kiểm tra
 - Độ lệch lớn nhất: "Eight Days a Week" +0.72 s, "Yellow Submarine" +0.77 s,
   "While My Guitar Gently Weeps" +0.67 s. Không căn thì điểm các bài này tụt 20–30 điểm.
 
-Kết quả bộ dữ liệu (2026-11-02): **43 bài có videoId, 31 bài đạt, 12 bài bị loại**, đều vì độ dài lệch
-quá 2 s: Please Please Me (−2.5), Twist and Shout (+2.1), Can't Buy Me Love (−3.1), If I Fell (−2.6),
-I'm a Loser (−3.5), Ticket to Ride (−7.9), You've Got to Hide Your Love Away (−2.3),
-Here, There and Everywhere (−2.2), Hello Goodbye (−2.6), All You Need Is Love (+2.9),
-Ob-La-Di, Ob-La-Da (+2.6), Get Back (+2.4). Hai bài không tìm được video phù hợp: Getting Better,
-Norwegian Wood. Phần lớn chênh lệch nằm ở đuôi fade-out. Nếu cần thêm bài thì có thể nới ngưỡng
-và kiểm tra độ lệch ở cả cuối bài.
+Kết quả bộ dữ liệu:
+- 2026-11-02 (quy tắc cũ, loại khi độ dài lệch > 2 s): 43 bài có videoId, 31 bài đạt, 12 bài bị loại.
+- **2026-11-03 (quy tắc mới): 42 bài đạt (117 phút), 1 bài bị loại**: All You Need Is Love (độ lệch đầu
+  bài −0.12 s, cuối bài +1.58 s; đuôi bài khác hẳn). 11 bài lấy lại: Please Please Me, Twist and Shout,
+  Can't Buy Me Love, If I Fell, I'm a Loser, Ticket to Ride (audio ngắn hơn nhãn 7.9 s, nhưng độ lệch đầu
+  và cuối đều +0.21 s), You've Got to Hide Your Love Away, Here, There and Everywhere, Hello Goodbye,
+  Ob-La-Di, Ob-La-Da, Get Back. Nhãn của 31 bài cũ không đổi.
+- Độ trôi đầu–cuối của các bài đạt phần lớn dưới 0.3 s; vài bài 0.3–0.56 s (Love Me Do, Yellow Submarine,
+  Eight Days a Week, Come Together, Penny Lane), có thể do nhãn gốc trôi nhẹ. Chưa căn co giãn tuyến tính.
+- Hai bài không tìm được video phù hợp: Getting Better, Norwegian Wood.
 
 ## 3. Baseline ChordMini: `run_chordmini.py`
 
@@ -87,3 +94,32 @@ python -m eval.run_chordmini     # kết quả ở EVAL_DIR/results/chordmini_bt
 Chạy `third_party_src/ChordMini/src/evaluation/test.py` bằng subprocess, với checkpoint
 `btc_model_best.pth` và cờ ở PLAN.md mục 11. Khóa `gpu_lock()` được giữ trong suốt subprocess.
 VRAM đỉnh đo bằng `nvidia-smi`, là số của cả GPU, không riêng tiến trình.
+
+Baseline trên bộ 42 bài (2026-11-03): root 87.19, majmin 86.69, majmin_inv 82.50, sevenths 79.16,
+sevenths_inv 76.63, tetrads 74.80, mirex 86.86, seg 82.54. 18 s cho 42 bài, VRAM cả GPU đỉnh 1439 MiB.
+WCSR trùng đúng với `fill_gaps(run_chordmini(...).segments)` của wrapper (seg lệch 0.6 vì wrapper lấp khoảng trống).
+
+## 4. Cache đặc trưng: `cache_features.py`
+
+```sh
+python -m eval.cache_features [--only NAME ...] [--force]
+```
+
+Với mỗi bài trong CSV có audio (kể cả bài bị loại, để đổi quy tắc loại bài không phải chạy lại): tách nguồn
+(`CACHE_DIR/eval_<tên>/`), bắt nhịp trên mix, chạy ChordMini BTC-PL và CNN-LSTM trên **mix và instrumental**.
+Ghi `EVAL_DIR/features/<tên>.pkl` (đọc bằng `load_features`). Mỗi bước GPU tự lấy `gpu_lock()` riêng.
+Chạy 43 bài mất 43.5 phút (tách nguồn 40–80 s mỗi bài, các model hợp âm 0.5–2 s). Stem chiếm khoảng 300 MB mỗi bài.
+`ablation.py` cache thêm chroma stem bass ở `<tên>.bass_chroma.npz`.
+
+## 5. Ablation: `ablation.py`
+
+```sh
+python -m eval.ablation [--folds 3] [--jobs 8] [--only 1 9]
+```
+
+So sánh các biến thể ở docstring của file, mỗi biến thể một dòng. Biến thể có tham số được chọn bằng
+cross-validation 3 phần (bài thứ i vào phần i mod 3, chọn trên 2 phần, chấm phần còn lại). Hàm mục tiêu là
+trung bình majmin, majmin_inv, sevenths, sevenths_inv. In thêm bảng chọn tham số trên cả bộ (lạc quan),
+là bộ mặc định của `chordtrack.fusion.FusionParams`. Kết quả ở `EVAL_DIR/results/ablation.json`.
+Chạy hết trong khoảng 2.5 phút trên CPU (8 tiến trình), không cần GPU. Bảng kết quả: PLAN.md, mục
+"Kết quả đánh giá đợt 2".

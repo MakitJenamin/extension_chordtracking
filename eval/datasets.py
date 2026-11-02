@@ -14,7 +14,7 @@ Các lệnh:
     python -m eval.datasets labels   # tải và giải nén nhãn
     python -m eval.datasets search   # tìm videoId cho CANDIDATES, ghi EVAL_DIR/isophonics/youtube_candidates.csv
     python -m eval.datasets audio    # tải audio theo CSV
-    python -m eval.datasets align    # kiểm tra độ dài, ước lượng độ lệch đầu bài, ghi ref/
+    python -m eval.datasets align    # ước lượng độ lệch đầu bài, kiểm tra độ trôi đầu–cuối, cắt vùng chung, ghi ref/
     python -m eval.datasets all      # labels + audio + align
 """
 from __future__ import annotations
@@ -50,7 +50,9 @@ SEARCH_OUT = ISO_DIR / "youtube_candidates.csv"   # lệnh `search` ghi ra đây
 N_LABELS = 180                                    # số file chordlab trong bộ Isophonics The Beatles
 
 # Ngưỡng căn thời gian (xem README).
-MAX_DURATION_DIFF = 2.0     # |độ dài audio - độ dài nhãn| lớn hơn thì loại bài
+MAX_DURATION_DIFF = 15.0    # |độ dài audio - độ dài nhãn| lớn hơn thì loại bài (chắc chắn là bản khác)
+MAX_DRIFT = 0.6             # |độ lệch ở cuối bài - độ lệch ở đầu bài| lớn hơn thì loại bài (bản khác tốc độ hoặc cắt ghép khác)
+DRIFT_WINDOW = 60.0         # độ dài (giây) vùng đầu bài và cuối bài dùng để đo độ trôi
 MAX_OFFSET = 2.0            # |độ lệch đầu bài ước lượng| lớn hơn thì loại bài
 MIN_SHIFT = 0.03            # độ lệch nhỏ hơn thì coi là 0, không dịch nhãn
 MIN_ALIGN_SCORE = 0.5       # cosine chroma trung bình thấp hơn thì coi là nhãn không khớp audio
@@ -376,6 +378,32 @@ class AlignResult:
     offset: float          # đã cộng vào thời gian nhãn (giây)
     score: float           # cosine chroma trung bình ở độ lệch tốt nhất
     score_zero: float      # cosine chroma trung bình khi không dịch
+    head_offset: float = 0.0   # độ lệch tốt nhất chỉ tính trên DRIFT_WINDOW giây đầu
+    tail_offset: float = 0.0   # độ lệch tốt nhất chỉ tính trên DRIFT_WINDOW giây cuối của vùng chung
+    common_end: float = 0.0    # cuối vùng chung giữa nhãn đã dịch và audio; nhãn chuẩn bị cắt tại đây
+
+
+def window_mask(mask: np.ndarray, start: float, end: float, hop_s: float) -> np.ndarray:
+    """Giữ các khung có hợp âm nằm trong [start, end) giây."""
+    out = np.zeros_like(mask)
+    a, b = max(0, int(start / hop_s)), min(len(mask), int(end / hop_s))
+    out[a:b] = mask[a:b]
+    return out
+
+
+def check_alignment(diff: float, lag: int, max_lag: int, score: float, head: float, tail: float) -> str:
+    """Lý do loại bài, hoặc "" nếu đạt. Không xét độ dài (đuôi fade-out khác nhau là chuyện thường),
+    mà xét độ lệch có căn được không, chroma có khớp không, và độ lệch ở cuối bài có trùng đầu bài không."""
+    if abs(diff) > MAX_DURATION_DIFF:
+        return f"độ dài lệch {diff:+.2f}s (> {MAX_DURATION_DIFF}s): chắc chắn là bản khác"
+    if abs(lag) >= max_lag:  # đỉnh nằm ở biên: độ lệch thật có thể còn lớn hơn
+        return f"độ lệch tốt nhất chạm biên ±{MAX_OFFSET}s: không căn được"
+    if score < MIN_ALIGN_SCORE:
+        return f"chroma khớp kém (cosine {score:.2f} < {MIN_ALIGN_SCORE})"
+    if abs(tail - head) > MAX_DRIFT:
+        return (f"độ lệch đầu bài {head:+.2f}s khác cuối bài {tail:+.2f}s (> {MAX_DRIFT}s): "
+                "bản khác tốc độ hoặc cắt ghép khác")
+    return ""
 
 
 def align_song(name: str, lab_path: Path, audio_path: Path) -> tuple[AlignResult, list[ChordSegment] | None]:
@@ -395,22 +423,23 @@ def align_song(name: str, lab_path: Path, audio_path: Path) -> tuple[AlignResult
     lag, score, score0 = best_offset(ach, lch, mask, max_lag)
     offset = lag * hop_s
 
-    reason = ""
-    if abs(diff) > MAX_DURATION_DIFF:
-        reason = f"độ dài lệch {diff:+.2f}s (> {MAX_DURATION_DIFF}s): có thể là bản khác (mono, remix, single...)"
-    elif abs(diff - offset) > MAX_DURATION_DIFF:
-        reason = f"sau khi dịch {offset:+.2f}s, cuối nhãn lệch cuối audio {diff - offset:+.2f}s (> {MAX_DURATION_DIFF}s)"
-    elif abs(lag) >= max_lag:  # đỉnh nằm ở biên: độ lệch thật có thể còn lớn hơn
-        reason = f"độ lệch tốt nhất chạm biên ±{MAX_OFFSET}s: không căn được"
-    elif score < MIN_ALIGN_SCORE:
-        reason = f"chroma khớp kém (cosine {score:.2f} < {MIN_ALIGN_SCORE})"
+    # Vùng chung (theo thời gian của nhãn): nhãn [0, label_dur] và audio [-offset, audio_dur - offset].
+    common_end_label = min(label_dur, audio_dur - offset)
+    head_lag = best_offset(ach, lch, window_mask(mask, 0.0, DRIFT_WINDOW, hop_s), max_lag)[0]
+    tail_lag = best_offset(ach, lch, window_mask(mask, common_end_label - DRIFT_WINDOW, common_end_label, hop_s), max_lag)[0]
+    head, tail = head_lag * hop_s, tail_lag * hop_s
+
+    reason = check_alignment(diff, lag, max_lag, score, head, tail)
     if abs(offset) < MIN_SHIFT:
         offset = 0.0
+    common_end = min(audio_dur, label_dur + offset)
     res = AlignResult(name, "rejected" if reason else "ok", reason, round(label_dur, 3), round(audio_dur, 3),
-                      round(diff, 3), round(offset, 3), round(score, 4), round(score0, 4))
+                      round(diff, 3), round(offset, 3), round(score, 4), round(score0, 4),
+                      round(head, 3), round(tail, 3), round(common_end, 3))
     if reason:
         return res, None
-    return res, shift_segments(segs, offset, audio_dur)
+    # shift_segments cắt nhãn tại cuối audio; phần audio sau cuối nhãn nằm ngoài nhãn chuẩn nên không được chấm.
+    return res, shift_segments(segs, offset, common_end)
 
 
 def align_all(rows: list[dict]) -> list[AlignResult]:
@@ -440,9 +469,10 @@ def align_all(rows: list[dict]) -> list[AlignResult]:
 def print_report(results: list[AlignResult]) -> None:
     ok = [r for r in results if r.status == "ok"]
     bad = [r for r in results if r.status != "ok"]
-    print(f"{'bài':42s} {'nhãn':>6} {'audio':>6} {'chênh':>6} {'lệch':>6} {'cos':>5} {'cos0':>5}  trạng thái")
+    print(f"{'bài':42s} {'nhãn':>6} {'audio':>6} {'chênh':>6} {'lệch':>6} {'đầu':>6} {'cuối':>6} {'cos':>5} {'cos0':>5}  trạng thái")
     for r in results:
         print(f"{r.name:42s} {r.label_duration:6.1f} {r.audio_duration:6.1f} {r.duration_diff:+6.2f} {r.offset:+6.2f} "
+              f"{r.head_offset:+6.2f} {r.tail_offset:+6.2f} "
               f"{r.score:5.2f} {r.score_zero:5.2f}  {'OK' if r.status == 'ok' else 'LOẠI: ' + r.reason}")
     print(f"\nĐạt: {len(ok)} bài. Bị loại: {len(bad)} bài. Nhãn đã căn ở {REF_DIR}")
 

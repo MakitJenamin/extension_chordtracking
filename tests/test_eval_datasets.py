@@ -70,3 +70,27 @@ def test_label_chroma_and_best_offset_recovers_shift():
     lag, score, score0 = D.best_offset(ach, lch, mask, max_lag=int(2.0 / hop))
     assert lag == lag_true
     assert score > score0
+
+
+def test_check_alignment_ignores_fade_out_length_but_rejects_drift():
+    max_lag = 87
+    # đuôi fade-out dài ngắn khác nhau (lệch 8 s) nhưng đầu và cuối bài cùng độ lệch: đạt
+    assert D.check_alignment(-7.9, 10, max_lag, 0.62, 0.21, 0.21) == ""
+    # độ lệch cuối bài khác đầu bài quá MAX_DRIFT: loại
+    assert "cuối bài" in D.check_alignment(2.9, -4, max_lag, 0.65, -0.12, 1.58)
+    assert "chạm biên" in D.check_alignment(0.0, max_lag, max_lag, 0.9, 0.0, 0.0)
+    assert "khớp kém" in D.check_alignment(0.0, 0, max_lag, 0.3, 0.0, 0.0)
+    assert "bản khác" in D.check_alignment(D.MAX_DURATION_DIFF + 1, 0, max_lag, 0.9, 0.0, 0.0)
+
+
+def test_window_mask_keeps_only_window():
+    mask = np.ones(100, dtype=bool)
+    mask[10] = False
+    w = D.window_mask(mask, 0.5, 2.0, 0.1)
+    assert w.sum() == 14 and not w[10] and w[5] and not w[20]
+
+
+def test_shift_segments_trims_to_common_end():
+    segs = [ChordSegment(0.0, 5.0, "C:maj"), ChordSegment(5.0, 10.0, "G:maj")]
+    out = D.shift_segments(segs, 0.0, 7.0)
+    assert out[-1].end == 7.0 and len(out) == 2
