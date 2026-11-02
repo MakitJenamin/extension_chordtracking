@@ -153,6 +153,9 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 - [ ] Đầu ra hiện là `.lab` (bắt đầu, kết thúc, hợp âm). Cần lấy thêm xác suất từng khung để kết hợp model và tính độ tin cậy.
 - [ ] Kiểm tra BS-Roformer-Viperx-1297 chạy vừa 8 GB VRAM (qua `audio-separator`).
 - [ ] Tìm nguồn dữ liệu đánh giá: file nhãn hợp âm cùng audio tương ứng.
+- [x] Bắt nhịp bằng beat_this (checkpoint `final0`, hậu xử lý minimal, không cần madmom) chạy được trên Windows, Python 3.11, numpy 1.26. "Let It Be": 279 phách, 78 phách mạnh (tỉ lệ 0,28), tempo trung vị 69,8 BPM, khoảng 1 giây trên GPU, VRAM đỉnh khoảng 270 MB.
+  - Tempo trôi từ khoảng 73 BPM (phút đầu) xuống khoảng 68 BPM (cuối bài). Đầu ra theo khung 50 fps nên khoảng cách phách bị lượng tử 20 ms, tempo lệch theo bước khoảng 1,5 BPM.
+  - ⚠️ Đoạn 95–118 giây, beat_this đặt phách mạnh cách 2 phách thay vì 4. Bước hậu xử lý hợp âm không nên tin tuyệt đối vào phách mạnh, có thể ép lại chu kỳ 4 phách.
 
 ## Nguồn tham khảo
 
