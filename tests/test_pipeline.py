@@ -97,7 +97,7 @@ def test_analyze_order_stems_and_schema(fake_env):
     result = pipeline.analyze("abcdefghijk")
     assert [c[0] for c in fake_env] == ALL_STEPS
     assert ("beats", "mix.wav") in fake_env
-    assert ("chordmini", "instrumental.wav") in fake_env and ("cnnlstm", "instrumental.wav") in fake_env
+    assert ("chordmini", "mix.wav") in fake_env and ("cnnlstm", "mix.wav") in fake_env
     check_schema(result)
     assert result["song_id"] == "abcdefghijk"
     assert result["source"] == {"type": "youtube", "video_id": "abcdefghijk", "title": "Bài thử",
