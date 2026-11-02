@@ -294,3 +294,27 @@ def test_cli_writes_json_and_summary(fake_env, tmp_path, capsys):
     check_schema(json.loads(out.read_text(encoding="utf-8")))
     text = capsys.readouterr().out
     assert "Bài thử" in text and "Am7" in text and "Thời gian" in text
+
+
+def test_main_key_replaces_compromise_key():
+    from chordtrack.types import KeyRegion
+
+    c, d, g = KeyEstimate("C", "major"), KeyEstimate("D", "major"), KeyEstimate("G", "major")
+    regions = [KeyRegion(0, 100, c), KeyRegion(100, 140, d)]
+    assert pipeline.main_key(g, regions) is c                      # G không thuộc vùng nào
+    assert pipeline.main_key(d, regions) is d                      # giọng cả bài có trong một vùng: giữ
+    assert pipeline.main_key(g, [KeyRegion(0, 100, c)]) is g       # một vùng: giữ estimate_key
+    assert pipeline.main_key(None, regions) is None
+
+
+def test_relabel_transposed_renames_whole_cluster():
+    secs = [{"label": "verse", "key_index": 0}, {"label": "chorus", "key_index": 0},
+            {"label": "B", "key_index": 1, "transposed_from": 1, "semitones": 2},
+            {"label": "B", "key_index": 1}]
+    pipeline._relabel_transposed(secs)
+    assert [s["label"] for s in secs] == ["verse", "chorus", "chorus", "chorus"]
+    # nhãn cũ còn được dùng ở vùng của đoạn gốc: chỉ đổi đoạn nâng tông
+    secs = [{"label": "A", "key_index": 0}, {"label": "B", "key_index": 0},
+            {"label": "A", "key_index": 1, "transposed_from": 1, "semitones": 2}]
+    pipeline._relabel_transposed(secs)
+    assert [s["label"] for s in secs] == ["A", "B", "B"]

@@ -126,3 +126,13 @@ def test_relate_sections_rotation_and_no_false_match():
     info = A.relate_sections_to_keys(secs, regs)
     assert info[1]["transposed_from"] == 0 and info[1]["semitones"] == 2
     assert info[2]["transposed_from"] is None
+
+
+def test_relate_sections_half_step_up_read_as_relative_minor():
+    # "And I Love Her": verse ở E trưởng, đoạn solo nâng nửa cung nhưng vùng bị đọc là D thứ (tương đối của F)
+    regs = [KeyRegion(0, 30, KeyEstimate("E", "major")), KeyRegion(30, 60, KeyEstimate("D", "minor"))]
+    secs = [Section(0, 30, "verse", ["F#:min", "C#:min", "A:maj", "B:maj"], []),
+            Section(30, 60, "C", ["G:min", "D:min", "Bb:maj", "C:7"], [])]
+    info = A.relate_sections_to_keys(secs, regs)
+    assert info[1]["transposed_from"] == 0 and info[1]["semitones"] == 1
+    assert info[1]["roman"] == ["iv", "i", "VI", "VII7"]

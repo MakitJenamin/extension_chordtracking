@@ -216,12 +216,12 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
     | Isophonics (keylab) | cả bộ | 178 | 0.852 / 0.847 | 0.841 / 0.842 | 1.33 / 1.14 |
     | | **có đổi giọng** | 21 | 0.600 / 0.635 | **0.683 / 0.740** | 2.24 / 2.19 |
     | | một giọng | 157 | 0.888 / 0.877 | 0.863 / 0.857 | 1.21 / 1.00 |
-    | Kajiura (ChordWiki `{key:}`) | cả bộ | 17 | 0.384 / 0.427 | **0.642 / 0.724** | 5.35 / 2.82 |
-    | | **có đổi giọng** | 12 | 0.367 / 0.398 | **0.702 / 0.794** | 6.33 / 3.58 |
+    | Kajiura (ChordWiki `{key:}`) | cả bộ | 17 | 0.384 / 0.427 | **0.644 / 0.726** | 5.35 / 2.82 |
+    | | **có đổi giọng** | 12 | 0.368 / 0.398 | **0.704 / 0.797** | 6.33 / 3.58 |
     | | một giọng | 5 | 0.425 / 0.496 | 0.499 / 0.554 | 3.00 / 1.00 |
 
     - Giọng chuẩn của Kajiura: dấu `{key:...}` trong `data/eval/kajiura/sheets/*.cho`, gán cho từng hợp âm rồi căn với
-      `ref/*.lab` bằng difflib (`kajiura_key_reference`). 15 bài không ghi `{key:}` nên không chấm. Bài chỉ ghi một
+      `ref/*.lab` bằng difflib (`kajiura_key_reference`; bản hợp âm đọc bằng `eval.kajiura.load_sheet`). 15 bài không ghi `{key:}` nên không chấm. Bài chỉ ghi một
       giọng có thể do người chép lười ghi đổi giọng, nên nhóm "một giọng" của Kajiura không đáng tin.
     - Bài Kajiura tốt: akeboshi 0.50 → 0.99, magia 0.73 → 0.99, heavenly_blue 0.25 → 0.94, "to the beginning"
       0.00 → 0.69 (D#m, Cm, Am, F#m, Em, Am, F#m, C, F#m, D#m: tìm ra 7 vùng, gộp mất đoạn Cm 12 s và Em 12 s).
@@ -231,11 +231,23 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
     - ⚠️ Không có thành phần "âm giai", vòng I–V–vi–IV nâng +2 bị nhận thành một giọng "dung hòa" (C → D thành G cả
       bài), vì giọng bậc IV chỉ thua giọng thật 0.1–0.2 điểm mỗi ô. Thành phần âm giai sửa được lỗi này.
     - Giọng chính (`key`) vẫn là `estimate_key` trên cả bài: 0.870 trên giọng chính của keylab, hơn lấy vùng dài nhất
-      (0.860).
+      (0.860). Riêng khi bài có nhiều vùng mà giọng đó không thuộc vùng nào (giọng "dung hòa") thì lấy giọng có tổng
+      thời lượng lớn nhất (`pipeline.main_key`).
+    - Chạy CLI đầy đủ trên audio thật (YouTube đang đòi đăng nhập "not a bot" nên dùng audio có sẵn):
+      - "And I Love Her" (keylab: E, lên F ở 88,8 s): vùng E 0–88,98 s, rồi D thứ/F trưởng (cùng transpose +5); in
+        "1:28.98 E major -> D minor: đặt transpose đàn: +5 (đang +4)", hai đoạn solo ghi "= đoạn 2 dịch +1".
+        Tổng 8,5 s khi stem đã có.
+      - "magia" (ChordWiki: Cm, Dm, Cm, Dm): Cm 0–51 s, Dm 51–95 s, Cm 95–123 s, Dm 123–183 s, D trưởng 183–206 s
+        (sai, đoạn ngắn dùng hợp âm trưởng), Dm đến hết. 106 s (tách nguồn 99 s), VRAM đỉnh 1,6 GB (Roformer).
+      - "to the beginning": 6 vùng, đúng các đoạn Am và F#m; đoạn đầu D#m/Cm bị đọc thành G thứ, đoạn cuối D#m
+        thành Eb trưởng. 92 s, VRAM đỉnh 1,6 GB.
+      - "Let It Be": một vùng C trưởng, không bị chia sai.
+    - Đoạn nâng tông nhận bằng cách so vòng hợp âm ba đã dịch k nửa cung (kể cả xoay vòng) giữa hai vùng khác nhau;
+      khi cùng mode thì tương đương so bậc La Mã, nhưng vẫn nhận ra khi một vùng bị đọc thành giọng tương đối.
     - JSON thêm `keys[]` (vùng giọng kèm `white_key_transpose`), `modulations[]` (`time`, `from`, `to`, `semitones`,
       `transpose_from`, `transpose_to`); `chords[]` thêm `white_key_symbol`, `key_index`, và `roman` tính theo giọng
       của vùng; `sections[]` thêm `key_index`, và `transposed_from`, `semitones` khi đoạn là bản nâng tông của đoạn
-      trước (cùng vòng bậc La Mã trên hợp âm ba, kể cả xoay vòng); đoạn đó lấy nhãn của đoạn gốc.
+      trước; đoạn đó (và cả cụm A/B/C của nó) lấy nhãn của đoạn gốc.
     - Chế độ phím trắng (`chordtrack/transpose.py`): transpose +k nghĩa là bấm C đàn phát C+k; hợp âm để bấm = hợp âm
       gốc dịch -k. Giọng trưởng về C, thứ về A, k trong [-6, +5] (F# trưởng, D#/Eb thứ: -6).
 

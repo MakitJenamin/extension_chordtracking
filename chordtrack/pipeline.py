@@ -153,6 +153,7 @@ def analyze(
     key = analysis.estimate_key(segments)
     sections = analysis.analyze_structure(segments, grid, duration, key)
     regions = analysis.estimate_key_regions(segments, grid, duration, [s.start for s in sections[1:]])
+    key = main_key(key, regions)
     timing["analysis"] = time.perf_counter() - t0
     timing["total"] = time.perf_counter() - t_start
 
@@ -277,12 +278,36 @@ def modulations_to_json(regions: list[KeyRegion]) -> list[dict]:
     return out
 
 
+def main_key(whole: KeyEstimate | None, regions: list[KeyRegion]) -> KeyEstimate | None:
+    """Giọng chính (`key` trong JSON): `estimate_key` trên cả bài (đúng hơn vùng dài nhất trên
+    Isophonics, 0.870 so với 0.860). Nhưng nếu bài có nhiều vùng mà giọng đó không thuộc vùng nào
+    (giọng "dung hòa", ví dụ G khi bài đổi từ C sang D) thì lấy giọng có tổng thời lượng lớn nhất."""
+    if whole is None or len(regions) < 2:
+        return whole
+    pc = analysis.key_tonic_pc(whole)
+    if any(analysis.key_tonic_pc(r.key) == pc and r.key.mode == whole.mode for r in regions):
+        return whole
+    return analysis.main_region_key(regions)
+
+
 def _relabel_transposed(sections_json: list[dict]) -> None:
-    """Đoạn nâng tông lấy nhãn của đoạn gốc (ví dụ chorus cuối nâng +2 vẫn là "chorus")."""
+    """Đoạn nâng tông lấy nhãn của đoạn gốc (ví dụ chorus cuối nâng +2 vẫn là "chorus").
+
+    Các đoạn khác mang cùng nhãn cũ với đoạn nâng tông (cùng cụm A/B/C) cũng đổi theo, miễn là
+    không đoạn nào mang nhãn cũ đó nằm ở vùng giọng của đoạn gốc."""
+    renames: dict[str, str] = {}
     for s in sections_json:
         src = s.get("transposed_from")
-        if src is not None:
-            s["label"] = sections_json[src]["label"]
+        if src is None:
+            continue
+        old, new = s["label"], sections_json[src]["label"]
+        s["label"] = new
+        src_key = sections_json[src].get("key_index")
+        if all(o.get("key_index") != src_key for o in sections_json if o["label"] == old):
+            renames[old] = new
+    for s in sections_json:
+        if s["label"] in renames:
+            s["label"] = renames[s["label"]]
 
 
 def build_result(

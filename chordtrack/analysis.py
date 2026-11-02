@@ -21,6 +21,7 @@ from collections import Counter
 import mir_eval.chord as mchord
 import numpy as np
 
+from chordtrack.transpose import wrap_semitones
 from chordtrack.types import BeatGrid, ChordSegment, KeyEstimate, KeyRegion, Section
 
 # ---------------------------------------------------------------- nốt và giọng
@@ -248,7 +249,6 @@ REGION_FALLBACK_BAR = 2.0       # độ dài ô (giây) khi không có phách
 SNAP_MODULATION_SECONDS = 4.0   # ranh giới đoạn trong khoảng này được ưu tiên làm chỗ đổi giọng
 MODULATION_SEARCH_BARS = 2      # tìm chỗ đổi giọng chính xác trong ± chừng này ô quanh kết quả Viterbi
 W_REGION_FIT = 2.0              # trọng số "hợp âm nằm trong âm giai" khi chấm cửa sổ trượt
-REGION_REESTIMATE = True        # chấm lại giọng mỗi vùng trên đúng các hợp âm của vùng
 
 
 def _bar_grid(beats: BeatGrid | None, duration: float) -> np.ndarray:
@@ -347,7 +347,7 @@ def estimate_key_regions(
     Trả về list rỗng nếu không có hợp âm nào.
     """
     segs = sorted((s for s in segments if s.end > s.start), key=lambda s: s.start)
-    if duration <= 0 or _key_scores(segs) is None:
+    if duration <= 0 or not any(_chord(s.label).is_chord for s in segs):
         return []
     grid = _bar_grid(beats, duration)
     emis = _region_emissions(segs, grid, REGION_WINDOW_SECONDS)
@@ -397,7 +397,7 @@ def _decode_regions(segs: list[ChordSegment], grid: np.ndarray, emis: np.ndarray
     # 5. chấm lại từng vùng, gộp vùng trùng giọng
     regions: list[KeyRegion] = []
     for (a, b), r in zip(zip(times[:-1], times[1:]), runs):
-        sc = _key_scores(_clip_segments(segs, a, b), w_fit=W_REGION_FIT) if REGION_REESTIMATE else None
+        sc = _key_scores(_clip_segments(segs, a, b), w_fit=W_REGION_FIT)
         best = int(np.argmax(sc)) if sc is not None else r[0]
         if regions and _key_index(regions[-1].key) == best:
             regions[-1].end = b
@@ -448,18 +448,24 @@ def _refine_modulation(segs: list[ChordSegment], t0: float, key_a: int, key_b: i
         cost = _out_of_scale(segs, key_a, a, t) + _out_of_scale(segs, key_b, t, b)
         s = starts.get(round(t, 6))
         c = _chord(s.label) if s is not None else None
-        is_tonic = c is not None and c.is_chord and c.root == tonic_b and c.has(3 if minor_b else 4)             and not c.has(4 if minor_b else 3)
+        is_tonic = (c is not None and c.is_chord and c.root == tonic_b
+                    and c.has(3 if minor_b else 4) and not c.has(4 if minor_b else 3))
         near_bound = any(abs(x - t) <= SNAP_MODULATION_SECONDS for x in bounds)
         return (round(cost, 3), not is_tonic, not near_bound, abs(t - t0))
 
     return float(min(cands, key=rank))
 
 
-def _same_loop(a: list[str], b: list[str]) -> bool:
-    """Hai vòng bậc La Mã giống nhau, kể cả khi bắt đầu ở vị trí khác (xoay vòng)."""
+def _loop_shift(a: list[tuple[int, str]], b: list[tuple[int, str]]) -> int | None:
+    """Số nửa cung k (1..11) sao cho vòng b là vòng a dịch đi k (kể cả xoay vòng). None nếu không có."""
     if len(a) != len(b) or len(a) < 2:
-        return False
-    return any(a[k:] + a[:k] == b for k in range(len(a)))
+        return None
+    for r in range(len(a)):
+        rot = a[r:] + a[:r]
+        k = (b[0][0] - rot[0][0]) % 12
+        if k and all((x[0] + k) % 12 == y[0] and x[1] == y[1] for x, y in zip(rot, b)):
+            return k
+    return None
 
 
 def relate_sections_to_keys(sections: list[Section], regions: list[KeyRegion]) -> list[dict]:
@@ -467,35 +473,34 @@ def relate_sections_to_keys(sections: list[Section], regions: list[KeyRegion]) -
 
     Trả về, cho mỗi đoạn: `key_index` (vùng giao nhiều nhất, None nếu không có vùng), `roman` (vòng
     hợp âm tính theo giọng của vùng đó) và, nếu đoạn là bản dịch giọng của một đoạn trước,
-    `transposed_from` (chỉ số đoạn gốc) cùng `semitones` (khoảng dịch nốt chủ, trong [-6, +5]).
-    Hai đoạn coi là cùng vòng nhưng lệch giọng khi vòng bậc La Mã (theo giọng của mỗi đoạn, trên hợp
-    âm đã rút gọn về hợp âm ba, bỏ đảo) trùng nhau, kể cả xoay vòng, cùng mode, mà nốt chủ khác nhau.
-    Đoạn gốc là đoạn sớm nhất như vậy.
+    `transposed_from` (chỉ số đoạn gốc) cùng `semitones` (số nửa cung dịch, trong [-6, +5]).
+    Đoạn coi là bản dịch giọng khi nằm ở vùng giọng khác và vòng hợp âm (rút gọn về hợp âm ba, bỏ
+    đảo) đúng bằng vòng của đoạn trước dịch đi k nửa cung, kể cả xoay vòng. Khi hai vùng cùng mode,
+    điều này tương đương hai vòng bậc La Mã trùng nhau; so trực tiếp hợp âm thì vẫn nhận ra khi một
+    vùng bị đọc thành giọng tương đối. Đoạn gốc là đoạn sớm nhất như vậy (không phải chính nó là bản
+    dịch). Đoạn có chỗ đổi giọng nằm bên trong thì mọi bậc tính theo vùng chiếm phần lớn đoạn.
     """
     out: list[dict] = []
+    loops: list[list[tuple[int, str]]] = []
     for sec in sections:
         ki = region_index(regions, sec.start, sec.end)
         key = regions[ki].key if ki is not None else None
         roman = [to_roman(p, key) for p in sec.progression] if key is not None else []
-        simple = [to_roman(simplify_label(p), key) for p in sec.progression] if key is not None else []
-        out.append({"key_index": ki, "roman": roman, "transposed_from": None, "semitones": None, "_simple": simple})
+        out.append({"key_index": ki, "roman": roman, "transposed_from": None, "semitones": None})
+        chords = [_chord(p) for p in sec.progression]
+        loops.append([(c.root, c.triad_class()) for c in chords if c.is_chord])
     for i, cur in enumerate(out):
         if cur["key_index"] is None:
             continue
-        ki = regions[cur["key_index"]].key
         for j in range(i):
             prev = out[j]
-            if prev["key_index"] is None or prev["transposed_from"] is not None:
+            if prev["key_index"] in (None, cur["key_index"]) or prev["transposed_from"] is not None:
                 continue
-            kj = regions[prev["key_index"]].key
-            if kj.mode != ki.mode or key_tonic_pc(kj) == key_tonic_pc(ki):
-                continue
-            if _same_loop(prev["_simple"], cur["_simple"]):
+            k = _loop_shift(loops[j], loops[i])
+            if k is not None:
                 cur["transposed_from"] = j
-                cur["semitones"] = (key_tonic_pc(ki) - key_tonic_pc(kj) + 6) % 12 - 6
+                cur["semitones"] = wrap_semitones(k)
                 break
-    for cur in out:
-        del cur["_simple"]
     return out
 
 

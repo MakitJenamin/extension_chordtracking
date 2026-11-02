@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
 from pathlib import Path
@@ -31,7 +30,7 @@ import mir_eval
 import numpy as np
 
 from chordtrack.analysis import analyze_structure, estimate_key, key_to_mir_eval
-from chordtrack.analysis import _chord, estimate_key_regions, pitch_class
+from chordtrack.analysis import _chord, estimate_key_regions, pitch_class, simplify_label
 from chordtrack.paths import EVAL_DIR
 from chordtrack.transpose import white_key_offset
 from chordtrack.types import ChordSegment, KeyEstimate, lab_to_segments
@@ -371,56 +370,57 @@ def run_key_regions(verbose: bool = False) -> dict:
 # ---------------------------------------------------------------- giọng theo thời gian: bộ Kajiura
 
 KAJIURA_DIR = EVAL_DIR / "kajiura"
-_CHO_KEY_RE = re.compile(r"\{key:\s*([^}]*)\}")
-_CHO_CHORD_RE = re.compile(r"^([A-G][#b]?)(.*)$")
 
 
 def _cho_key(text: str) -> str:
-    """'F#m' -> 'F# minor', 'Eb' -> 'Eb major'. Không đọc được -> 'X'."""
-    m = _CHO_CHORD_RE.match(text.strip().replace("＃", "#").replace("♭", "b"))
-    if m is None:
+    """Giọng ghi trên trang ChordWiki -> chuỗi mir_eval: 'F#m' -> 'F# minor', 'Eb' -> 'Eb major'.
+    Không đọc được -> 'X'."""
+    from eval import kajiura as K
+
+    try:
+        label = K.parse_chord(text.strip())
+    except K.ChordSyntaxError:
         return "X"
-    root, rest = m.groups()
-    return f"{root} {'minor' if rest.startswith('m') and not rest.startswith('maj') else 'major'}"
-
-
-def _cho_chord_class(token: str) -> tuple[int, bool] | None:
-    """Ký hiệu ChordWiki -> (nốt gốc, có quãng ba thứ) để so khớp với nhãn Harte."""
-    m = _CHO_CHORD_RE.match(token.replace("＃", "#").replace("♭", "b"))
-    if m is None:
-        return None
-    root, rest = m.groups()
-    return pitch_class(root), rest.startswith("m") and not rest.startswith("maj") and not rest.startswith("M")
+    c = _chord(label)
+    if not c.is_chord:
+        return "X"
+    tonic = label.split(":")[0].split("/")[0]
+    return f"{tonic} {'minor' if c.has(3) and not c.has(4) else 'major'}"
 
 
 def kajiura_key_reference(name: str) -> list[tuple[float, float, str]] | None:
-    """Giọng theo thời gian của một bài Kajiura: lấy dấu `{key:...}` trong bản ChordWiki
-    (`sheets/<name>.cho`) gán cho từng hợp âm, rồi căn chuỗi hợp âm của bản đó với nhãn đã căn
-    thời gian (`ref/<name>.lab`) bằng difflib. Chỉ đọc dữ liệu, không sửa. None nếu thiếu file."""
+    """Giọng theo thời gian của một bài Kajiura: dấu `{key:...}` của bản ChordWiki (đọc bằng
+    `eval.kajiura.load_sheet`, đã xử lý dòng lặp `x2`) gán cho từng hợp âm của bản đó, rồi căn
+    chuỗi hợp âm của bản với nhãn đã căn thời gian (`ref/<name>.lab`) bằng difflib, so trên hợp âm
+    đã rút gọn (`simplify_label`). Chỉ đọc dữ liệu, không sửa. None nếu thiếu file."""
     import difflib
 
-    cho, lab = KAJIURA_DIR / "sheets" / f"{name}.cho", KAJIURA_DIR / "ref" / f"{name}.lab"
-    if not cho.exists() or not lab.exists():
+    from eval import kajiura as K
+
+    lab = KAJIURA_DIR / "ref" / f"{name}.lab"
+    if not (KAJIURA_DIR / "sheets" / f"{name}.cho").exists() or not lab.exists():
         return None
-    key, toks = "X", []
-    for line in cho.read_text(encoding="utf-8").splitlines():
-        m = _CHO_KEY_RE.search(line)
-        if m:
-            key = _cho_key(m.group(1))
+    sheet = K.load_sheet(name)
+    marks = sorted(sheet.keys)
+    toks: list[tuple[str, str]] = []
+    m = 0
+    key = "X"
+    for i, label in enumerate(sheet.chords):
+        while m < len(marks) and marks[m][0] <= i:
+            key = _cho_key(marks[m][1])
+            m += 1
+        simple = simplify_label(label)
+        if simple in ("N", "X"):
             continue
-        for grp in re.findall(r"\[([^\]]*)\]", line):
-            for tok in grp.split():
-                c = _cho_chord_class(tok)
-                if c is not None and (not toks or toks[-1][0] != c):   # lab gộp hợp âm trùng liên tiếp
-                    toks.append((c, key))
+        # .lab gộp hợp âm trùng liên tiếp; giữ lại nếu giọng vừa đổi để chỗ đổi không trễ một hợp âm
+        if toks and toks[-1][0] == simple and toks[-1][1] == key:
+            continue
+        toks.append((simple, key))
     segs = [s for s in lab_to_segments(lab) if s.end > s.start]
     if not toks or not segs:
         return None
-    lab_cls = []
-    for s in segs:
-        c = _chord(s.label)
-        lab_cls.append((c.root, c.has(3) and not c.has(4)) if c.is_chord else None)
-    sm = difflib.SequenceMatcher(a=[c for c, _ in toks], b=lab_cls, autojunk=False)
+    sm = difflib.SequenceMatcher(a=[t for t, _ in toks], b=[simplify_label(s.label) for s in segs],
+                                 autojunk=False)
     seg_key: list[str | None] = [None] * len(segs)
     for a0, b0, size in sm.get_matching_blocks():
         for k in range(size):
