@@ -167,7 +167,6 @@
 
   /* ---------------- Mô hình bài hát ---------------- */
 
-  /** Chuẩn bị dữ liệu dùng nhiều lần cho một result. */
   /** Kéo mốc đầu/cuối hợp âm về phách gần nhất (chỉ để hiển thị và tô sáng).
    * Model hợp âm chạy theo khung ~0,093 s, không theo phách, nên mép ô hay lệch vạch phách 0,1–0,35 s.
    * - Mỗi mốc (đầu hoặc cuối hợp âm; mốc dùng chung giữa hai hợp âm liền nhau) về phách gần nhất nếu cách
@@ -196,7 +195,8 @@
     return chords.map((c) => ({ ...c, start: map.get(c.start), end: map.get(c.end), start0: c.start, end0: c.end }));
   }
 
-  /** opts.snapToBeats: kéo mép hợp âm về phách (snapChords), mặc định bật. */
+  /** Chuẩn bị dữ liệu dùng nhiều lần cho một result.
+   * opts.snapToBeats: kéo mép hợp âm về phách (snapChords), mặc định bật. */
   function buildSong(result, opts = {}) {
     const beats = result.beats || [];
     const downbeats = result.downbeats || [];
