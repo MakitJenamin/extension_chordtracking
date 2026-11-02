@@ -10,8 +10,30 @@
   const PALETTE = ["#42a5f5", "#ab47bc", "#8d6e63", "#9ccc65", "#ec407a", "#26c6da"];
   const LABEL_VI = { intro: "Intro", verse: "Verse", chorus: "Điệp khúc", bridge: "Bridge", outro: "Outro",
     instrumental: "Nhạc dạo", solo: "Solo" };
-  const color = (l) => COLORS[l] || PALETTE[(l || "?").charCodeAt(0) % PALETTE.length];
-  const label = (l) => LABEL_VI[l] || (l && l.length <= 2 ? `Đoạn ${l}` : l);
+  const isNamed = (l) => !!(l && (LABEL_VI[l] || COLORS[l] || l.length > 2));
+
+  /** Tên và màu dễ hiểu cho từng đoạn.
+   * - Đoạn có tên (verse, chorus…): tên tiếng Việt, thêm số thứ tự nếu lặp: "Verse 1", "Verse 2".
+   * - Nhãn chữ cái của backend (A, C, D… là cụm đoạn nhạc giống nhau, chưa đặt tên): đánh số theo thứ
+   *   tự xuất hiện "Đoạn 1", "Đoạn 2"; lặp lại thì thêm "· lần 2". Mỗi cụm một màu riêng trong PALETTE,
+   *   nên cùng màu = cùng đoạn nhạc. */
+  function describe(secs) {
+    const total = {}, seen = {}, order = {};
+    let nOther = 0;
+    for (const x of secs) { const l = x.label || "?"; total[l] = (total[l] || 0) + 1; }
+    return secs.map((x) => {
+      const l = x.label || "?";
+      const occ = (seen[l] = (seen[l] || 0) + 1);
+      if (isNamed(l)) {
+        const base = LABEL_VI[l] || l.charAt(0).toUpperCase() + l.slice(1);
+        return { name: total[l] > 1 ? `${base} ${occ}` : base, color: COLORS[l] || PALETTE[0], tip: base };
+      }
+      if (!(l in order)) order[l] = ++nOther;
+      const k = order[l];
+      return { name: `Đoạn ${k}` + (total[l] > 1 ? ` · lần ${occ}` : ""),
+        color: PALETTE[(k - 1) % PALETTE.length], tip: `Đoạn chưa đặt tên (nhãn tự động ${l})` };
+    });
+  }
 
   const sections = {
     el: null, list: null, idx: -1, song: null,
@@ -23,7 +45,7 @@
       title.textContent = "Cấu trúc bài";
       const legend = document.createElement("div");
       legend.className = "ct-sec-legend";
-      legend.textContent = "Bấm vào đoạn để tua tới đó.";
+      legend.textContent = "Cùng màu là cùng một đoạn nhạc lặp lại. Bấm vào đoạn để tua tới đó.";
       this.el = document.createElement("div");
       this.el.id = "ct-sections";
       this.el.className = "ct-root ct-card";
@@ -36,6 +58,7 @@
     },
     setSong(song) {
       this.song = song;
+      this.names = song ? describe(song.sections) : [];
       this.sig = CT.ui.labelSig(CT.settings);
       this.idx = -1;
       this.el.hidden = !this.visible();
@@ -57,13 +80,14 @@
         const row = document.createElement("div");
         row.className = "ct-sec";
         row.dataset.i = i;
-        row.style.setProperty("--ct-sec-color", color(sec.label));
-        row.title = `${label(sec.label)} · ${fmt(sec.start)}–${fmt(sec.end)}. Bấm để tua tới đây`;
+        const nm = this.names[i];
+        row.style.setProperty("--ct-sec-color", nm.color);
+        row.title = `${nm.tip} · ${fmt(sec.start)}–${fmt(sec.end)}. Bấm để tua tới đây`;
         const top = document.createElement("div");
         top.className = "ct-sec-top";
         const lab = document.createElement("span");
         lab.className = "ct-sec-lab";
-        lab.textContent = label(sec.label) + (sec.semitones ? ` (${T().signed(sec.semitones)})` : "");
+        lab.textContent = nm.name + (sec.semitones ? ` (${T().signed(sec.semitones)})` : "");
         const time = document.createElement("span");
         time.className = "ct-sec-t";
         time.textContent = fmt(sec.start);

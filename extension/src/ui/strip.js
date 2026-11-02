@@ -39,6 +39,8 @@
       });
       this.ro = new ResizeObserver((entries) => {
         this.width = entries[0].contentRect.width;
+        // Lần đầu dải hiện ra (trước đó bề rộng 0 nên chưa đo được chữ), hoặc đổi panel <-> toàn màn hình.
+        if (this.width && (!this.fitWidth || this.fitScale !== this.scale)) this.fitLabels();
         this.lastX = null;
         this.update(this.t, true);
       });
@@ -106,13 +108,29 @@
         const e = this.chordEls[i];
         e.style.left = `${c.start * px}px`;
         e.style.width = `${Math.max(4, (c.end - c.start) * px)}px`;
-        // Hợp âm quá ngắn: chữ nhỏ lại thay vì bị cắt mất.
-        e.classList.toggle("ct-narrow", (c.end - c.start) * px < 34);
       });
       s.beats.forEach((b, i) => { this.beatEls[i].style.left = `${b * px}px`; });
       s.modulations.forEach((m, i) => { this.modEls[i].style.left = `${m.time * px}px`; });
+      this.fitLabels();
       this.lastX = null;
       this.update(this.t, true);
+    }
+
+    /** Hợp âm không đủ chỗ cho chữ thì thu nhỏ chữ (ct-narrow), vẫn thiếu thì cắt (ct-tight, bỏ bậc).
+     * Đo chữ thật (một lượt đọc layout cho cả bài) nên đúng với mọi chế độ, cỡ chữ và độ phóng.
+     * Dải đang ẩn (bề rộng 0) thì bỏ qua; ResizeObserver gọi lại khi dải hiện ra. */
+    fitLabels() {
+      const s = this.song;
+      if (!s || !this.width) return;
+      const els = this.chordEls;
+      for (const e of els) e.classList.remove("ct-narrow", "ct-tight");
+      const need = els.map((e) => e.firstChild.offsetWidth + 14);       // chữ + padding 8 + khe 6
+      const room = s.chords.map((c) => (c.end - c.start) * this.px);
+      els.forEach((e, i) => { if (need[i] > room[i]) e.classList.add("ct-narrow"); });
+      const need2 = els.map((e, i) => (need[i] > room[i] ? e.firstChild.offsetWidth + 6 : 0));
+      els.forEach((e, i) => { if (need2[i] > room[i]) e.classList.add("ct-tight"); });
+      this.fitWidth = this.width;
+      this.fitScale = this.scale;
     }
 
     relabel() {
@@ -136,7 +154,8 @@
         this.modEls[i].firstChild.textContent = label;
         this.modEls[i].title = `Đổi giọng lúc ${fmt(m.time)}: ${T().keyName(T().parseKeyText(m.from))} → ${T().keyName(to)}`;
       });
-      this.update(this.t, true); // bề rộng chữ đổi: đo lại khoảng trượt của hợp âm hiện tại
+      this.fitLabels(); // bề rộng chữ đổi theo chế độ
+      this.update(this.t, true);
     }
 
     /** Chỉ số hợp âm chứa t (tìm gần chỉ số cũ trước, rồi mới tìm nhị phân). */
@@ -159,17 +178,16 @@
       }
       const j = this.indexAt(t);
       if (j !== this.idx || force) this.setCurrent(j);
-      this.followLabel(x);
+      this.progress(t);
     }
 
-    /** Chữ của hợp âm hiện tại trượt theo vạch đỏ để vạch không đè lên chữ (chỉ một phần tử mỗi khung hình). */
-    followLabel(x) {
-      const c = this.curLbl;
-      if (!c) return;
-      const ch = this.song.chords[this.idx];
-      const left = ch.start * this.px + x;                    // mép trái hợp âm trên màn hình
-      const off = Math.max(0, Math.min(this.width * PLAYHEAD + 6 - left - 8, this.curRoom));
-      if (off !== this.curOff) { c.style.transform = off ? `translateX(${off}px)` : ""; this.curOff = off; }
+    /** Tiến độ trong hợp âm hiện tại (0–1): thanh đỏ mảnh ở đáy ô, nối tiếp vạch đỏ bị ô che. */
+    progress(t) {
+      const e = this.chordEls[this.idx];
+      if (!e) return;
+      const c = this.song.chords[this.idx];
+      const p = Math.round(Math.max(0, Math.min(1, (t - c.start) / Math.max(1e-3, c.end - c.start))) * 200) / 200;
+      if (p !== this.curP) { e.style.setProperty("--ct-p", p); this.curP = p; }
     }
 
     setCurrent(j) {
@@ -183,14 +201,11 @@
       if (boundary > prev) for (let k = prev; k < boundary; k++) els[k].classList.add("ct-past");
       else for (let k = boundary; k < prev; k++) els[k].classList.remove("ct-past");
       this.pastCount = boundary;
-      if (this.curLbl) { this.curLbl.style.transform = ""; this.curLbl = null; }
+      if (old >= 0 && els[old]) els[old].style.removeProperty("--ct-p");
+      this.curP = -1;
       if (j >= 0) {
         els[j].classList.remove("ct-past");
         els[j].classList.add("ct-cur");
-        // Khoảng trượt tối đa: bề rộng hợp âm trừ bề rộng chữ (đọc layout một lần khi đổi hợp âm).
-        this.curLbl = els[j].firstChild;
-        this.curRoom = Math.max(0, els[j].clientWidth - this.curLbl.offsetWidth - 16);
-        this.curOff = -1;
       }
       this.idx = j;
       // Cho harness đo độ lệch đồng bộ (t hiển thị và currentTime thật lúc đổi hợp âm).

@@ -16,6 +16,15 @@ Hiện hợp âm chạy theo video YouTube: dải hợp âm trượt ngang kiể
 Nếu YouTube đòi xác minh "không phải bot": xuất cookie youtube.com (đã đăng nhập) ra `cookies.txt` (ví dụ bằng
 extension "Get cookies.txt LOCALLY"), rồi chạy server kèm `-Cookies C:\duong\dan\cookies.txt`. Panel sẽ hướng dẫn.
 
+### Nạp lại khi phát triển (không cần mở chrome://extensions)
+Sau khi `git pull` ở thư mục đã nạp, chạy trong console (hoặc Claude in Chrome) của một tab YouTube:
+```js
+window.postMessage({ type: "ct:dev-reload" }, "*")
+```
+Content script chuyển tin cho service worker, service worker gọi `chrome.runtime.reload()`. Sau đó tải lại
+tab YouTube (F5) để nạp content script mới. Cơ chế này chỉ để phát triển và vô hại: nó chỉ nạp lại chính
+extension, không đọc hay gửi dữ liệu gì. Lần đầu (bản đang nạp chưa có cơ chế này) vẫn phải bấm reload tay.
+
 ## Dùng
 | Điều khiển | Ý nghĩa | Phím tắt |
 |---|---|---|

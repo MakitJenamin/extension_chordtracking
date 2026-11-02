@@ -7,6 +7,8 @@
  *   {ok: true,  status: 200, data: <JSON>}
  *   {ok: false, status: 404, error: "<thông báo>", data?: <JSON lỗi của server>}
  *   {ok: false, status: 0,   error: "server_down", message: "<chi tiết>"}   server không chạy
+ *
+ * Chỉ để phát triển: {type: "ct:dev-reload"} nạp lại extension từ thư mục unpacked (xem README).
  */
 const DEFAULT_SERVER = "http://127.0.0.1:8765";
 const TIMEOUT_MS = 15000;
@@ -55,6 +57,13 @@ async function forward({ path, method = "GET", body }) {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === "ct:dev-reload") {
+    // Chỉ để phát triển: nạp lại mã mới sau khi git pull, khỏi phải bấm reload ở chrome://extensions.
+    // Vô hại: chỉ nạp lại chính extension, không đọc hay gửi dữ liệu gì.
+    sendResponse({ ok: true });
+    setTimeout(() => chrome.runtime.reload(), 50);
+    return false;
+  }
   if (!msg || msg.type !== "ct:fetch") return false;
   forward(msg).then(sendResponse, (e) =>
     sendResponse({ ok: false, status: 0, error: "internal", message: String(e) }));

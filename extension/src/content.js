@@ -76,5 +76,12 @@
     check();
   }
 
+  // Chỉ để phát triển (README, mục "Nạp lại khi phát triển"): trang gửi
+  // window.postMessage({type: "ct:dev-reload"}, "*") thì nhờ service worker nạp lại extension.
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || !e.data || e.data.type !== "ct:dev-reload") return;
+    try { chrome.runtime.sendMessage({ type: "ct:dev-reload" }, () => void chrome.runtime.lastError); } catch { /* đã mất kết nối */ }
+  });
+
   start().catch((e) => console.error("[ChordTrack] khởi động lỗi", e));
 })();
