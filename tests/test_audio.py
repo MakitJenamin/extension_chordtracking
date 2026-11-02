@@ -76,6 +76,9 @@ def test_youtube_cached_audio_without_metadata_offline(tmp_path, monkeypatch):
     monkeypatch.setattr(audio, "_extract_info", offline)
     src = audio.fetch("abcdefghijk")
     assert src.title is None and src.duration == pytest.approx(1.0)
+    # lần lỗi đã được ghi lại: lần sau không gọi mạng nữa
+    monkeypatch.setattr(audio, "_extract_info", lambda *a: pytest.fail("gọi mạng lại"))
+    assert audio.fetch("abcdefghijk").title is None
 
 
 def test_youtube_downloads_when_missing(tmp_path, monkeypatch):

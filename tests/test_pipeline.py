@@ -119,11 +119,43 @@ def test_result_cache_and_force(fake_env):
     first = pipeline.analyze("abcdefghijk")
     fake_env.clear()
     again = pipeline.analyze("abcdefghijk")
-    assert [c[0] for c in fake_env] == ["fetch"]
+    assert fake_env == []  # có cache: không chạy bước nào, kể cả fetch
     assert again == first
     fake_env.clear()
     pipeline.analyze("abcdefghijk", force=True)
     assert [c[0] for c in fake_env] == ALL_STEPS
+
+
+def test_youtube_cache_checked_before_fetch(fake_env):
+    pipeline.analyze("abcdefghijk")
+    fake_env.clear()
+    pipeline.analyze("https://youtu.be/abcdefghijk")
+    assert fake_env == []  # không gọi fetch (không cần mạng)
+
+
+def test_cache_invalidated_when_code_changes(fake_env, monkeypatch):
+    pipeline.analyze("abcdefghijk")
+    monkeypatch.setattr(pipeline, "code_revision", lambda: "khac")
+    fake_env.clear()
+    result = pipeline.analyze("abcdefghijk")
+    assert [c[0] for c in fake_env] == ALL_STEPS
+    assert result["pipeline"]["code_revision"] == "khac"
+
+
+def test_separation_vram_only_when_step_ran(fake_env, monkeypatch):
+    stats = {"roformer": {"peak_vram_mb": 1600.0, "seconds": 50.0}}
+    fake = pipeline.separation.separate
+
+    def separate_writing_stats(audio_path, out_dir):
+        stems = fake(audio_path, out_dir)
+        (out_dir / pipeline.separation.STATS_FILE).write_text(json.dumps(stats), encoding="utf-8")
+        return stems
+
+    monkeypatch.setattr(pipeline.separation, "separate", separate_writing_stats)
+    first = pipeline.analyze("abcdefghijk")
+    assert first["pipeline"]["peak_vram_mb"]["roformer"] == 1600.0
+    again = pipeline.analyze("abcdefghijk", force=True)  # stats không đổi = stem lấy từ cache
+    assert again["pipeline"]["peak_vram_mb"]["roformer"] is None
 
 
 def test_no_separation_runs_everything_on_mix(fake_env):
@@ -165,6 +197,11 @@ def test_sections_roman_null_without_key(fake_env, monkeypatch):
         Section(0.0, DURATION, "A", ["C:maj"], [])])
     result = pipeline.analyze("abcdefghijk")
     assert result["sections"][0]["roman"] is None and result["sections"][0]["progression"] == ["C"]
+
+
+@pytest.mark.parametrize("t, s", [(0, "0:00.00"), (59.999, "1:00.00"), (61.5, "1:01.50"), (243.03, "4:03.03")])
+def test_cli_fmt_time(t, s):
+    assert cli._fmt_time(t) == s
 
 
 def test_cli_writes_json_and_summary(fake_env, tmp_path, capsys):

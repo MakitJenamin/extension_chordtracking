@@ -16,8 +16,9 @@ N_CHORDS_SHOWN = 20
 
 
 def _fmt_time(t: float) -> str:
-    m, s = divmod(float(t), 60)
-    return f"{int(m)}:{s:05.2f}"
+    cs = int(round(float(t) * 100))  # làm tròn trước: 59.999 -> 1:00.00, không phải 0:60.00
+    m, cs = divmod(cs, 6000)
+    return f"{m}:{cs // 100:02d}.{cs % 100:02d}"
 
 
 def summarize(result: dict, n_chords: int = N_CHORDS_SHOWN) -> str:

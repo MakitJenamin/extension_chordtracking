@@ -109,17 +109,18 @@ def _youtube_source(video_id: str, audio_dir: Path | None = None) -> AudioSource
     audio_dir = Path(audio_dir or paths.AUDIO_DIR)
     wav = audio_dir / f"{video_id}.wav"
     info_path = audio_dir / f"{video_id}.info.json"
-    info = _read_json(info_path)
+    info = read_json(info_path)
     if not wav.exists():
         info = download_youtube(video_id, audio_dir)
     elif info is None:
         # Audio có sẵn (vd. tải tay) nhưng chưa có metadata: thử lấy, không được thì bỏ qua.
         try:
             info = _extract_info(video_id)
-            _write_json(info_path, info)
         except Exception as e:  # mạng hỏng, video bị gỡ...
             log.warning("Không lấy được metadata của %s: %s", video_id, e)
-            info = {}
+            info = {"id": video_id}
+        # Ghi cả khi lỗi để lần sau không gọi mạng lại (xóa file này để thử lại).
+        write_json(info_path, info)
     duration = info.get("duration") if info else None
     return AudioSource(
         song_id=video_id,
@@ -167,7 +168,7 @@ def download_youtube(video_id: str, audio_dir: Path) -> dict:
         if not out.exists():
             raise RuntimeError(f"yt-dlp không tạo {out.name}; có: {sorted(p.name for p in Path(tmp).iterdir())}")
         meta = {k: info.get(k) for k in INFO_KEYS}
-        _write_json(audio_dir / f"{video_id}.info.json", meta)
+        write_json(audio_dir / f"{video_id}.info.json", meta)
         out.replace(audio_dir / f"{video_id}.wav")
     return meta
 
@@ -181,14 +182,15 @@ def _probe_duration(path: Path) -> float | None:
         return None
 
 
-def _read_json(path: Path) -> dict | None:
+def read_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
 
-def _write_json(path: Path, data: dict) -> None:
+def write_json(path: Path, data: dict) -> None:
+    """Ghi JSON nguyên tử: ghi ra file .part rồi đổi tên."""
     tmp = path.with_suffix(path.suffix + ".part")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)

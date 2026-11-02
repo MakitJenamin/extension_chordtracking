@@ -34,6 +34,13 @@ from chordtrack.types import KeyEstimate
     ("C:maj(9)", "Cadd9"),
     ("C:7(#9)", "C7(#9)"),
     ("C:(1,5)", "C5"),
+    ("C:(1,b3,5)", "Cm"),
+    ("C:(1,b3,b5)", "Cdim"),
+    ("C:(1,3,5,b7)", "C7"),
+    ("C:sus4(b7,9)", "C9sus4"),
+    ("C:sus4(9,b7)", "C9sus4"),
+    ("C:sus4(b7,9,13)", "C13sus4"),
+    ("C:maj6(9)", "C6/9"),
     ("C:maj(*3)", "C5"),
     # bass là quãng tính từ nốt gốc
     ("F:maj/2", "F/G"),
@@ -70,6 +77,13 @@ def test_spelling_follows_key():
     # C trưởng / A thứ: bảng mặc định
     assert harte_to_symbol("A#:maj", KeyEstimate("A", "minor")) == "Bb"
     assert note_name(6, KeyEstimate("C", "major")) == "F#"
+    # bậc mượn trong giọng thăng vẫn viết giáng
+    g_major = KeyEstimate("G", "major")
+    assert harte_to_symbol("A#:maj", g_major) == "Bb"
+    assert harte_to_symbol("D#:maj", g_major) == "Eb"
+    assert harte_to_symbol("A#:maj/3", g_major) == "Bb/D"
+    assert harte_to_symbol("F#:dim", g_major) == "F#dim"
+    assert harte_to_symbol("C#:min7", KeyEstimate("C#", "minor")) == "C#m7"
     assert note_name(1, KeyEstimate("D#", "minor")) == "C#"
 
 

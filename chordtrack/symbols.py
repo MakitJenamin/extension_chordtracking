@@ -68,8 +68,13 @@ SPECIAL = {
     ("min", ("4",)): "m(add4)",
     ("min", ("11",)): "m(add11)",
     ("maj6", ("9",)): "6/9",
+    ("maj", ("b7",)): "7",
+    ("maj", ("7",)): "maj7",
+    ("min", ("b7",)): "m7",
     ("min7", ("b5",)): "m7b5",
 }
+
+SPECIAL_BY_SET = {(q, frozenset(adds)): sym for (q, adds), sym in SPECIAL.items()}
 
 _DEGREE_SEMITONES = {1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11}
 _LABEL_RE = re.compile(r"^([A-G])([b#]*):?([^/(]*)(?:\(([^)]*)\))?(?:/([b#]*\d+))?$")
@@ -101,10 +106,19 @@ def _sharp_key(key: KeyEstimate | None) -> bool | None:
     return False
 
 
+# Bậc mượn hay gặp (bIII, bVI, bVII tính từ nốt chủ trưởng) luôn viết dấu giáng, kể cả trong
+# giọng thăng: G trưởng có Bb, Eb, F chứ không phải A#, D#.
+_BORROWED_FLAT_DEGREES = {3, 8, 10}
+
+
 def note_name(pc: int, key: KeyEstimate | None = None) -> str:
     """Tên nốt cho lớp cao độ `pc` (C=0), viết theo giọng nếu có."""
     sharp = _sharp_key(key)
     if sharp is True:
+        tonic = pitch_class(key.tonic)
+        major_tonic = (tonic + 3) % 12 if key.mode == "minor" else tonic
+        if (pc - major_tonic) % 12 in _BORROWED_FLAT_DEGREES:
+            return ALL_FLAT_NAMES[pc % 12]
         return SHARP_NAMES[pc % 12]
     if sharp is False:
         return ALL_FLAT_NAMES[pc % 12]
@@ -144,19 +158,32 @@ def bass_note(root: str, degree: str) -> str:
     return FLAT_NAMES[pc]
 
 
+def _degree_order(degree: str) -> tuple[int, str]:
+    """Khóa sắp xếp theo số bậc (b7 < 9 < 13), không theo chuỗi."""
+    digits = degree.lstrip("b#")
+    return (int(digits) if digits.isdigit() else 99, degree)
+
+
 def _suffix(quality: str, extensions: tuple[str, ...]) -> str:
-    # Bỏ các nốt bị lược ("*3") khỏi phần hiển thị; giữ thứ tự ổn định để tra bảng.
-    adds = tuple(sorted((e for e in extensions if e and not e.startswith("*")), reverse=True))
+    # Bỏ các nốt bị lược ("*3") khỏi phần hiển thị; sắp theo số bậc để hiển thị ổn định.
+    adds = tuple(sorted((e for e in extensions if e and not e.startswith("*")), key=_degree_order))
     if not quality:
         # Chỉ có danh sách nốt, ví dụ "C:(1,5)" -> power chord, "C:(1)" -> nốt đơn.
-        if set(adds) <= {"1", "5"}:
+        notes = set(adds)
+        if notes <= {"1", "5"}:
             return "5" if "5" in adds else ""
-        quality = "maj"
-        adds = tuple(e for e in adds if e not in ("1", "3", "5"))
+        if {"b3", "b5"} <= notes:
+            quality, triad = "dim", {"1", "b3", "b5"}
+        elif "b3" in notes:
+            quality, triad = "min", {"1", "b3", "5"}
+        else:
+            quality, triad = "maj", {"1", "3", "5"}
+        adds = tuple(e for e in adds if e not in triad)
     if "*3" in extensions and quality in ("maj", "min") and not adds:
         return "5"  # bỏ nốt 3: power chord
-    if (quality, adds) in SPECIAL:
-        return SPECIAL[(quality, adds)]
+    special = SPECIAL_BY_SET.get((quality, frozenset(adds)))
+    if special is not None:
+        return special
     base = QUALITY_SUFFIX.get(quality, quality)
     if not adds:
         return base
