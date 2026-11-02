@@ -6,8 +6,9 @@
 `cache` dùng `eval.cache_features.extract` (mỗi bước GPU tự lấy `gpu_lock()`), stem ở
 `CACHE_DIR/kajiura_<tên>/`, đặc trưng ở `EVAL_DIR/kajiura/features/<tên>.pkl`.
 
-Mọi phương án dùng tham số **mặc định** của `FusionParams` (chọn trên Beatles), không chỉnh lại trên
-Kajiura, nên đây là phép thử chuyển giao:
+Mọi phương án dùng bộ tham số mặc định **cũ** của `FusionParams` (`OLD_DEFAULTS`, chọn chỉ trên Beatles),
+không chỉnh lại trên Kajiura, nên đây là phép thử chuyển giao. Bộ mặc định mới chọn trên cả hai bộ ở
+`eval/refit_fusion.py`:
  1  ChordMini trên mix
  2  ChordMini trên instrumental
  3a CNN-LSTM trên mix,  3b CNN-LSTM trên instrumental
@@ -122,10 +123,15 @@ class KajiuraSong(Song):
         return self._cache["stem"]
 
 
+# Bộ mặc định cũ của `FusionParams` (trước khi chọn lại trên Beatles + Kajiura), giữ để bảng cũ tái lập được.
+OLD_DEFAULTS = dict(cnn_weight=0.35, mix_level="family", quality_weight=0.0, smoothing="hmm", self_prob=0.8,
+                    min_duration=0.25, bass_source="both", stem_weight=0.3, bass_threshold=0.4, bass_per_beat=False)
+
+
 def _fusion_cfg(src: str, **params) -> dict:
     from dataclasses import asdict
 
-    return {"kind": "fusion", "src": src, "params": asdict(F.FusionParams(**params))}
+    return {"kind": "fusion", "src": src, "params": asdict(F.FusionParams(**{**OLD_DEFAULTS, **params}))}
 
 
 VARIANTS: list[tuple[str, dict]] = [
@@ -148,8 +154,8 @@ def predict_variant(song: Song, cfg: dict) -> list[ChordSegment]:
     if cfg["kind"] != "fusion_both":
         return predict(song, cfg)
     p = F.FusionParams(**cfg["params"])
-    a = song.chord("mix", p.cnn_weight, p.mix_level)
-    b = song.chord("inst", p.cnn_weight, p.mix_level)
+    a = song.chord("mix", p.cnn_weight, p.mix_level, p.quality_weight)
+    b = song.chord("inst", p.cnn_weight, p.mix_level, p.quality_weight)
     probs = F.mix_log(a, b, 0.5)
     stem = song.stem_chroma() if p.bass_source in ("stem", "both") else None
     cnn_bass = song.cnn_bass("mix") if p.bass_source in ("cnn", "both") else None

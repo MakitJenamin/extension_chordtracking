@@ -11,7 +11,9 @@ from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstima
 
 DURATION = 8.0
 SR = 8000
-ALL_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm"]
+ALL_STEPS = ["fetch", "normalize", "beats", "chordmini", "cnnlstm"]        # mặc định: không tách nguồn
+RERUN_STEPS = ["fetch", "beats", "chordmini", "cnnlstm"]                     # mix.wav đã có trong cache
+SEPARATION_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm"]
 
 
 def check_schema(result: dict) -> None:
@@ -110,7 +112,7 @@ def fake_env(tmp_path, monkeypatch):
 
 def test_analyze_order_stems_and_schema(fake_env):
     result = pipeline.analyze("abcdefghijk")
-    assert [c[0] for c in fake_env] == ALL_STEPS
+    assert [c[0] for c in fake_env] == ALL_STEPS   # mặc định không gọi separate
     assert ("beats", "mix.wav") in fake_env
     assert ("chordmini", "mix.wav") in fake_env and ("cnnlstm", "mix.wav") in fake_env
     check_schema(result)
@@ -123,11 +125,57 @@ def test_analyze_order_stems_and_schema(fake_env):
     assert [c["symbol"] for c in result["chords"]] == ["N.C.", "C", "G", "Am7", "F/A", "N.C."]
     by_symbol = {c["symbol"]: c for c in result["chords"]}
     assert by_symbol["G"]["uncertain"] is True and by_symbol["C"]["uncertain"] is False
-    assert result["pipeline"]["separation_model"] == "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
-    assert result["pipeline"]["bass_model"] == "htdemucs_ft"
+    assert result["pipeline"]["separation_model"] is None
+    assert result["pipeline"]["bass_model"] is None
     assert result["pipeline"]["chord_models"] == ["chordmini-btc", "cnnlstm"]
     assert result["timing"]["total"] >= result["timing"]["beats"]
     assert (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
+
+
+def test_default_does_not_separate_and_fuses_without_stem(fake_env, monkeypatch):
+    seen = {}
+    real_fuse = pipeline.fusion.fuse
+
+    def spy_fuse(models, beats, bass_audio, duration, params=None):
+        seen["bass_audio"], seen["params"] = bass_audio, params
+        return real_fuse(models, beats, bass_audio, duration, params)
+
+    monkeypatch.setattr(pipeline.fusion, "fuse", spy_fuse)
+    assert pipeline.PipelineConfig().use_separation is False
+    pipeline.analyze("abcdefghijk")
+    assert "separate" not in [c[0] for c in fake_env]
+    assert seen["bass_audio"] is None and seen["params"].bass_source == "cnn"
+    pipeline.analyze("abcdefghijk", use_separation=True)
+    assert "separate" in [c[0] for c in fake_env]
+    assert seen["bass_audio"].name == "bass.wav" and seen["params"].bass_source == "both"
+
+
+def test_separation_on_runs_separate_and_reports_models(fake_env):
+    result = pipeline.analyze("abcdefghijk", use_separation=True)
+    assert [c[0] for c in fake_env] == SEPARATION_STEPS
+    assert ("beats", "mix.wav") in fake_env and ("chordmini", "mix.wav") in fake_env
+    check_schema(result)
+    assert result["pipeline"]["separation_model"] == "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+    assert result["pipeline"]["bass_model"] == "htdemucs_ft"
+    # cache riêng, không đè kết quả mặc định
+    assert not (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
+    assert list((paths.CACHE_DIR / "abcdefghijk").glob("result-*.json"))
+
+
+def test_cache_not_mixed_between_separation_modes(fake_env):
+    plain = pipeline.analyze("abcdefghijk")
+    sep = pipeline.analyze("abcdefghijk", use_separation=True)
+    fake_env.clear()
+    assert pipeline.analyze("abcdefghijk") == plain
+    assert pipeline.analyze("abcdefghijk", use_separation=True) == sep
+    assert fake_env == []
+    assert plain["pipeline"]["separation_model"] is None and sep["pipeline"]["separation_model"] is not None
+    # result.json do bản cũ ghi khi mặc định còn tách nguồn: không được dùng cho cấu hình không tách
+    (paths.CACHE_DIR / "abcdefghijk" / "result.json").write_text(json.dumps(sep), encoding="utf-8")
+    fake_env.clear()
+    again = pipeline.analyze("abcdefghijk")
+    assert [c[0] for c in fake_env] == RERUN_STEPS
+    assert again["pipeline"]["separation_model"] is None
 
 
 def test_result_cache_and_force(fake_env):
@@ -138,7 +186,7 @@ def test_result_cache_and_force(fake_env):
     assert again == first
     fake_env.clear()
     pipeline.analyze("abcdefghijk", force=True)
-    assert [c[0] for c in fake_env] == ALL_STEPS
+    assert [c[0] for c in fake_env] == RERUN_STEPS
 
 
 def test_youtube_cache_checked_before_fetch(fake_env):
@@ -153,7 +201,7 @@ def test_cache_invalidated_when_code_changes(fake_env, monkeypatch):
     monkeypatch.setattr(pipeline, "code_revision", lambda: "khac")
     fake_env.clear()
     result = pipeline.analyze("abcdefghijk")
-    assert [c[0] for c in fake_env] == ALL_STEPS
+    assert [c[0] for c in fake_env] == RERUN_STEPS
     assert result["pipeline"]["code_revision"] == "khac"
 
 
@@ -167,26 +215,25 @@ def test_separation_vram_only_when_step_ran(fake_env, monkeypatch):
         return stems
 
     monkeypatch.setattr(pipeline.separation, "separate", separate_writing_stats)
-    first = pipeline.analyze("abcdefghijk")
+    first = pipeline.analyze("abcdefghijk", use_separation=True)
     assert first["pipeline"]["peak_vram_mb"]["roformer"] == 1600.0
-    again = pipeline.analyze("abcdefghijk", force=True)  # stats không đổi = stem lấy từ cache
+    again = pipeline.analyze("abcdefghijk", force=True, use_separation=True)  # stats không đổi = stem lấy từ cache
     assert again["pipeline"]["peak_vram_mb"]["roformer"] is None
 
 
 def test_no_separation_runs_everything_on_mix(fake_env):
-    result = pipeline.analyze("abcdefghijk", use_separation=False)
+    # chord_stem khác mix bị bỏ qua khi không tách nguồn
+    result = pipeline.analyze("abcdefghijk", use_separation=False, chord_stem="no_bass")
     assert [c[0] for c in fake_env] == ["fetch", "normalize", "beats", "chordmini", "cnnlstm"]
     assert all(c[1] == "mix.wav" for c in fake_env[1:])
     check_schema(result)
     assert result["pipeline"]["separation_model"] is None
     assert result["pipeline"]["chord_stem"] == "mix"
-    # cache riêng, không ghi đè kết quả mặc định
-    assert not (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
-    assert list((paths.CACHE_DIR / "abcdefghijk").glob("result-*.json"))
+    assert (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()   # cùng cấu hình mặc định
 
 
 def test_chord_stem_parameter(fake_env):
-    pipeline.analyze("abcdefghijk", chord_stem="no_bass", beat_stem="instrumental")
+    pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="no_bass", beat_stem="instrumental")
     assert ("chordmini", "no_bass.wav") in fake_env and ("beats", "instrumental.wav") in fake_env
     with pytest.raises(ValueError):
         pipeline.analyze("abcdefghijk", chord_stem="drums")
@@ -294,6 +341,13 @@ def test_cli_writes_json_and_summary(fake_env, tmp_path, capsys):
     check_schema(json.loads(out.read_text(encoding="utf-8")))
     text = capsys.readouterr().out
     assert "Bài thử" in text and "Am7" in text and "Thời gian" in text
+    assert "separate" not in [c[0] for c in fake_env]
+
+
+@pytest.mark.parametrize("flags, separate", [([], False), (["--no-separation"], False), (["--separation"], True)])
+def test_cli_separation_flags(fake_env, flags, separate):
+    assert cli.main(["abcdefghijk", *flags]) == 0
+    assert ("separate" in [c[0] for c in fake_env]) is separate
 
 
 def test_main_key_replaces_compromise_key():

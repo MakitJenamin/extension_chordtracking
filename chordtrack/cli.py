@@ -1,4 +1,7 @@
-"""CLI: python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--no-separation]
+"""CLI: python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--separation]
+
+Mặc định không tách nguồn (mọi model chạy trên mix); `--separation` bật BS-Roformer + HTDemucs.
+`--no-separation` vẫn nhận để tương thích (giờ là mặc định).
 
 In bảng tóm tắt (giọng, các vùng giọng và chỗ đổi giọng kèm gợi ý transpose phím trắng, tempo,
 20 hợp âm đầu, các đoạn, dòng hợp âm phím trắng, thời gian từng bước) và ghi JSON.
@@ -129,7 +132,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("source", help="videoId, URL YouTube hoặc đường dẫn file audio")
     parser.add_argument("-o", "--output", type=Path, help="ghi JSON ra file này")
     parser.add_argument("--force", action="store_true", help="bỏ qua kết quả đã cache, chạy lại")
-    parser.add_argument("--no-separation", action="store_true", help="không tách nguồn, chạy mọi model trên mix")
+    sep = parser.add_mutually_exclusive_group()
+    sep.add_argument("--separation", dest="separation", action="store_true",
+                     help="bật tách nguồn (BS-Roformer + HTDemucs), trộn stem bass vào phần gán bass")
+    sep.add_argument("--no-separation", dest="separation", action="store_false",
+                     help="không tách nguồn (mặc định, giữ để tương thích)")
+    parser.set_defaults(separation=False)
     parser.add_argument("--chord-stem", default="mix", choices=STEM_NAMES, help="stem chạy model hợp âm")
     parser.add_argument("--beat-stem", default="mix", choices=STEM_NAMES, help="stem chạy bắt nhịp")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -143,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    result = analyze(args.source, force=args.force, use_separation=not args.no_separation,
+    result = analyze(args.source, force=args.force, use_separation=args.separation,
                      chord_stem=args.chord_stem, beat_stem=args.beat_stem)
     print(summarize(result))
     if args.output:
