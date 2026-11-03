@@ -1,8 +1,7 @@
 /* ChordTrack: bộ icon SVG riêng (không dùng emoji hay icon phổ thông), vẽ trong khung 24×24, màu theo currentColor.
  *
- * CT.icons.logo(size)       hợp âm ba ghi trên khuông (ba đầu nốt chồng nhau, chung đuôi) và tam giác play đỏ:
- *                           hợp âm chạy theo video. Dùng cho nút trên player và chữ ChordTrack trong panel.
- * CT.icons.avatar(size)    avatar của extension (nền đen bo góc, logo hồng đỏ), giống icons/icon*.png.
+ * CT.icons.logo(size)       bàn phím piano cách điệu một màu (phím nghiêng, phím đen tách bằng khe hở). Nút trên player.
+ * CT.icons.avatar(size)     avatar của extension (nền đen bo góc, piano hồng đỏ), giống icons/icon*.png. Chữ ChordTrack.
  * CT.icons.metronome(size)  thân metronome và quả lắc (<g class="ct-ic-pend">); panel xoay quả lắc theo phách của bài.
  * CT.icons.keys(size)       ba phím trắng, hai phím đen, nét mảnh.
  *
@@ -19,30 +18,37 @@
   const root = (cls, size, ...kids) =>
     s("svg", { class: `ct-ic ${cls}`, viewBox: "0 0 24 24", width: size, height: size, fill: "none", "aria-hidden": "true" }, ...kids);
 
-  function logo(size = 24) {
-    // Hợp âm ba ghi trên khuông: ba đầu nốt chồng nhau chung một đuôi; tam giác play đỏ: chạy theo video.
-    const head = (cy) => s("ellipse", { cx: 7.4, cy, rx: 3.1, ry: 2.15, transform: `rotate(-22 7.4 ${cy})` });
-    return root("ct-ic-logo", size,
-      s("g", { class: "ct-ic-notes", fill: "currentColor" },
-        head(5.5), head(11.65), head(17.8),
-        s("rect", { x: 9.75, y: 1.3, width: 1.6, height: 16.5, rx: 0.8 })),
-      s("path", { class: "ct-ic-head", d: "M14.6 8.7a1 1 0 0 1 1.52-.85l5.9 3.6a1 1 0 0 1 0 1.7l-5.9 3.6a1 1 0 0 1-1.52-.85Z" }));
+  // Bàn phím piano cách điệu (cùng hình học với icons/make_icons.py): bốn phím trắng nghiêng như đang lướt,
+  // hai "phím đen" tách khỏi phím trắng bằng khe hở (mask). Màu do người gọi chọn.
+  let uid = 0;
+  const WHITE_X = [3, 7.7, 12.4, 17.1];
+  const BLACK_CX = [7.4, 12.1];
+  function piano(keyFill, blackFill) {
+    const id = `ct-ic-cut-${++uid}`;
+    return s("g", { transform: "translate(-2.33 0) skewX(11)" },
+      s("defs", {}, s("mask", { id, maskUnits: "userSpaceOnUse", x: -4, y: 0, width: 32, height: 24 },
+        s("rect", { x: -4, width: 32, height: 24, fill: "#fff" }),
+        ...BLACK_CX.map((c) => s("rect", { x: c - 2.3, y: 1.5, width: 4.6, height: 11.9, rx: 1.9, fill: "#000" })))),
+      s("g", { class: "ct-ic-white", fill: keyFill, mask: `url(#${id})` },
+        ...WHITE_X.map((x) => s("rect", { x, y: 3.5, width: 4.1, height: 17, rx: 1.5 }))),
+      s("g", { class: "ct-ic-head", fill: blackFill },
+        ...BLACK_CX.map((c) => s("rect", { x: c - 1.5, y: 3.5, width: 3, height: 9.1, rx: 1.1 }))));
   }
 
-  /** Avatar của extension (giống icons/icon*.png, vẽ bởi icons/make_icons.py): nền đen bo góc, ký hiệu hồng đỏ. */
-  let uid = 0;
+  /** Logo một màu (nút trên player): phím trắng theo currentColor, "phím đen" tô bằng CSS (.ct-ic-head). */
+  function logo(size = 24) {
+    return root("ct-ic-logo", size, piano("currentColor", "currentColor"));
+  }
+
+  /** Avatar của extension (giống icons/icon*.png): nền đen bo góc, phím hồng đỏ chuyển sắc, phím đen trắng sáng. */
   function avatar(size = 18) {
     const id = `ct-av-${++uid}`;
     const lg = (gid, c0, c1) => s("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 },
       s("stop", { offset: 0, "stop-color": c0 }), s("stop", { offset: 1, "stop-color": c1 }));
-    const g = logo(24);
-    const inner = s("g", { transform: "translate(2 4.1) scale(0.74)" }, ...g.childNodes);
-    for (const e of inner.querySelectorAll("*")) e.removeAttribute("fill");
-    inner.setAttribute("fill", `url(#${id}-g)`);
     return root("ct-ic-avatar", size,
       s("defs", {}, lg(`${id}-b`, "#343436", "#121213"), lg(`${id}-g`, "#ff4081", "#e80a2c")),
       s("rect", { width: 24, height: 24, rx: 5.4, fill: `url(#${id}-b)` }),
-      inner);
+      s("g", { transform: "translate(12 12) scale(0.66) translate(-12.1 -12)" }, piano(`url(#${id}-g)`, "#fff")));
   }
 
   function metronome(size = 18) {

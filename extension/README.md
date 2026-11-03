@@ -9,7 +9,7 @@ Hiện hợp âm chạy theo video YouTube: dải hợp âm trượt ngang kiể
 2. Mở `chrome://extensions`, bật **Developer mode** (góc phải trên).
 3. Bấm **Load unpacked**, chọn thư mục `extension/` của repo này.
 4. Mở một video YouTube (`https://www.youtube.com/watch?v=...`). Trên thanh điều khiển của player (bên phải, cạnh nút
-   phụ đề) có nút ChordTrack (logo hợp âm ba cạnh nút play đỏ). **Bấm nút (hoặc Alt+Shift+C) thì mới tải audio và phân tích**; mở video không tự phân tích.
+   phụ đề) có nút ChordTrack (logo bàn phím piano nghiêng). **Bấm nút (hoặc Alt+Shift+C) thì mới tải audio và phân tích**; mở video không tự phân tích.
    Bài chưa phân tích thì có thanh tiến độ (lần đầu mất khoảng 1–2 phút, video vẫn xem bình thường); lần sau có ngay.
 5. Sửa mã xong: bấm nút ↻ của extension ở `chrome://extensions`, rồi tải lại tab YouTube (F5).
 
@@ -63,7 +63,7 @@ nên theo theme sáng/tối của YouTube.
 | `src/theory.js` | Dịch giọng theo ký hiệu (kể cả hợp âm đảo), đơn giản hóa, ẩn bass, nhãn theo chế độ, số chỉ nhịp |
 | `src/sync.js` | Vòng `requestAnimationFrame` đọc `video.currentTime` (phát `time`), `CT.seekTo`, toàn màn hình |
 | `src/content.js` | Điều phối: videoId khi YouTube điều hướng SPA, chỉ phân tích khi người dùng bật, nhớ video đã bật trong phiên, tự thử lại khi server tắt, dọn khi rời trang video |
-| `src/ui/icons.js` | Bộ icon SVG riêng (`CT.icons`): logo hợp âm ba + nút play, metronome có quả lắc xoay theo phách, phím đàn |
+| `src/ui/icons.js` | Bộ icon SVG riêng (`CT.icons`): logo và avatar piano cách điệu, metronome có quả lắc xoay theo phách, phím đàn |
 | `src/ui/controls_button.js` | Nút ChordTrack trong `.ytp-right-controls` (trạng thái tắt/đang phân tích/bật/lỗi, tooltip), gắn lại khi YouTube vẽ lại thanh điều khiển |
 | `src/ui/strip.js` | Dải karaoke: dựng DOM một lần mỗi bài; mỗi khung hình chỉ đặt `transform` và đổi class khi hợp âm đổi |
 | `src/ui/panel.js` | Panel dưới player, trạng thái đang phân tích/lỗi, phím tắt, gắn vào DOM YouTube (`MutationObserver`) |
