@@ -342,6 +342,18 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - [x] Chỉ phân tích khi người dùng bấm (2026-11-03): nút ♫ trong `.ytp-right-controls` (Alt+Shift+C). Mở video chỉ gọi
   `GET /result/{id}` (đọc cache, không tạo job) để hiện chấm "có sẵn". YouTube bật Trusted Types: không dùng `innerHTML`,
   dựng SVG bằng `createElementNS`. YouTube không hiện tooltip cho nút chèn thêm nên extension tự vẽ tooltip.
+- [x] **Thử và bỏ: thống nhất hợp âm theo các đoạn lặp lại** (2026-11-03, không merge, người dùng đã test tay và
+  chốt không lấy). Cách làm: chroma CQT của mix ghép 2–4 s ngữ cảnh, ma trận lặp của librosa (k láng giềng, cách nhau
+  ≥ 4 s), trộn xác suất hợp âm mỗi khung với trung bình các khung lặp với nó (mức trộn 0,2–1,0) trước HMM. Lưới 49
+  cấu hình, CV 3 phần, cùng hàm mục tiêu với `eval/refit_fusion.py`:
+  - Kajiura mean4 72,34 → 72,24 (CV −0,10, 9/16 bài thắng/thua, CI chứa 0); F1 chuỗi sevenths 73,91 → 74,16.
+  - Beatles mean4 82,98 → 83,59 (CV +0,61, khoảng 31/11, CI không chứa 0).
+  - Thêm khoảng 2,5 s mỗi bài (chroma + ma trận lặp).
+  - Bài Madoka (kvrJ2pOv3ww): không đổi. Đoạn 0:29–0:51 (giai điệu trên nốt pedal C–G, tầng bass vẫn có C và G)
+    chỉ khớp với các đoạn cũng là pedal C (0:55–1:05, 2:30), nên không có lần lặp nào "chữa" được.
+  - Kết luận: với Kajiura, model sai giống nhau ở mọi lần lặp nên gộp không sửa được. Muốn tăng tiếp phải có thông
+    tin mới (model khác: consonance-ACE MIT có checkpoint; ChordFormer có weights trong lịch sử repo nhưng tác giả đã
+    xóa và repo không có license), không phải hậu xử lý thêm trên hai model hiện có.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
