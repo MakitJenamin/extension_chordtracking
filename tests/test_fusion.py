@@ -391,6 +391,10 @@ def test_model_bass_sources():
 def test_default_uses_chordformer_and_fuse_runs():
     assert F.uses_chordformer(F.DEFAULT_PARAMS)
     assert not F.uses_chordformer(F.FusionParams(cf_weight=0.0, bass_model="cnnlstm"))
+    assert not F.uses_chordformer(F.FusionParams(cf_weight=0.0, bass_source="stem"))   # bass không lấy từ model
+    assert not F.uses_chordformer(F.FusionParams(mix_level="full", bass_model="cnnlstm"))
     times, models = _three_models()
     segs = F.fuse(models, None, None, float(times[-1] + F.FRAME_HOP / 2))
     assert segs and segs[0].label.startswith("C:")
+    # mix_level="full" vẫn chạy (bỏ qua ChordFormer), không báo lỗi
+    assert F.fuse(models, None, None, float(times[-1] + F.FRAME_HOP / 2), F.FusionParams(mix_level="full"))

@@ -61,7 +61,8 @@ class FusionParams:
     stem_weight: float = 0.3         # "both": trọng số của chroma stem bass
     bass_threshold: float = 0.5      # xác suất tối thiểu của nốt bass để thêm /x
     bass_per_beat: bool = False      # True: quyết định bass theo từng phách, đổi bass thì tách đoạn
-    cf_weight: float = 0.4           # trọng số ChordFormer khi trộn họ hợp âm (cần mix_level="family");
+    cf_weight: float = 0.4           # trọng số ChordFormer khi trộn họ hợp âm (chỉ dùng khi mix_level="family";
+                                     # "full" bỏ qua ChordFormer và trộn ChordMini với CNN-LSTM như cũ)
                                      # ChordMini nhận 1 - cnn_weight - cf_weight
     quality_source: str = "cnnlstm"  # model trộn với ChordMini cho loại hợp âm trong họ: "cnnlstm" | "chordformer"
     bass_model: str = "both"         # bass_probs lấy từ "cnnlstm" | "chordformer" | "both" (trung bình hai model)
@@ -72,7 +73,9 @@ DEFAULT_PARAMS = FusionParams()
 
 def uses_chordformer(p: FusionParams) -> bool:
     """Bộ tham số có cần đầu ra của ChordFormer không (pipeline chỉ chạy model này khi cần)."""
-    return p.cf_weight > 0 or p.quality_source == "chordformer" or p.bass_model != "cnnlstm"
+    if p.mix_level == "family" and (p.cf_weight > 0 or (p.quality_source == "chordformer" and p.quality_weight > 0)):
+        return True
+    return p.bass_model != "cnnlstm" and p.bass_source in ("cnn", "both")
 
 
 def fuse(
@@ -97,7 +100,7 @@ def fuse(
         return fill_gaps(base.segments, duration)
 
     times = frame_grid(duration)
-    if p.cf_weight > 0 or p.quality_source != "cnnlstm":
+    if p.mix_level == "family" and (p.cf_weight > 0 or p.quality_source != "cnnlstm"):
         probs, vocab = chord_probs_multi(models, times, p)
     else:
         probs, vocab = chord_probs(models, times, p.cnn_weight, p.mix_level, p.quality_weight)
