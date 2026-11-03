@@ -27,6 +27,8 @@ output/
 
 # Môi trường / IDE
 .env
+cookies*.txt
+*cookies.txt
 .vscode/
 .idea/
 .codegraph/
