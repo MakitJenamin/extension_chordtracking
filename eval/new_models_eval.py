@@ -165,16 +165,50 @@ def describe(c: dict) -> str:
 
 # ---------------------------------------------------------------- chấm
 
+SCORE_CACHE = EVAL_DIR / "results" / "score_cache"
+
+
+def _cache_file(sid: str) -> Path:
+    return SCORE_CACHE / (sid.replace(":", "_") + ".pkl")
+
+
 def _score(args):
+    """Chấm một bài với mọi cấu hình. Điểm từng (bài, cấu hình) được lưu ở `SCORE_CACHE`, nên chạy lại sau khi
+    bị ngắt chỉ chấm phần còn thiếu. Mỗi bài một file, mỗi tiến trình con chỉ ghi file của bài nó chấm."""
     sid, cfgs = args
-    song = load(sid)
+    path = _cache_file(sid)
+    cache = {}
+    if path.exists():
+        try:
+            with open(path, "rb") as f:
+                cache = pickle.load(f)
+        except Exception:
+            cache = {}
     corr = np.zeros((len(cfgs), len(METRICS)))
     wts = np.zeros_like(corr)
+    song = None
+    dirty = 0
     for i, c in enumerate(cfgs):
-        r = evaluate_pair(song.ref, predict(song, c))
-        corr[i] = [r["correct"][m] for m in METRICS]
-        wts[i] = [r["weights"][m] for m in METRICS]
+        key = json.dumps(c, sort_keys=True)
+        if key not in cache:
+            song = song or load(sid)
+            r = evaluate_pair(song.ref, predict(song, c))
+            cache[key] = ([r["correct"][m] for m in METRICS], [r["weights"][m] for m in METRICS])
+            dirty += 1
+            if dirty % 50 == 0:
+                _save_cache(path, cache)
+        corr[i], wts[i] = cache[key]
+    if dirty:
+        _save_cache(path, cache)
     return sid, corr, wts
+
+
+def _save_cache(path: Path, cache: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".part")
+    with open(tmp, "wb") as f:
+        pickle.dump(cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+    tmp.replace(path)
 
 
 class Scores:
@@ -224,20 +258,25 @@ def simplex(step: float, models=MODELS):
             yield {x: k / n for x, k in zip(models, parts)}
 
 
-def grid_chords(quick: bool) -> list[dict]:
-    step = 0.25 if quick else 0.1
+def grid_chords(quick: bool, step: float | None = None, models=MODELS) -> list[dict]:
+    step = step or (0.25 if quick else 0.1)
+    qopts = (("cn", 1.0), ("cf", 1.0), ("cf", 0.5), ("cs", 0.5), ("cm", 0.0)) if quick else         (("cn", 1.0), ("cn", 0.7), ("cf", 1.0), ("cf", 0.7), ("cf", 0.5), ("cm", 0.0))
     out = []
-    for w in simplex(step):
-        for qsrc, q in (("cn", 1.0), ("cf", 1.0), ("cf", 0.5), ("cs", 0.5), ("cm", 0.0)):
-            out.append(cfg(w, qsrc=qsrc, q=q, bass="cf"))
+    for w in simplex(step, models):
+        for qsrc, q in qopts:
+            if qsrc not in models and qsrc != "cm":
+                continue
+            out.append(cfg(w, qsrc=qsrc, q=q, bass="cnf" if not quick else "cf"))
     return out
 
 
-def grid_refine(best: list[dict]) -> list[dict]:
+def grid_refine(best: list[dict], quick: bool = True) -> list[dict]:
+    basses = ("cn", "cf", "cs", "cnf", "mean") if quick else ("cn", "cf", "cnf")
+    ths = (0.4, 0.5, 0.6) if quick else (0.4, 0.5, 0.6, 0.7)
+    sps = (0.6, 0.7, 0.8, 0.9) if quick else (0.4, 0.5, 0.6, 0.7, 0.8)
     out = []
     for c in best:
-        for bass, th, sp, md in itertools.product(("cn", "cf", "cs", "cnf", "mean"), (0.4, 0.5, 0.6),
-                                                  (0.6, 0.7, 0.8, 0.9), (0.25, 0.5)):
+        for bass, th, sp, md in itertools.product(basses, ths, sps, (0.25, 0.5)):
             out.append(cfg(c["w"], c["qsrc"], c["q"], bass, th, sp, md))
     uniq = {json.dumps(c, sort_keys=True): c for c in out}
     return list(uniq.values())
@@ -263,6 +302,9 @@ def main(argv=None) -> int:
     ap.add_argument("--folds", type=int, default=3)
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--top", type=int, default=8, help="số bộ trộn tốt nhất đem chỉnh bass/làm mượt")
+    ap.add_argument("--step", type=float, default=None, help="bước trọng số họ hợp âm (mặc định 0.25 quick, 0.1)")
+    ap.add_argument("--models", default=",".join(MODELS), help="các model được trộn, ví dụ cm,cn,cf")
+    ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args(argv)
     _utf8_console()
     t_all = time.perf_counter()
@@ -292,7 +334,8 @@ def main(argv=None) -> int:
     ref_scores = Scores([c for _, c in refs], songs, args.jobs)
 
     # 2) Lưới bộ trộn (bass cf), rồi chỉnh bass/làm mượt cho các bộ tốt nhất
-    g1 = grid_chords(args.quick)
+    models = tuple(x for x in MODELS if x in args.models.split(","))
+    g1 = grid_chords(args.quick, args.step, models)
     print(f"Lưới bộ trộn: {len(g1)} cấu hình", flush=True)
     s1 = Scores(g1, songs, args.jobs)
     o1 = objective(s1, beatles, kajiura)
@@ -305,7 +348,7 @@ def main(argv=None) -> int:
         tb = [s for s in beatles if s not in set(folds_b[f])]
         tk = [s for s in kajiura if s not in set(folds_k[f])]
         top_idx |= set(np.argsort(-objective(s1, tb, tk))[:3].tolist())
-    g2 = grid_refine([g1[i] for i in sorted(top_idx)])
+    g2 = grid_refine([g1[i] for i in sorted(top_idx)], args.quick)
     print(f"Lưới chỉnh bass/làm mượt: {len(g2)} cấu hình", flush=True)
     s2 = Scores(g2, songs, args.jobs)
 
@@ -382,7 +425,7 @@ def main(argv=None) -> int:
     for k, d in diffs.items():
         print(f"  {k}: {100 * d['mean']:+.2f} [{100 * d['lo']:+.2f}, {100 * d['hi']:+.2f}] {d['wins']}/{d['losses']}")
 
-    out = EVAL_DIR / "results" / "new_models_eval.json"
+    out = args.out or EVAL_DIR / "results" / "new_models_eval.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(_nan_to_none({
         "beatles": beatles, "kajiura_time": kajiura, "kajiura_seq": k_names,

@@ -1,7 +1,7 @@
 """Ghép pipeline end-to-end: nguồn audio (videoId, URL, file) -> JSON hợp âm.
 
     fetch_audio -> chuẩn hóa thành mix.wav (cache ở CACHE_DIR/<song_id>/) -> track_beats
-    -> run_chordmini + run_cnnlstm -> fusion.fuse -> analysis.estimate_key, analyze_structure,
+    -> run_chordmini + run_cnnlstm (+ run_chordformer) -> fusion.fuse -> analysis.estimate_key, analyze_structure,
     estimate_key_regions -> JSON (xem `build_result`)
 
 Mặc định **không tách nguồn**: model hợp âm và bắt nhịp chạy trên mix, bass lấy từ `bass_probs` của
@@ -34,6 +34,7 @@ from chordtrack import separation, symbols, transpose
 from chordtrack.audio import read_json, write_json
 from chordtrack.beats import track_beats
 from chordtrack.chords.chordmini import run_chordmini
+from chordtrack.chords.chordformer import run_chordformer
 from chordtrack.chords.cnnlstm import run_cnnlstm
 from chordtrack.gpu import free_vram
 from chordtrack.symbols import harte_to_symbol
@@ -45,7 +46,8 @@ RESULT_VERSION = 1
 DEFAULT_METER = 4           # số phách mỗi ô nhịp khi không suy ra được từ phách mạnh
 UNCERTAIN_THRESHOLD = 0.5   # hợp âm có confidence nhỏ hơn mức này bị đánh dấu "uncertain"
 STEM_NAMES = ("mix", "vocals", "instrumental", "bass", "no_bass")
-CHORD_MODELS = ("chordmini-btc", "cnnlstm")
+CHORD_MODELS = ("chordmini-btc", "cnnlstm")      # luôn chạy; ChordFormer chỉ chạy khi tham số fuse cần
+MODEL_NAMES = {"chordmini": "chordmini-btc", "cnnlstm": "cnnlstm", "chordformer": "chordformer"}
 TIMING_KEYS = ("fetch", "separation", "beats", "chords", "fusion", "analysis", "total")
 
 
@@ -54,12 +56,13 @@ def code_revision() -> str:
     """Hash mã nguồn các bước sau tách nguồn. Mã đổi thì result.json cũ không dùng lại nữa
     (stem vẫn dùng lại vì nằm ở cache riêng)."""
     import chordtrack.beats
+    import chordtrack.chords.chordformer
     import chordtrack.chords.chordmini
     import chordtrack.chords.cnnlstm
 
     h = hashlib.sha1()
     for mod in (fusion, analysis, symbols, transpose, chordtrack.beats, chordtrack.chords.chordmini,
-                chordtrack.chords.cnnlstm):
+                chordtrack.chords.cnnlstm, chordtrack.chords.chordformer):
         h.update(Path(mod.__file__).read_bytes())
     h.update(Path(__file__).read_bytes())
     return h.hexdigest()[:12]
@@ -162,12 +165,15 @@ def analyze(
     free_vram()
     models["cnnlstm"], vram["cnnlstm"] = _measure_vram(run_cnnlstm, chord_audio)
     free_vram()
+    bass_audio, fusion_params = _fusion_inputs(stems, config)
+    if fusion.uses_chordformer(fusion_params):
+        models["chordformer"], vram["chordformer"] = _measure_vram(run_chordformer, chord_audio)
+        free_vram()
     timing["chords"] = time.perf_counter() - t0
     report("chords", 1.0)
 
     report("fusion", 0.0)
     t0 = time.perf_counter()
-    bass_audio, fusion_params = _fusion_inputs(stems, config)
     segments = fusion.fuse(models, grid, bass_audio, duration, fusion_params)
     timing["fusion"] = time.perf_counter() - t0
     report("fusion", 1.0)
@@ -185,6 +191,7 @@ def analyze(
     result = build_result(
         src, duration=duration, grid=grid, segments=segments, key=key, sections=sections,
         timing=timing, config=config, peak_vram_mb=vram, regions=regions,
+        chord_models=[MODEL_NAMES[k] for k in models],
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_json(result_path, result)
@@ -383,6 +390,7 @@ def build_result(
     config: PipelineConfig,
     peak_vram_mb: dict[str, Any] | None = None,
     regions: list[KeyRegion] | None = None,
+    chord_models: list[str] | None = None,
 ) -> dict:
     """Dựng JSON kết quả. `regions` (vùng giọng) None hoặc rỗng thì mọi hợp âm và đoạn dùng `key`."""
     regions = list(regions or [])
@@ -415,7 +423,7 @@ def build_result(
         "pipeline": {
             "separation_model": separation.ROFORMER_MODEL if config.use_separation else None,
             "bass_model": separation.DEMUCS_MODEL if config.use_separation else None,
-            "chord_models": list(CHORD_MODELS),
+            "chord_models": list(chord_models) if chord_models is not None else list(CHORD_MODELS),
             "chord_stem": config.chord_stem,
             "beat_stem": config.beat_stem,
             "uncertain_threshold": UNCERTAIN_THRESHOLD,

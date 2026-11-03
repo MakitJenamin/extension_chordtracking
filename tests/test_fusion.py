@@ -337,3 +337,60 @@ def test_quality_weight_keeps_chordmini_share_for_abstained_labels():
     assert m[0, 1] / m[0, 2] == pytest.approx(0.9 / 0.05, rel=1e-3)
     bad = F.mix_models(p_cm, p_cn, vocab, 0.0, "family", 1.0)   # không có mặt nạ: maj6 thắng sai
     assert bad[0, 2] > bad[0, 1]
+
+
+# ---------------------------------------------------------------- trộn ba model (ChordFormer)
+
+def _three_models(n=40):
+    times = (np.arange(n) + 0.5) * F.FRAME_HOP
+    cm_vocab = ["N", "C:maj", "C:maj7", "A:min"]
+    cn_vocab = ["N", "C:maj", "C:maj7", "A:min"]
+    p_cm = np.tile([0.05, 0.25, 0.05, 0.65], (n, 1))     # ChordMini nghiêng về Am
+    p_cn = np.tile([0.05, 0.10, 0.80, 0.05], (n, 1))     # CNN-LSTM: Cmaj7
+    p_cf = np.tile([0.05, 0.70, 0.20, 0.05], (n, 1))     # ChordFormer: C
+    bass_cn = np.zeros((n, 13)); bass_cn[:, 1 + 0] = 1.0  # C
+    bass_cf = np.zeros((n, 13)); bass_cf[:, 1 + 4] = 1.0  # E
+    return times, {
+        "chordmini": _model("chordmini", times, p_cm, cm_vocab),
+        "cnnlstm": _model("cnnlstm", times, p_cn, cn_vocab, {"bass_probs": bass_cn}),
+        "chordformer": _model("chordformer", times, p_cf, cn_vocab, {"bass_probs": bass_cf}),
+    }
+
+
+def test_chord_probs_multi_weights_and_fallback():
+    times, models = _three_models()
+    p = F.FusionParams(cnn_weight=0.3, cf_weight=0.6, quality_weight=0.0)
+    probs, vocab = F.chord_probs_multi(models, times, p)
+    np.testing.assert_allclose(probs.sum(axis=1), 1.0)
+    fam_c = probs[0, vocab.index("C:maj")] + probs[0, vocab.index("C:maj7")]
+    assert fam_c > probs[0, vocab.index("A:min")]           # 0.9 trọng số cho họ C thắng ChordMini
+    # cf_weight = 0 và quality_weight = 0: chỉ còn ChordMini + CNN-LSTM, giống mix_models
+    p2 = F.FusionParams(cnn_weight=0.6, cf_weight=0.0, quality_source="chordformer", quality_weight=0.0)
+    a, _ = F.chord_probs_multi(models, times, p2)
+    b, _ = F.chord_probs(models, times, 0.6, "family", 0.0)
+    np.testing.assert_allclose(a, b, atol=1e-9)
+    # Thiếu ChordFormer: trọng số chia lại, không lỗi
+    no_cf = {k: v for k, v in models.items() if k != "chordformer"}
+    c, _ = F.chord_probs_multi(no_cf, times, p)
+    np.testing.assert_allclose(c.sum(axis=1), 1.0)
+
+
+def test_model_bass_sources():
+    times, models = _three_models()
+    cn = F.model_bass(models, times, "cnnlstm")
+    cf = F.model_bass(models, times, "chordformer")
+    both = F.model_bass(models, times, "both")
+    assert cn[0].argmax() == 0 and cf[0].argmax() == 4
+    np.testing.assert_allclose(both, (cn + cf) / 2)
+    only_cn = {k: v for k, v in models.items() if k != "chordformer"}
+    np.testing.assert_allclose(F.model_bass(only_cn, times, "chordformer"), cn)   # thiếu thì dùng model còn lại
+    with pytest.raises(ValueError):
+        F.model_bass(models, times, "xyz")
+
+
+def test_default_uses_chordformer_and_fuse_runs():
+    assert F.uses_chordformer(F.DEFAULT_PARAMS)
+    assert not F.uses_chordformer(F.FusionParams(cf_weight=0.0, bass_model="cnnlstm"))
+    times, models = _three_models()
+    segs = F.fuse(models, None, None, float(times[-1] + F.FRAME_HOP / 2))
+    assert segs and segs[0].label.startswith("C:")
