@@ -170,9 +170,10 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-strip-wrap {
   --ct-lane-top: 22px; --ct-lane-bottom: 16px;
   position: relative; height: 104px; margin-top: 10px; overflow: hidden; border-radius: 8px;
-  background: var(--ct-bg); user-select: none; contain: layout paint;
+  background: var(--ct-bg); user-select: none; contain: layout paint; cursor: grab; touch-action: pan-y;
 }
 .ct-strip { position: absolute; top: 0; left: 0; height: 100%; will-change: transform; }
+.ct-strip-wrap.ct-dragging, .ct-strip-wrap.ct-dragging .ct-chord { cursor: grabbing; }
 /* Vạch đỏ đang phát: suốt chiều cao dải, luôn trên cùng (trên ô hợp âm, nhãn và vạch đổi giọng).
  * Ô hiện tại là lớp mờ bán trong suốt nên vạch đỏ vẫn nổi trên nó. */
 .ct-playhead { position: absolute; top: 0; bottom: 0; left: 28%; width: 2px; margin-left: -1px; background: var(--ct-red); z-index: 10; pointer-events: none; }
