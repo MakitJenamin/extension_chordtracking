@@ -247,7 +247,9 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-unc { position: absolute; top: 3px; right: 5px; font-size: 12px; line-height: 14px; color: #e09400; }
 .ct-chord.ct-cur .ct-unc { color: #ffb300; }
 
-.ct-beat { position: absolute; bottom: 0; width: 0; pointer-events: none; }
+/* Vạch phách nằm TRÊN ô hợp âm (ô thường z 1, ô hiện tại z 3), dưới vạch đỏ (z 10): ô hiện tại ở toàn màn hình có
+ * backdrop-filter blur, nếu vạch nằm dưới thì bị làm nhòe theo video. */
+.ct-beat { position: absolute; bottom: 0; width: 0; pointer-events: none; z-index: 4; }
 .ct-beat.ct-strong { top: var(--ct-lane-top); border-left: 2px solid color-mix(in srgb, var(--ct-text) 35%, transparent); }
 .ct-beat.ct-weak { height: 7px; border-left: 1px solid color-mix(in srgb, var(--ct-text) 35%, transparent); }
 .ct-beat span { position: absolute; bottom: 1px; left: 3px; font-size: 10px; line-height: 12px; color: var(--ct-text2); }
