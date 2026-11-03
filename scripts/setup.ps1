@@ -13,7 +13,7 @@
     4. Cài thư viện trong requirements\runtime.txt (giữ numpy 1.26).
     5. Tải mã nguồn và weights các model (scripts\fetch_models.py), kiểm tra SHA-256.
     6. Kiểm tra ffmpeg và Deno (yt-dlp cần để tải YouTube), thiếu thì cài bằng winget.
-    7. Chạy thử: nạp các model và in thiết bị (GPU/CPU).
+    7. Chạy thử (scripts\smoke_test.py): tạo audio hợp âm C – G, chạy đủ các model, kiểm tra nhận đúng.
 
 .PARAMETER Cpu
   Cài PyTorch bản CPU kể cả khi có GPU NVIDIA.
@@ -28,7 +28,9 @@ param(
     [switch]$NoTools
 )
 
-$ErrorActionPreference = "Stop"
+# Không dùng "Stop": trên Windows PowerShell 5.1, chương trình ngoài (pip, python, git) chỉ cần ghi vào stderr
+# là bị coi như lỗi và dừng script, kể cả khi chạy thành công. Mọi lệnh ngoài được kiểm tra bằng $LASTEXITCODE.
+$ErrorActionPreference = "Continue"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -117,15 +119,7 @@ else { Write-Host "Có ffmpeg và Deno." }
 
 # 7. Chạy thử ---------------------------------------------------------------------------------------
 Step "Chạy thử"
-Run $Python @("-c", @"
-import torch
-from chordtrack.chords import chordmini, cnnlstm, chordformer
-from chordtrack import beats
-chordmini._load_model_cached('btc'); cnnlstm._load_ensemble(*cnnlstm._import_modules()[:2]); chordformer._load_ensemble()
-beats._checkpoint_path()
-dev = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU (chậm hơn, khoảng 1 phút mỗi bài)'
-print('Nạp đủ model. Thiết bị:', dev)
-"@)
+Run $Python @("scripts\smoke_test.py")
 
 Write-Host "`nXong. Bước tiếp theo:" -ForegroundColor Green
 Write-Host "  1. Chạy server:   powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background"

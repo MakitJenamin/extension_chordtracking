@@ -360,6 +360,14 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - [x] **Mặc định mới: trộn 3 model ChordMini + CNN-LSTM + ChordFormer** (2026-11-04, người dùng chốt lấy phương án điểm
   cao nhất, không xét CV). Kajiura mean4 72,34 → 72,90, Beatles 82,98 → 84,22. Thêm khoảng 3 s mỗi bài. Chi tiết ở
   mục "Thử ChordFormer và consonance-ACE", phần "Lưới mịn và mặc định mới". Bỏ hướng "giọng trong HMM" (người dùng chốt).
+- [x] **Mã nguồn mở, cài một lệnh** (2026-11-04). Người dùng chốt: license MIT; script cài tự lấy ChordFormer từ lịch
+  sử repo gốc; giữ yt-dlp kèm cảnh báo "chỉ dùng cá nhân" trong README. `scripts/setup.ps1` (Python 3.11, venv, PyTorch
+  CUDA hoặc CPU, thư viện, model, ffmpeg/Deno qua winget, chạy thử), `scripts/fetch_models.py` (clone đúng commit, kiểm
+  tra SHA-256), `scripts/smoke_test.py` (audio C – G tổng hợp, chạy đủ 3 model). `paths.py` tự suy ra thư mục gốc
+  (worktree thì trỏ checkout chính). Đã thử clone vào thư mục trống: setup chạy trọn, server phân tích đúng "Let It Be".
+  ⚠️ Máy này vẫn bị YouTube đòi cookie khi tải bài mới; người dùng khác có thể gặp, README hướng dẫn `-Cookies`.
+  ⚠️ Windows PowerShell 5.1: không dùng `$ErrorActionPreference = "Stop"` trong script gọi chương trình ngoài (stderr
+  bị coi là lỗi); kiểm tra `$LASTEXITCODE`.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
