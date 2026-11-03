@@ -20,9 +20,8 @@ Kế hoạch, các quyết định và số đo chất lượng: [PLAN.md](PLAN.
 
 ## Cài đặt (Windows)
 
-**Yêu cầu:** Windows 10/11, Google Chrome, khoảng 10 GB trống. Nên có GPU NVIDIA (khoảng 1 GB VRAM là đủ):
-mỗi bài mất 10–20 giây. Không có GPU vẫn chạy được trên CPU, chậm hơn. Script tự cài Python 3.11, git, ffmpeg và
-Deno bằng `winget` nếu máy chưa có.
+Cần Windows 10/11, Chrome, khoảng 10 GB trống. GPU NVIDIA không bắt buộc nhưng nhanh hơn (10–20 giây một bài,
+CPU khoảng 1 phút).
 
 ```powershell
 git clone https://github.com/MakitJenamin/extension_chordtracking.git
@@ -30,34 +29,24 @@ cd extension_chordtracking
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
-`setup.ps1` tạo `.venv`, cài PyTorch (bản CUDA nếu có GPU NVIDIA, không thì bản CPU) và các thư viện, tải mã và
-weights các model hợp âm đúng phiên bản đã kiểm chứng (kiểm tra SHA-256, xem [THIRD_PARTY.md](THIRD_PARTY.md)),
-rồi chạy thử. Lần đầu mất khoảng 10–20 phút tùy mạng. Chạy lại nhiều lần không sao. Tùy chọn: `-Cpu` (ép bản CPU),
-`-Full` (thêm tách nguồn và công cụ đánh giá), `-NoTools` (không tự cài ffmpeg, Deno).
+Script tự cài mọi thứ còn thiếu (Python, PyTorch, model, ffmpeg, Deno), mất 10–20 phút lần đầu.
+Tùy chọn: `-Cpu`, `-Full` (thêm công cụ đánh giá), `-NoTools`.
 
-> ⚠️ **Script tải và chạy mã của bên thứ ba. Chỉ chạy nếu bạn tin các repo đó.** Weights được nạp bằng
-> `torch.load` (pickle), nên một file bị tráo có thể chạy lệnh trên máy bạn. `fetch_models.py` ghim commit và từ chối
-> file sai SHA-256; đừng tắt bước kiểm tra này hay thay weights bằng file lạ.
+> ⚠️ **Script tải và chạy mã, weights của bên thứ ba ([THIRD_PARTY.md](THIRD_PARTY.md)). Chỉ chạy nếu bạn tin các repo đó.**
+> Weights đã được ghim commit và kiểm tra SHA-256; đừng thay bằng file lạ.
 
 ## Dùng
 
-1. **Bật server** chạy nền (mỗi lần mở máy):
-   `powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background`
-2. **Nạp extension** một lần: mở `chrome://extensions` → bật **Developer mode** → **Load unpacked** → chọn thư mục
-   `extension` trong repo.
-3. Mở một video YouTube, bấm nút ChordTrack trên thanh điều khiển của player (hoặc Alt+Shift+C). Bài mới mất
-   10–20 giây để phân tích, lần sau hiện ngay.
+1. Bật server (mỗi lần mở máy): `powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background`
+2. Nạp extension (một lần): `chrome://extensions` → bật **Developer mode** → **Load unpacked** → chọn thư mục `extension`.
+3. Mở video YouTube, bấm nút ChordTrack trên player (Alt+Shift+C).
 
-**YouTube đòi xác minh "not a bot"?** Xuất cookie YouTube của trình duyệt đã đăng nhập ra file `cookies.txt`
-(định dạng Netscape, ví dụ bằng extension "Get cookies.txt LOCALLY"), rồi chạy server với
-`-Cookies C:\duong\dan\cookies.txt`. Chi tiết ở mục dưới.
+**Lỗi "not a bot":** xuất cookie YouTube ra `cookies.txt` (extension "Get cookies.txt LOCALLY"), chạy server thêm
+`-Cookies <đường dẫn>`.
 
-> ⚠️ **`cookies.txt` là phiên đăng nhập Google của bạn: ai có file này là vào được tài khoản.** Để file ngoài thư mục
-> repo, không gửi cho ai. Nên dùng tài khoản phụ, vì YouTube có thể khóa tài khoản dùng để tải tự động.
+> ⚠️ **`cookies.txt` là phiên đăng nhập Google của bạn.** Không gửi cho ai, để ngoài thư mục repo, nên dùng tài khoản phụ.
 
-**Cập nhật:** `git pull` rồi chạy lại `scripts\setup.ps1`, bấm nút tải lại extension ở `chrome://extensions`.
-
-**Gỡ:** xóa extension ở `chrome://extensions` và xóa thư mục repo (mọi thứ, kể cả model và audio đã tải, nằm trong đó).
+**Cập nhật:** `git pull`, chạy lại `setup.ps1`, tải lại extension. **Gỡ:** xóa extension và thư mục repo.
 
 ## License
 
