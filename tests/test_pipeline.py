@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from chordtrack import beats as beats_mod
 from chordtrack import cli, paths, pipeline
 from chordtrack.audio import AudioSource
 from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstimate, Section, Stems
@@ -90,7 +91,9 @@ def fake_env(tmp_path, monkeypatch):
     def fake_beats(path):
         calls.append(("beats", path.name))
         beats = np.arange(0.5, DURATION, 0.5)
-        return BeatGrid(beats=beats, downbeats=beats[::4], tempo=120.0)
+        frames = np.zeros(int(DURATION * beats_mod.FPS) + 1)
+        frames[np.round(beats[::4] * beats_mod.FPS).astype(int)] = 1.0
+        return beats_mod.BeatTracking(BeatGrid(beats=beats, downbeats=beats[::4], tempo=120.0), frames)
 
     def fake_chordmini(path):
         calls.append(("chordmini", path.name))
@@ -105,7 +108,7 @@ def fake_env(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline.audio_mod, "fetch", fake_fetch)
     monkeypatch.setattr(pipeline.separation, "separate", fake_separate)
     monkeypatch.setattr(pipeline.separation, "normalize_audio", fake_normalize)
-    monkeypatch.setattr(pipeline, "track_beats", fake_beats)
+    monkeypatch.setattr(pipeline.beats_mod, "track_beats_full", fake_beats)
     monkeypatch.setattr(pipeline, "run_chordmini", fake_chordmini)
     monkeypatch.setattr(pipeline, "run_cnnlstm", fake_cnnlstm)
     return calls
