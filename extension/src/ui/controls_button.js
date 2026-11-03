@@ -20,8 +20,6 @@
     for (const k of kids) e.append(k);
     return e;
   };
-  // Hai nốt móc đơn nối chùm, vẽ trong khung 24×24 như icon của YouTube.
-  const NOTE = "M9 6.6 19 4.5v11.2a2.9 2.9 0 1 1-1.8-2.68V8.6L10.8 9.95v7.75a2.9 2.9 0 1 1-1.8-2.68Z";
   const RING_R = 15;
 
   const btn = {
@@ -30,8 +28,8 @@
       this.ring = svg("circle", { class: "ct-ctl-ring", cx: 17, cy: 17, r: RING_R, pathLength: 100 });
       const ringSvg = svg("svg", { class: "ct-ctl-ringsvg", viewBox: "0 0 34 34", width: 34, height: 34, "aria-hidden": "true" },
         svg("circle", { class: "ct-ctl-track", cx: 17, cy: 17, r: RING_R }), this.ring);
-      const icon = svg("svg", { class: "ct-ctl-icon", viewBox: "0 0 24 24", width: 24, height: 24, fill: "none", "aria-hidden": "true" },
-        svg("path", { d: NOTE, fill: "currentColor" }));
+      const icon = CT.icons.logo(24);
+      icon.classList.add("ct-ctl-icon");
       const dot = document.createElement("span");
       dot.className = "ct-ctl-dot";
       this.el = document.createElement("button");

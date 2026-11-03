@@ -22,6 +22,7 @@
         "src/theory.js",
         "src/sync.js",
         "src/metronome.js",
+        "src/ui/icons.js",
         "src/ui/strip.js",
         "src/ui/panel.js",
         "src/ui/sections.js",

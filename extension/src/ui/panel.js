@@ -97,14 +97,16 @@
   const panel = {
     el: null, state: "hidden", song: null, last: {},
     build() {
-      const modeBtn = (m, text, tip) => h("button", { "data-m": m, type: "button", title: tip, onclick: () => CT.setSettings({ mode: m }) }, text);
+      const modeBtn = (m, text, tip, icon) => h("button", { "data-m": m, type: "button", title: tip, onclick: () => CT.setSettings({ mode: m }) }, icon, text);
       this.dots = new BeatDots();
       this.keyEl = h("b", { class: "ct-key", text: "–" });
       this.tempoEl = h("span", { class: "ct-chip", title: "Tốc độ (phách mỗi phút)" });
       this.meterEl = h("span", { class: "ct-chip", title: "Số chỉ nhịp: số phách trong một ô nhịp" });
       this.soonEl = h("span", { class: "ct-chip ct-warn", hidden: true });
       this.metroBtn = h("button", { type: "button", class: "ct-btn", title: `Bật/tắt tiếng phách theo nhịp bài (${sc("KeyM")})`,
-        onclick: () => CT.setSettings({ metronome: !CT.settings.metronome }) });
+        onclick: () => CT.setSettings({ metronome: !CT.settings.metronome }) },
+        CT.icons.metronome(16), "Metronome");
+      this.pendEl = this.metroBtn.querySelector(".ct-ic-pend");
       // Kéo thanh âm lượng: gộp các lần đổi (chrome.storage.sync giới hạn ~120 lần ghi mỗi phút).
       let volTimer = 0;
       this.volEl = h("input", { type: "range", min: 0, max: 100, class: "ct-vol", title: "Âm lượng tiếng phách",
@@ -115,7 +117,7 @@
         } });
       this.seg = h("div", { class: "ct-seg", role: "group", "aria-label": "Cách hiện hợp âm" },
         modeBtn("orig", "Gốc", `Hợp âm đúng tông bài, có thể dịch tông (${sc("Digit1")})`),
-        modeBtn("white", "🎹 Phím trắng", `Chơi trên phím trắng, đặt transpose của đàn theo ô bên dưới (${sc("Digit2")})`),
+        modeBtn("white", "Phím trắng", `Chơi trên phím trắng, đặt transpose của đàn theo ô bên dưới (${sc("Digit2")})`, CT.icons.keys(16)),
         modeBtn("roman", "Bậc La Mã", `Bậc hợp âm trong giọng (I, IV, V, vi…) (${sc("Digit3")})`));
       this.trEl = h("b", { class: "ct-tr" });
       this.stepper = h("span", { class: "ct-stepper", title: "Dịch tông hợp âm hiển thị" }, "Tông",
@@ -131,7 +133,7 @@
         "aria-expanded": "false", onclick: () => this.toggleHelp() }, "?");
 
       this.head = h("div", { class: "ct-head" },
-        h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, "ChordTrack"),
+        h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, CT.icons.logo(16), "ChordTrack"),
         this.miniEl,
         h("span", { class: "ct-keywrap" }, "Giọng ", this.keyEl),
         this.tempoEl, this.meterEl, this.dots.el, this.soonEl,
@@ -208,7 +210,6 @@
       this.el.dataset.mode = s.mode;
       this.trEl.textContent = T().signed(s.transpose | 0);
       this.stepper.hidden = s.mode === "white";
-      this.metroBtn.textContent = s.metronome ? "🔊 Metronome" : "🔈 Metronome";
       this.metroBtn.classList.toggle("ct-on", !!s.metronome);
       this.volEl.value = Math.round((s.metronomeVolume ?? 0.6) * 100);
       for (const c of this.opts.querySelectorAll("input[data-k]")) c.checked = !!s[c.dataset.k];
@@ -229,6 +230,17 @@
       }
     },
 
+    /** Quả lắc trên nút Metronome: chạm biên đúng lúc có phách, đổi bên mỗi phách (khớp tiếng tích).
+     * Metronome tắt thì đứng giữa. Chỉ đặt transform khi góc đổi. */
+    swing(s, t, k) {
+      let a = 0;
+      if (CT.settings.metronome && k >= 0 && k + 1 < s.beats.length) {
+        const f = (t - s.beats[k]) / Math.max(1e-3, s.beats[k + 1] - s.beats[k]);
+        a = Math.round(24 * Math.cos(Math.PI * (k + f)) * 10) / 10;
+      }
+      if (a !== this.pendA) { this.pendA = a; this.pendEl.style.transform = a ? `rotate(${a}deg)` : ""; }
+    },
+
     onTime({ t, ad }) {
       const s = this.song;
       if (!s || this.state !== "ready") return;
@@ -236,6 +248,7 @@
       this.el.classList.toggle("ct-ad", !!ad);
       const i = info(s, t);
       this.dots.set(i.beatPos);
+      this.swing(s, t, i.beatIndex);
       const L = this.last;
       if (L.ki !== i.ki || L.mode !== CT.settings.mode) {
         L.ki = i.ki; L.mode = CT.settings.mode;
