@@ -173,7 +173,18 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
   background: var(--ct-bg); user-select: none; contain: layout paint; cursor: grab; touch-action: pan-y;
 }
 .ct-strip { position: absolute; top: 0; left: 0; height: 100%; will-change: transform; }
-.ct-strip-wrap.ct-dragging, .ct-strip-wrap.ct-dragging .ct-chord { cursor: grabbing; }
+/* Thanh vị trí khi kéo dải: cả bài thu vào bề rộng dải; vệt sáng = khung đang xem, vạch đỏ = chỗ đang phát. */
+.ct-panbar, .ct-panbar-tip { opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 11; }
+.ct-panning .ct-panbar, .ct-panning .ct-panbar-tip { opacity: 1; }
+.ct-panbar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: color-mix(in srgb, var(--ct-text) 15%, var(--ct-bg)); }
+.ct-panbar-view { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: color-mix(in srgb, var(--ct-text) 60%, transparent); }
+.ct-panbar-now { position: absolute; top: -2px; bottom: 0; width: 2px; margin-left: -1px; background: var(--ct-red); }
+.ct-panbar-tip {
+  position: absolute; bottom: 7px; padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+  font-size: 11px; line-height: 15px; font-variant-numeric: tabular-nums;
+  color: var(--ct-bg); background: color-mix(in srgb, var(--ct-text) 85%, transparent);
+}
+.ct-strip-wrap.ct-dragging,.ct-strip-wrap.ct-dragging .ct-chord { cursor: grabbing; }
 /* Vạch đỏ đang phát: suốt chiều cao dải, luôn trên cùng (trên ô hợp âm, nhãn và vạch đổi giọng).
  * Ô hiện tại là lớp mờ bán trong suốt nên vạch đỏ vẫn nổi trên nó. */
 .ct-playhead { position: absolute; top: 0; bottom: 0; left: 28%; width: 2px; margin-left: -1px; background: var(--ct-red); z-index: 10; pointer-events: none; }

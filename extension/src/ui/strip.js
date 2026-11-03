@@ -23,7 +23,13 @@
       this.track = el("div", "ct-strip");
       this.head = el("div", "ct-playhead");
       this.empty = el("div", "ct-strip-empty", "Đoạn này không có hợp âm");
-      this.el.append(this.track, this.head);
+      // Thanh mỏng ở đáy, chỉ hiện khi đang kéo/xem lệch: khung đang xem nằm đâu trong cả bài.
+      this.bar = el("div", "ct-panbar");
+      this.barView = el("div", "ct-panbar-view");
+      this.barNow = el("div", "ct-panbar-now");
+      this.barTip = el("div", "ct-panbar-tip");
+      this.bar.append(this.barView, this.barNow);
+      this.el.append(this.track, this.head, this.bar, this.barTip);
       this.song = null;
       this.scale = Strip.BASE_SCALE;
       this.width = 0;
@@ -271,6 +277,32 @@
       if (j !== this.idx || force) this.setCurrent(j);
       this.progress(t);
       this.stickLabel(x);
+      this.panBar(x);
+    }
+
+    /** Thanh mỏng ở đáy khi đang kéo/xem lệch: vệt sáng là khung đang xem trên toàn bài, vạch đỏ là
+     * chỗ đang phát. Nhãn: thời điểm nằm ở vị trí vạch đỏ của khung đang xem, lệch bao nhiêu giây. */
+    panBar(x) {
+      const on = Math.abs(this.viewOff) >= 1 || !!this.drag?.moved;
+      if (on !== this.barOn) { this.el.classList.toggle("ct-panning", on); this.barOn = on; }
+      if (!on) return;
+      const D = Math.max(1e-3, this.song.duration);
+      const t0 = -x / this.px;                 // thời điểm ở mép trái khung
+      const span = this.width / this.px;       // số giây nhìn thấy
+      const pct = (v) => `${(Math.max(0, Math.min(1, v)) * 100).toFixed(2)}%`;
+      const a = Math.max(0, t0 / D);
+      const b = Math.min(1, (t0 + span) / D);
+      this.barView.style.left = pct(a);
+      this.barView.style.width = pct(Math.max(0.004, b - a));
+      this.barNow.style.left = pct(this.t / D);
+      const tv = Math.max(0, Math.min(D, t0 + span * PLAYHEAD));
+      const d = Math.round(tv - this.t);
+      const text = `${fmt(tv)}${d ? ` · ${d > 0 ? "+" : "−"}${Math.abs(d)} s` : ""}`;
+      if (this.barTip.textContent !== text) this.barTip.textContent = text;
+      // Nhãn bám giữa khung đang xem nhưng không tràn khỏi mép dải.
+      const w = this.barTip.offsetWidth || 60;
+      const mid = ((a + b) / 2) * this.width;
+      this.barTip.style.left = `${Math.round(Math.max(4, Math.min(this.width - w - 4, mid - w / 2)))}px`;
     }
 
     /** Hợp âm dài hơn bề rộng nhìn thấy (ví dụ Cm giữ 25 s): nhãn nằm ở mép trái ô sẽ trôi khỏi khung,
