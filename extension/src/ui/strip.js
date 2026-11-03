@@ -158,7 +158,7 @@
         // ↑ ↓ → có trong Roboto; ⬆ ⬇ ⇄ không có nên toàn màn hình hiện thành ký tự lạ.
         const arrow = m.semitones > 0 ? "↑" : m.semitones < 0 ? "↓" : "→";
         const label = st.mode === "white"
-          ? `${arrow} ${T().keyName(to)} · transpose ${T().signed(m.transpose_from)} → ${T().signed(m.transpose_to)}`
+          ? `${arrow} ${T().keyName(to)} · bấm ${T().transposeLabel(m.transpose_to)}`
           : `${arrow} ${T().keyName(to)}${m.semitones ? ` (${T().signed(m.semitones)})` : ""}`;
         this.modEls[i].firstChild.textContent = label;
         this.modEls[i].title = `Đổi giọng lúc ${fmt(m.time)}: ${T().keyName(T().parseKeyText(m.from))} → ${T().keyName(to)}`;

@@ -117,6 +117,13 @@
     return { tonic, mode: mode || "major" };
   }
   const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v);
+  /* Phím cần bấm khi giữ nút Transpose của đàn (đàn của người dùng: giữ Transpose rồi bấm phím tên tông
+   * trưởng; mức dịch −6..+5). Tên suy thẳng từ mức dịch: 0 C, +1 C#, +2 D, +3 D#, +4 E, +5 F,
+   * −6 F#, −5 G, −4 G#, −3 A, −2 A#, −1 B. Giọng thứ dùng tông trưởng song song (Cm → Eb → bấm D#). */
+  const TRANSPOSE_KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const transposeKey = (w) => TRANSPOSE_KEYS[(((w | 0) % 12) + 12) % 12];
+  /** "D# (+3)" */
+  const transposeLabel = (w) => `${transposeKey(w)} (${signed(w | 0)})`;
 
   /* ---------------- Tìm kiếm theo thời gian ---------------- */
 
@@ -316,7 +323,7 @@
 
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
-    keyName, parseKeyText, signed, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
+    keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
