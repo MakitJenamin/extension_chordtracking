@@ -208,16 +208,6 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-chord.ct-clip .ct-lbl { display: block; }
 .ct-chord.ct-clip .ct-sym { overflow: hidden; text-overflow: ellipsis; }
 .ct-chord.ct-clip .ct-rn, .ct-chord.ct-clip .ct-unc, .ct-chord.ct-hide .ct-lbl, .ct-chord.ct-hide .ct-unc { visibility: hidden; }
-/* Ô đang phát mà hẹp (ct-clip, ct-hide): cho tên hợp âm hiện đủ, tràn ra ngoài ô với nền riêng, nằm trên
- * các ô bên cạnh (vạch đỏ đang phát vẫn ở trên cùng). Ô khác vẫn cắt "…" và có tooltip tên đầy đủ. */
-.ct-chord.ct-cur.ct-clip, .ct-chord.ct-cur.ct-hide { overflow: visible; z-index: 4; }
-.ct-chord.ct-cur.ct-clip .ct-lbl, .ct-chord.ct-cur.ct-hide .ct-lbl {
-  display: inline-block; visibility: visible; position: relative; padding: 0 8px 2px 8px; margin-left: -8px;
-  border-radius: 6px; background: var(--ct-cur-solid, rgba(38, 38, 38, 0.92)); box-shadow: inset 0 0 0 1px var(--ct-cur-border);
-}
-.ct-chord.ct-cur.ct-clip .ct-sym, .ct-chord.ct-cur.ct-hide .ct-sym { overflow: visible; text-overflow: clip; }
-:root:not([dark]) .ct-root:not(.ct-fs) .ct-chord.ct-cur.ct-clip .ct-lbl,
-:root:not([dark]) .ct-root:not(.ct-fs) .ct-chord.ct-cur.ct-hide .ct-lbl { background: rgba(255, 255, 255, 0.96); }
 .ct-unc { position: absolute; top: 3px; right: 5px; font-size: 12px; line-height: 14px; color: #e09400; }
 .ct-chord.ct-cur .ct-unc { color: #ffb300; }
 
