@@ -100,8 +100,7 @@ def _load_model():
     ck = torch.load(str(CHECKPOINT), map_location="cpu", weights_only=False)
     model = _build_model(ck["hyper_parameters"])
     state = {k: v for k, v in ck["state_dict"].items() if not k.startswith("loss.")}
-    missing, unexpected = model.load_state_dict(state, strict=True), None
-    del missing, unexpected
+    model.load_state_dict(state, strict=True)
     model.eval()
     return model
 

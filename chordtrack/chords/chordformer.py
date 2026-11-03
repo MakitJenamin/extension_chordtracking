@@ -160,7 +160,7 @@ def run_chordformer(audio_path: str | Path, chord_dict: str = "submission", chun
     if chord_dict not in CHORD_DICTS:
         raise ValueError(f"chord_dict phải là một trong {CHORD_DICTS}, nhận được {chord_dict!r}")
     template = CNNLSTM_DIR / "data" / f"{chord_dict}_chord_list.txt"
-    _NetworkInterface, _ChordNet, XHMMDecoder = _import_modules()
+    XHMMDecoder = _import_modules()[2]
 
     cqt = _compute_cqt(audio_path)
     probs = _run_ensemble(cqt, chunk)
