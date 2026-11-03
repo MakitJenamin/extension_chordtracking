@@ -168,7 +168,7 @@ def analyze(
     report("fusion", 0.0)
     t0 = time.perf_counter()
     bass_audio, fusion_params = _fusion_inputs(stems, config)
-    segments = fusion.fuse(models, grid, bass_audio, duration, fusion_params, mix_audio=stems.mix)
+    segments = fusion.fuse(models, grid, bass_audio, duration, fusion_params)
     timing["fusion"] = time.perf_counter() - t0
     report("fusion", 1.0)
 

@@ -138,7 +138,7 @@ def test_default_does_not_separate_and_fuses_without_stem(fake_env, monkeypatch)
     seen = {}
     real_fuse = pipeline.fusion.fuse
 
-    def spy_fuse(models, beats, bass_audio, duration, params=None, mix_audio=None):
+    def spy_fuse(models, beats, bass_audio, duration, params=None):
         seen["bass_audio"], seen["params"] = bass_audio, params
         return real_fuse(models, beats, bass_audio, duration, params)
 
