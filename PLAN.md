@@ -59,7 +59,7 @@ Extension (Chrome MV3) ──HTTP──► Backend Python (FastAPI) ──► H�
 | **ChordMini (BTC-PL)** | Nghia Phan và cộng sự, 2026 (DAFx26) | ❌ (170 loại hợp âm, không có nốt bass) | ✅ MIT | BTC được huấn luyện lại bằng pseudo-label trên hơn 1.000 giờ nhạc. Vượt BTC gốc khoảng 1–3%, rõ nhất ở hợp âm 7 và hợp âm 4 nốt |
 | **Chord-CNN-LSTM** | Junyan Jiang và cộng sự (Music X Lab), ISMIR 2019 | ✅ (đoán riêng nốt bass) | ✅ (nằm trong repo ChordMiniApp) | Đoán riêng từng phần của hợp âm: nốt gốc, loại, bass, 7… |
 | BTC | Park và cộng sự, 2019 | ❌ | ✅ | Đã có ChordMini là bản tốt hơn nên không dùng làm model chính |
-| ChordFormer | Akram và cộng sự, 2025 (IEEE TASLP 2026) | ✅ | ⚠️ repo không license, tác giả đã xóa checkpoint; lấy lại từ lịch sử git, chỉ để trong máy | Đã thử 2026-11-04: trên Kajiura ngang CNN-LSTM, không đưa vào mặc định (mục "Thử ChordFormer và consonance-ACE") |
+| ChordFormer | Akram và cộng sự, 2025 (IEEE TASLP 2026) | ✅ | ⚠️ repo không license, tác giả đã xóa checkpoint; lấy lại từ lịch sử git, chỉ để trong máy | **Đang dùng từ 2026-11-04** trong bộ trộn 3 model (trọng số 0,4). Một mình ngang CNN-LSTM trên Kajiura (mục "Thử ChordFormer và consonance-ACE") |
 | consonance-ACE | Poltronieri và cộng sự, ISMIR 2025 | ✅ (đoán riêng bass) | ✅ MIT | Đã thử 2026-11-04: kém hơn hẳn trên cả hai bộ, không dùng |
 
 Kết quả của ChordMini (bộ test trong bài báo của họ):
@@ -357,6 +357,9 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     xóa và repo không có license), không phải hậu xử lý thêm trên hai model hiện có.
 - [x] Thử ChordFormer và consonance-ACE (2026-11-04): trên Kajiura không hơn bộ hiện tại (CI chứa 0), Beatles tăng do
   ChordFormer đã học chính bộ này. Giữ nguyên mặc định. Chi tiết ở mục "Thử ChordFormer và consonance-ACE".
+- [x] **Mặc định mới: trộn 3 model ChordMini + CNN-LSTM + ChordFormer** (2026-11-04, người dùng chốt lấy phương án điểm
+  cao nhất, không xét CV). Kajiura mean4 72,34 → 72,90, Beatles 82,98 → 84,22. Thêm khoảng 3 s mỗi bài. Chi tiết ở
+  mục "Thử ChordFormer và consonance-ACE", phần "Lưới mịn và mặc định mới". Bỏ hướng "giọng trong HMM" (người dùng chốt).
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
@@ -589,11 +592,39 @@ cho các bộ tốt nhất; CV 3 phần như `refit_fusion`; mục tiêu 0.6 Kaj
   5 phần trên đúng bộ 1 217 bài có Isophonics (mỗi bài Beatles nằm trong tập học của 4/5 model), nên đây chủ yếu là
   nhớ bài. Điểm Kajiura ngang nhau xác nhận điều đó.
 - consonance-ACE kém 10 điểm trên Kajiura và không bộ trộn tốt nào dùng nó (thêm vào chỉ làm giảm điểm).
-- **Quyết định: giữ nguyên mặc định** (ChordMini + CNN-LSTM). Wrapper và script giữ lại để thử tiếp. Lưới đầy đủ
-  (bước 0.1, khoảng 2–3 giờ) chưa chạy: mặt mục tiêu trên Kajiura phẳng, khó đổi kết luận.
+- Quyết định ban đầu: giữ nguyên mặc định. **Đã đổi** sau lưới mịn, xem phần "Lưới mịn và mặc định mới" bên dưới.
 - Đúng như dự đoán: ChordFormer gần như "bản nâng cấp" của CNN-LSTM nên sai cùng chỗ. Muốn tăng điểm trên nhạc mới
   cần thông tin khác loại (ví dụ giọng trong HMM; thống nhất đoạn lặp đã thử và bỏ, xem mục 11), không phải thêm
   model học trên cùng dữ liệu.
+
+### Lưới mịn và mặc định mới (2026-11-04)
+
+Người dùng chốt: lấy phương án có điểm cao nhất, không quan tâm license hay đo công bằng. Lưới mịn
+(`python -m eval.new_models_eval --step 0.1 --models cm,cn,cf --top 4 --jobs 11`, khoảng 45 phút; consonance-ACE bị
+loại vì mọi tổ hợp có nó đều thua): 396 tỉ lệ trộn họ hợp âm × 6 cách lấy loại hợp âm, rồi 1 080 cấu hình bass/làm mượt.
+Điểm từng (bài, cấu hình) lưu ở `data/eval/results/score_cache/`, nên chạy lại sau khi bị ngắt không mất phần đã chấm
+(⚠️ xóa thư mục này nếu đổi mã `fusion` hoặc đặc trưng).
+
+Chọn theo **Kajiura mean4 cao nhất** trong 1 475 cấu hình đã chấm (người dùng nghe chủ yếu Kajiura):
+
+| phương án | K majmin | K majmin_inv | K sevenths | K sevenths_inv | **K mean4** | **B mean4** |
+|---|---|---|---|---|---|---|
+| mặc định cũ (cm 0,4 + cn 0,6) | 79.01 | 76.89 | 67.38 | 66.07 | 72.34 | 82.98 |
+| **mặc định mới** (cm 0,1 + cn 0,5 + cf 0,4) | **79.79** | **77.55** | **67.86** | **66.43** | **72.90** | **84.22** |
+| cao nhất theo hàm mục tiêu 0,6 K + 0,4 B (cm 0,1 + cn 0,2 + cf 0,7) | 79.74 | 77.57 | 67.02 | 65.63 | 72.49 | 85.86 |
+
+- Mặc định mới hơn mặc định cũ ở cả 4 mức của Kajiura lẫn Beatles. Bộ "cao nhất theo hàm mục tiêu" kém mặc định cũ ở
+  sevenths Kajiura nên không chọn.
+- ⚠️ Chọn trên cả bộ, không CV: điểm CV của lưới (chọn theo hàm mục tiêu) là K 72,33, ngang mặc định cũ. Mức +0,56 nhiều
+  khả năng lạc quan; với bài mới có thể chỉ ngang bộ cũ. Người dùng chấp nhận.
+- `FusionParams` mới: `cnn_weight=0.5, cf_weight=0.4` (ChordMini 0,1), `mix_level="family"`, `quality_source="cnnlstm"`,
+  `quality_weight=1.0`, `bass_model="both"` (trung bình bass CNN-LSTM và ChordFormer), `bass_threshold=0.5`,
+  `self_prob=0.7`, `min_duration=0.25`. `fuse()` khớp đúng từng đoạn với `eval.new_models_eval.predict`.
+- Pipeline chỉ chạy ChordFormer khi tham số cần (`fusion.uses_chordformer`). `pipeline.chord_models` trong JSON ghi các
+  model đã chạy. Thiếu ChordMini (test, model giả) thì `fuse` lùi về cách trộn hai model cũ.
+- Chạy thật: "Let It Be" 17,4 s (lần đầu trong tiến trình, gồm nạp model; hợp âm 13,1 s), Madoka (kvrJ2pOv3ww) 10,5 s.
+  VRAM đỉnh: CNN-LSTM 513–598 MiB, ChordFormer 154–176 MiB. "Let It Be" vẫn ra C/G ở 40,5 s và vòng C – G – Am – F.
+  Madoka: đoạn 0:28–1:12 vẫn là C (pedal C–G, như đã phân tích).
 
 ## Nguồn tham khảo
 

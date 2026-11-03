@@ -11,9 +11,9 @@ from chordtrack.types import BeatGrid, ChordModelOutput, ChordSegment, KeyEstima
 
 DURATION = 8.0
 SR = 8000
-ALL_STEPS = ["fetch", "normalize", "beats", "chordmini", "cnnlstm"]        # mặc định: không tách nguồn
-RERUN_STEPS = ["fetch", "beats", "chordmini", "cnnlstm"]                     # mix.wav đã có trong cache
-SEPARATION_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm"]
+ALL_STEPS = ["fetch", "normalize", "beats", "chordmini", "cnnlstm", "chordformer"]        # mặc định: không tách nguồn
+RERUN_STEPS = ["fetch", "beats", "chordmini", "cnnlstm", "chordformer"]                     # mix.wav đã có trong cache
+SEPARATION_STEPS = ["fetch", "separate", "beats", "chordmini", "cnnlstm", "chordformer"]
 
 
 def check_schema(result: dict) -> None:
@@ -102,12 +102,17 @@ def fake_env(tmp_path, monkeypatch):
         calls.append(("cnnlstm", path.name))
         return ChordModelOutput("cnnlstm_submission", [ChordSegment(0.0, DURATION, "C:maj", 0.5)])
 
+    def fake_chordformer(path):
+        calls.append(("chordformer", path.name))
+        return ChordModelOutput("chordformer_submission", [ChordSegment(0.0, DURATION, "C:maj", 0.5)])
+
     monkeypatch.setattr(pipeline.audio_mod, "fetch", fake_fetch)
     monkeypatch.setattr(pipeline.separation, "separate", fake_separate)
     monkeypatch.setattr(pipeline.separation, "normalize_audio", fake_normalize)
     monkeypatch.setattr(pipeline, "track_beats", fake_beats)
     monkeypatch.setattr(pipeline, "run_chordmini", fake_chordmini)
     monkeypatch.setattr(pipeline, "run_cnnlstm", fake_cnnlstm)
+    monkeypatch.setattr(pipeline, "run_chordformer", fake_chordformer)
     return calls
 
 
@@ -129,7 +134,7 @@ def test_analyze_order_stems_and_schema(fake_env):
     assert by_symbol["G"]["uncertain"] is True and by_symbol["C"]["uncertain"] is False
     assert result["pipeline"]["separation_model"] is None
     assert result["pipeline"]["bass_model"] is None
-    assert result["pipeline"]["chord_models"] == ["chordmini-btc", "cnnlstm"]
+    assert result["pipeline"]["chord_models"] == ["chordmini-btc", "cnnlstm", "chordformer"]
     assert result["timing"]["total"] >= result["timing"]["beats"]
     assert (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
 
@@ -226,7 +231,7 @@ def test_separation_vram_only_when_step_ran(fake_env, monkeypatch):
 def test_no_separation_runs_everything_on_mix(fake_env):
     # chord_stem khác mix bị bỏ qua khi không tách nguồn
     result = pipeline.analyze("abcdefghijk", use_separation=False, chord_stem="no_bass")
-    assert [c[0] for c in fake_env] == ["fetch", "normalize", "beats", "chordmini", "cnnlstm"]
+    assert [c[0] for c in fake_env] == ["fetch", "normalize", "beats", "chordmini", "cnnlstm", "chordformer"]
     assert all(c[1] == "mix.wav" for c in fake_env[1:])
     check_schema(result)
     assert result["pipeline"]["separation_model"] is None

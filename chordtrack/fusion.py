@@ -48,7 +48,7 @@ QUALITY_REDUCTION = {"maj9": "maj7", "min9": "min7", "9": "7", "11": "7", "13": 
 
 @dataclass(frozen=True)
 class FusionParams:
-    cnn_weight: float = 0.6          # trọng số CNN-LSTM khi trộn xác suất hợp âm (0 = chỉ ChordMini)
+    cnn_weight: float = 0.5          # trọng số CNN-LSTM khi trộn xác suất hợp âm (0 = chỉ ChordMini)
     mix_level: str = "family"        # "full": trộn trên cả 170 nhãn; "family": trộn riêng phân bố họ (gốc, họ
                                      # maj/min/dim/aug/sus) và phân bố loại hợp âm 7, 6 trong họ
     quality_weight: float = 1.0      # "family": trọng số CNN-LSTM khi trộn phân bố loại hợp âm trong họ
@@ -61,9 +61,21 @@ class FusionParams:
     stem_weight: float = 0.3         # "both": trọng số của chroma stem bass
     bass_threshold: float = 0.5      # xác suất tối thiểu của nốt bass để thêm /x
     bass_per_beat: bool = False      # True: quyết định bass theo từng phách, đổi bass thì tách đoạn
+    cf_weight: float = 0.4           # trọng số ChordFormer khi trộn họ hợp âm (chỉ dùng khi mix_level="family";
+                                     # "full" bỏ qua ChordFormer và trộn ChordMini với CNN-LSTM như cũ)
+                                     # ChordMini nhận 1 - cnn_weight - cf_weight
+    quality_source: str = "cnnlstm"  # model trộn với ChordMini cho loại hợp âm trong họ: "cnnlstm" | "chordformer"
+    bass_model: str = "both"         # bass_probs lấy từ "cnnlstm" | "chordformer" | "both" (trung bình hai model)
 
 
 DEFAULT_PARAMS = FusionParams()
+
+
+def uses_chordformer(p: FusionParams) -> bool:
+    """Bộ tham số có cần đầu ra của ChordFormer không (pipeline chỉ chạy model này khi cần)."""
+    if p.mix_level == "family" and (p.cf_weight > 0 or (p.quality_source == "chordformer" and p.quality_weight > 0)):
+        return True
+    return p.bass_model != "cnnlstm" and p.bass_source in ("cnn", "both")
 
 
 def fuse(
@@ -88,13 +100,14 @@ def fuse(
         return fill_gaps(base.segments, duration)
 
     times = frame_grid(duration)
-    probs, vocab = chord_probs(models, times, p.cnn_weight, p.mix_level, p.quality_weight)
+    if p.mix_level == "family" and (p.cf_weight > 0 or p.quality_source != "cnnlstm"):
+        probs, vocab = chord_probs_multi(models, times, p)
+    else:
+        probs, vocab = chord_probs(models, times, p.cnn_weight, p.mix_level, p.quality_weight)
     stem_chroma = None
     if bass_audio is not None and p.bass_source in ("stem", "both"):
         stem_chroma = resample_probs(*bass_chroma(Path(bass_audio)), times)
-    cnn_bass = None
-    if "cnnlstm" in models and "bass_probs" in models["cnnlstm"].extras and p.bass_source in ("cnn", "both"):
-        cnn_bass = cnnlstm_bass(models["cnnlstm"], times)
+    cnn_bass = model_bass(models, times, p.bass_model) if p.bass_source in ("cnn", "both") else None
     return fuse_probs(probs, vocab, times, beats, duration, p, cnn_bass=cnn_bass, stem_chroma=stem_chroma)
 
 
@@ -226,6 +239,60 @@ def chord_probs(models: dict[str, ChordModelOutput], times: np.ndarray, cnn_weig
     abstain = cnnlstm_abstain(list(cn.vocabulary), list(cm.vocabulary))
     return (mix_models(p_cm, p_cn, list(cm.vocabulary), cnn_weight, mix_level, quality_weight, abstain),
             list(cm.vocabulary))
+
+
+def chord_probs_multi(models: dict[str, ChordModelOutput], times: np.ndarray, p: FusionParams) -> tuple[np.ndarray, list[str]]:
+    """Trộn họ hợp âm của ChordMini, CNN-LSTM, ChordFormer (trọng số 1 - cnn - cf, cnn, cf; model thiếu thì
+    trọng số chia lại cho các model còn lại), loại hợp âm trong họ trộn ChordMini với `quality_source`.
+    Cách trộn giống `eval.new_models_eval.mix` (nơi chọn tham số)."""
+    if p.mix_level != "family":
+        raise ValueError("cf_weight/quality_source chỉ dùng với mix_level=\"family\"")
+    cm = models.get("chordmini")
+    if cm is None or cm.frame_probs is None:
+        # Không có từ vựng chung của ChordMini: dùng cách trộn hai model cũ với model còn lại.
+        return chord_probs(models, times, p.cnn_weight, p.mix_level, p.quality_weight)
+    vocab = list(cm.vocabulary)
+    p_cm = _normalize(resample_probs(cm.frame_times, cm.frame_probs, times))
+    probs = {"chordmini": p_cm}
+    for k in ("cnnlstm", "chordformer"):
+        m = models.get(k)
+        if m is not None and m.frame_probs is not None:
+            probs[k] = cnnlstm_on_chordmini(m, cm, times, p_cm)
+    w = {"chordmini": 1.0 - p.cnn_weight - p.cf_weight, "cnnlstm": p.cnn_weight, "chordformer": p.cf_weight}
+    w = {k: v for k, v in w.items() if k in probs and v > 0}
+    if not w:
+        w = {"chordmini": 1.0}
+    total = sum(w.values())
+    a = _family_matrix(tuple(vocab))
+    logfam = sum((wk / total) * np.log(probs[k] @ a + EPS) for k, wk in w.items())
+    logfam = logfam - logfam.max(axis=1, keepdims=True)
+    fam = _normalize(np.exp(logfam))
+    within = p_cm / np.maximum((p_cm @ a) @ a.T, 1e-12)
+    q_model = models.get(p.quality_source)
+    if p.quality_weight > 0 and p.quality_source in probs and q_model is not None:
+        p_q = probs[p.quality_source]
+        cov = ~cnnlstm_abstain(list(q_model.vocabulary), vocab)
+        cov_mass = ((p_q * cov) @ a) @ a.T
+        free = 1.0 - ((within * ~cov) @ a) @ a.T
+        within_q = np.where(cov, p_q / np.maximum(cov_mass, 1e-12) * free, within)
+        q = p.quality_weight
+        within = np.exp((1 - q) * np.log(within + EPS) + q * np.log(within_q + EPS))
+        within = within / np.maximum((within @ a) @ a.T, 1e-300)
+    return _normalize(within * (fam @ a.T)), vocab
+
+
+def model_bass(models: dict[str, ChordModelOutput], times: np.ndarray, which: str = "cnnlstm") -> np.ndarray | None:
+    """`bass_probs` (12 nốt, không chuẩn hóa lại) của CNN-LSTM, ChordFormer hoặc trung bình hai model.
+    Model nào thiếu thì dùng model còn lại; không có cả hai thì None."""
+    if which not in ("cnnlstm", "chordformer", "both"):
+        raise ValueError(f"bass_model không hợp lệ: {which!r}")
+    names = ("cnnlstm", "chordformer") if which == "both" else (which,)
+    have = [models[k] for k in names if k in models and "bass_probs" in models[k].extras]
+    if not have:
+        have = [models[k] for k in ("cnnlstm", "chordformer") if k in models and "bass_probs" in models[k].extras]
+    if not have:
+        return None
+    return np.mean([cnnlstm_bass(m, times) for m in have], axis=0)
 
 
 def cnnlstm_abstain(cn_vocab: list[str], cm_vocab: list[str]) -> np.ndarray:
