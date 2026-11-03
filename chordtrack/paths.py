@@ -18,6 +18,7 @@ def _default_root() -> Path:
     if git.is_file():  # worktree: ".git" là file "gitdir: <checkout chính>/.git/worktrees/<tên>"
         try:
             gitdir = Path(git.read_text(encoding="utf-8").split(":", 1)[1].strip())
+            gitdir = (here / gitdir).resolve()   # đường dẫn tương đối (worktree.useRelativePaths) tính từ worktree
             main = gitdir.parents[2]
             if (main / "third_party_src").exists():
                 return main
