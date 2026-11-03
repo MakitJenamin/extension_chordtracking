@@ -18,6 +18,16 @@
 
 ---
 
+<p align="center">
+  <img src="docs/img/chord-bar.png" alt="Thanh hợp âm ChordTrack dưới video YouTube">
+  <br><sub>Thanh hợp âm chạy theo vạch phát: giọng, BPM, nhịp, chế độ 🎹 Phím trắng, hợp âm kèm bậc La Mã</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/song-structure.png" width="520" alt="Khung cấu trúc bài">
+  <br><sub>Cấu trúc bài: từng đoạn, vòng hợp âm, giọng và nút transpose. Bấm vào đoạn để tua tới đó</sub>
+</p>
+
 ## ✨ Có gì
 
 | | |
