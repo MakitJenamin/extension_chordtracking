@@ -19,25 +19,63 @@
 ---
 
 <p align="center">
-  <img src="docs/img/chord-bar.png" alt="Thanh hợp âm ChordTrack dưới video YouTube">
-  <br><sub>Thanh hợp âm chạy theo vạch phát: giọng, BPM, nhịp, chế độ 🎹 Phím trắng, hợp âm kèm bậc La Mã</sub>
-</p>
-
-<p align="center">
-  <img src="docs/img/song-structure.png" width="520" alt="Khung cấu trúc bài">
-  <br><sub>Cấu trúc bài: từng đoạn, vòng hợp âm, giọng và nút transpose. Bấm vào đoạn để tua tới đó</sub>
+  <img src="docs/img/fullscreen.jpg" alt="ChordTrack khi xem toàn màn hình">
+  <br><sub>🖥️ Toàn màn hình: dải hợp âm đè lên video, ngay trên thanh điều khiển, chữ luôn rõ để vừa xem vừa đàn</sub>
 </p>
 
 ## ✨ Có gì
 
-| | |
-|---|---|
-| 🎼 **Hợp âm theo thời gian thực** | Hợp âm đang phát + các hợp âm sắp tới, nhận cả 7, sus, dim và hợp âm đảo |
-| 🥁 **Nhịp** | Vạch phách và metronome khớp với bài |
-| 🗺️ **Cấu trúc bài** | Intro, verse, chorus, vòng hợp âm, giọng theo từng đoạn |
-| 🎹 **Phím trắng** | Tự transpose về giọng dễ đánh nhất cho người chơi piano |
-| 🖥️ **Toàn màn hình** | Hợp âm vẫn hiện khi xem fullscreen |
-| 🔒 **Riêng tư** | Không gửi dữ liệu đi đâu |
+<table>
+<tr>
+<td align="center" width="33%">🎼<br><b>Hợp âm thời gian thực</b><br><sub>Nhận cả 7, sus, dim và hợp âm đảo</sub></td>
+<td align="center" width="33%">🥁<br><b>Nhịp</b><br><sub>Vạch phách, BPM, metronome khớp bài</sub></td>
+<td align="center" width="33%">🗺️<br><b>Cấu trúc bài</b><br><sub>Từng đoạn, vòng hợp âm, giọng</sub></td>
+</tr>
+<tr>
+<td align="center">🎹<br><b>Phím trắng</b><br><sub>Tự transpose cho người chơi piano</sub></td>
+<td align="center">🖥️<br><b>Toàn màn hình &amp; rạp phim</b><br><sub>Hợp âm hiện ở mọi chế độ xem</sub></td>
+<td align="center">🔒<br><b>Riêng tư</b><br><sub>AI chạy trên máy, không gửi gì đi</sub></td>
+</tr>
+</table>
+
+## 📸 Giao diện
+
+### Ba cách đọc hợp âm
+
+**🎹 Phím trắng** (mặc định): đổi hợp âm về giọng chỉ dùng phím trắng, kèm số nút transpose cần bấm trên đàn. Thanh vàng đếm ngược trước chỗ đổi giọng.
+
+<img src="docs/img/chord-bar.png" alt="Chế độ Phím trắng">
+
+**Gốc**: hợp âm đúng như bản thu, nút Tông −/+ để dịch giọng tự do.
+
+<img src="docs/img/mode-goc.png" alt="Chế độ Gốc">
+
+**Bậc La Mã**: hợp âm theo bậc trong giọng (I, IV, V, vi…), hợp để học vòng hợp âm và chơi ở giọng bất kỳ.
+
+<img src="docs/img/mode-la-ma.png" alt="Chế độ Bậc La Mã">
+
+> Vạch đỏ là chỗ đang phát · vạch vàng đứt là chỗ đổi giọng · ⚠ là hợp âm model chưa chắc · bấm vào hợp âm để tua tới đó.
+
+### Cấu trúc bài
+
+<table>
+<tr>
+<td width="45%"><img src="docs/img/song-structure.png" alt="Cấu trúc bài ở cột phải"></td>
+<td>
+
+Cột phải liệt kê **từng đoạn** của bài: vòng hợp âm, bậc La Mã, giọng và nút transpose.
+
+🎨 Cùng màu là cùng một đoạn nhạc lặp lại.
+
+⏩ Bấm vào đoạn để tua tới đó.
+
+🎬 Ở **chế độ rạp phim**, các đoạn xếp ngang ngay dưới dải hợp âm (ảnh dưới).
+
+</td>
+</tr>
+</table>
+
+<img src="docs/img/theater.png" alt="Chế độ rạp phim: dải hợp âm và cấu trúc bài dưới video">
 
 ## 🚀 Cài đặt (Windows)
 
