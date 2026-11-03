@@ -148,7 +148,7 @@
       this.slot = h("div", { class: "ct-strip-slot" });
       this.fsNote = h("div", { class: "ct-fs-note", text: "Dải hợp âm đang hiện trên video (toàn màn hình)." });
       const check = (key, text, tip) => h("label", { title: tip },
-        h("input", { type: "checkbox", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), " " + text);
+        h("input", { type: "checkbox", role: "switch", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), text);
       this.opts = h("div", { class: "ct-controls" },
         this.seg, this.stepper, h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
