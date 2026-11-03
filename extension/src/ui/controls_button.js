@@ -39,11 +39,8 @@
       this.el.type = "button";
       this.el.dataset.state = "off";
       this.el.append(icon, ringSvg, dot);
-      this.el.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        CT.app && CT.app.toggle();
-      });
+      // Không chặn sự kiện: player của YouTube vẫn thấy cú bấm (giữ thanh điều khiển hiện).
+      this.el.addEventListener("click", () => { CT.app && CT.app.toggle(); });
       // Không để YouTube coi phím Space/Enter trên nút là phím tắt của player.
       this.el.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") e.stopPropagation(); });
       this.el.addEventListener("mouseenter", () => this.showTip());
@@ -76,6 +73,8 @@
     place() {
       this.timer = 0;
       if (!this.mounted) return;
+      // Bản content script cũ sau khi extension nạp lại: tự gỡ, nhường chỗ cho bản mới (không giành nhau).
+      if (!globalThis.chrome?.runtime?.id) { this.unmount(); return; }
       const a = this.anchor();
       if (!a) return;
       // Không chèn trùng: xóa nút ChordTrack lạ (ví dụ của bản extension cũ trước khi nạp lại).
@@ -91,17 +90,29 @@
       this.mounted = true;
       this.place();
       if (!this.mo) {
-        // Rẻ: chỉ đặt lại khi nút hoặc tooltip bị YouTube gỡ khỏi thanh điều khiển.
-        this.mo = new MutationObserver(() => {
-          if (!this.el.isConnected || !this.tip.isConnected || !this.el.closest("#movie_player .ytp-right-controls")) this.schedule();
-        });
-        this.mo.observe(document.body, { childList: true, subtree: true });
+        // Chỉ theo dõi trong #movie_player; content.js gọi ensure() mỗi giây phòng khi YouTube thay cả player.
+        this.mo = new MutationObserver(() => { if (!this.placed()) this.schedule(); });
       }
+      this.observe();
+    },
+    placed() { return this.el.isConnected && this.tip.isConnected && !!this.el.closest("#movie_player .ytp-right-controls"); },
+    observe() {
+      const p = CT.sync.findPlayer();
+      if (!this.mo || !p || p === this.observed) return;
+      this.mo.disconnect();
+      this.observed = p;
+      this.mo.observe(p, { childList: true, subtree: true });
+    },
+    ensure() {
+      if (!this.mounted) return;
+      this.observe();
+      if (!this.placed()) this.schedule();
     },
     unmount() {
       this.mounted = false;
       this.mo?.disconnect();
       this.mo = null;
+      this.observed = null;
       clearTimeout(this.timer);
       this.timer = 0;
       this.el?.remove();
@@ -113,6 +124,7 @@
       if (!this.el) return;
       const view = st.status === "error" ? "error" : st.status === "loading" ? "loading" : st.visible ? "on" : "off";
       this.el.dataset.state = view;
+      this.el.classList.toggle("ct-ctl-down", !!st.serverDown && view === "off");
       this.el.classList.toggle("ct-ctl-cached", !!st.cached && !st.visible && view === "off");
       this.el.classList.toggle("ct-ctl-hidden-run", view === "loading" && !st.visible);
       const pct = Math.max(4, Math.min(100, Math.round((st.progress || 0) * 100)));
@@ -120,6 +132,7 @@
       let text;
       if (view === "loading") text = `ChordTrack: đang phân tích ${Math.round((st.progress || 0) * 100)}%` + (st.visible ? " (bấm để ẩn)" : " (bấm để xem)");
       else if (view === "error") text = st.visible ? "ChordTrack: lỗi, bấm để ẩn" : "ChordTrack: lỗi, bấm để thử lại";
+      else if (st.serverDown) text = "ChordTrack: chưa kết nối được server";
       else if (view === "on") text = "ChordTrack: ẩn hợp âm";
       else text = st.cached ? "ChordTrack: hiện hợp âm (đã có kết quả)" : "ChordTrack: hiện hợp âm";
       this.el.setAttribute("aria-label", text + " (Alt+Shift+C)");

@@ -23,14 +23,15 @@
   const active = new Set();
   try { for (const id of JSON.parse(sessionStorage.getItem(SESSION_KEY) || "[]")) active.add(id); } catch { /* bỏ qua */ }
   function remember(id, on) {
-    if (on) active.add(id); else active.delete(id);
+    active.delete(id);      // xóa rồi thêm: đưa video vừa bật về cuối (cắt danh sách theo lần dùng gần nhất)
+    if (on) active.add(id);
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify([...active].slice(-200))); } catch { /* bỏ qua */ }
   }
 
   function notify() {
     const c = cur;
     CT.bus.emit("app", c ? { videoId: c.id, visible: c.visible, status: c.status, cached: !!c.cached,
-      progress: c.job ? c.job.progress || 0 : 0 } : { videoId: null, visible: false, status: "off", cached: false, progress: 0 });
+      serverDown: !!c.serverDown, progress: c.job ? c.job.progress || 0 : 0 } : { videoId: null, visible: false, status: "off", cached: false, progress: 0 });
   }
 
   function stopRetry() { clearTimeout(retryTimer); retryTimer = 0; }
@@ -71,6 +72,7 @@
       c.status = "ready";
       c.result = result;
       c.cached = true;
+      c.serverDown = false;
       emitSong(c);
       if (c === cur) notify();
     } catch (e) {
@@ -108,7 +110,11 @@
     c.userHid = true;
     remember(c.id, false);
     stopRetry();
-    if (c.status === "error") c.status = "off";   // bấm lại thì thử lại từ đầu
+    if (c.status === "error") {        // bấm lại thì thử lại từ đầu; bỏ lần tự thử lại đang chạy
+      c.ctrl?.abort();
+      c.ctrl = null;
+      c.status = "off";
+    }
     CT.state.result = null;
     CT.bus.emit("song:none", {});
     CT.sync.detach();
@@ -120,6 +126,16 @@
   async function probe(c) {
     const res = await CT.api.request(`/result/${encodeURIComponent(c.id)}`);
     if (cur !== c) return;
+    // Server tắt: nút báo "chưa kết nối được server", hỏi lại mỗi 5 giây (chỉ khi tab đang hiện).
+    c.serverDown = res.status === 0 && res.error !== "extension_reloaded";
+    clearTimeout(c.probeTimer);
+    if (c.serverDown) {
+      c.probeTimer = setTimeout(function again() {
+        if (cur !== c) return;
+        if (document.hidden) { c.probeTimer = setTimeout(again, RETRY_MS); return; }
+        probe(c);
+      }, RETRY_MS);
+    }
     if (res.ok && res.data && !res.stale) {
       c.cached = true;
       if (c.status === "off") { c.status = "ready"; c.result = res.data; }
@@ -138,6 +154,7 @@
     const c = cur;
     if (!c) return;
     c.ctrl?.abort();      // chỉ ngừng theo dõi; job trên server vẫn chạy và lưu cache
+    clearTimeout(c.probeTimer);
     stopRetry();
     cur = null;
     if (c.visible) {
@@ -150,7 +167,7 @@
 
   function check() {
     const id = CT.settings.enabled ? CT.sync.videoIdFromUrl(location.href) : null;
-    if (id === (cur && cur.id)) return;
+    if (id === (cur && cur.id)) { if (id) CT.ui.ctlButton.ensure(); return; }
     leave();
     CT.state.videoId = id;
     CT.state.result = null;
@@ -175,7 +192,11 @@
   }
 
   CT.app = {
-    reload(force = false) { if (cur) { cur.visible ? load(cur, force) : show(cur, { user: true }); } },
+    reload(force = false) {
+      if (!cur) return;
+      if (!cur.visible) { show(cur, { user: true }); if (force) load(cur, true); return; }   // show() tự tải khi cần
+      load(cur, force);
+    },
     toggle,
     check,
   };

@@ -279,8 +279,10 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 
 /* ---------------- Nút trên thanh điều khiển player (controls_button.js) ----------------
  * Kế thừa .ytp-button của YouTube (kích thước, hover, focus). Chỉ thêm icon, vòng tiến độ, chấm trạng thái. */
-.ct-ctl-btn { position: relative; display: inline-flex !important; align-items: center; justify-content: center; color: #fff; }
-.ct-ctl-btn .ct-ctl-icon { width: 24px; height: 24px; display: block; transition: color .15s, transform .15s; }
+/* Không đặt display: để YouTube tự ẩn nút khi player hẹp như các nút khác. Icon căn giữa tuyệt đối. */
+.ct-ctl-btn { position: relative; color: #fff; }
+.ct-ctl-btn .ct-ctl-icon { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px;
+  transition: color .15s, transform .15s; }
 .ct-ctl-btn[data-state="on"] { color: var(--yt-spec-call-to-action, #3ea6ff); }
 .ct-ctl-btn[data-state="on"] .ct-ctl-icon { filter: drop-shadow(0 0 4px rgba(62, 166, 255, .55)); }
 .ct-ctl-btn[data-state="loading"] .ct-ctl-icon { transform: scale(.78); }
@@ -294,7 +296,7 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-ctl-dot { position: absolute; top: 8px; right: 11px; width: 7px; height: 7px; border-radius: 50%;
   background: var(--yt-spec-call-to-action, #3ea6ff); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .6); display: none; pointer-events: none; }
 .ct-ctl-btn.ct-ctl-cached .ct-ctl-dot { display: block; }
-.ct-ctl-btn[data-state="error"] .ct-ctl-dot { display: block; background: #f03; }
+.ct-ctl-btn[data-state="error"] .ct-ctl-dot, .ct-ctl-btn.ct-ctl-down .ct-ctl-dot { display: block; background: #f03; }
 /* Tooltip giống tooltip của YouTube: chữ 13px, nền tối mờ, bo 8px, đặt trên thanh điều khiển. */
 .ct-ctl-tip { position: absolute; z-index: 1002; pointer-events: none; white-space: nowrap;
   display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 8px;
