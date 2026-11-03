@@ -124,6 +124,9 @@
         h("button", { type: "button", class: "ct-btn ct-sq", title: `Nâng nửa cung (${sc("ArrowUp")})`, onclick: () => stepTranspose(1) }, "+"));
       this.collapseBtn = h("button", { type: "button", class: "ct-btn ct-icon", onclick: () => CT.setSettings({ panelCollapsed: !CT.settings.panelCollapsed }) });
       this.miniEl = h("span", { class: "ct-mini" });
+      this.redoBtn = h("button", { type: "button", class: "ct-btn ct-icon ct-redo-btn",
+        title: "Phân tích lại bài này (bỏ kết quả đã lưu, mất khoảng 5–20 giây)",
+        onclick: () => CT.app && CT.app.reload(true) }, "↻");
       this.helpBtn = h("button", { type: "button", class: "ct-btn ct-icon ct-help-btn", title: "Chú thích và phím tắt",
         "aria-expanded": "false", onclick: () => this.toggleHelp() }, "?");
 
@@ -134,7 +137,7 @@
         this.tempoEl, this.meterEl, this.dots.el, this.soonEl,
         h("span", { class: "ct-grow" }),
         h("span", { class: "ct-metro" }, this.metroBtn, this.volEl),
-        this.helpBtn, this.collapseBtn);
+        this.redoBtn, this.helpBtn, this.collapseBtn);
 
       this.tval = h("span", { class: "ct-tval" });
       this.tkey = h("span", { class: "ct-tkey" });
@@ -150,8 +153,8 @@
         this.seg, this.stepper, h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
-          check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C")));
-      // Khớp phách luôn bật theo yêu cầu người dùng (không còn ô tắt).
+          check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
+          check("snapToBeats", "Khớp phách", "Kéo đầu/cuối hợp âm về phách gần nhất (mặc định bật). Model nhận hợp âm theo khung ~0,09 s nên mép ô hay lệch vạch phách")));
       // Chú thích và phím tắt: gom vào nút "?" (trước đây là một dòng chữ dài dưới dải).
       const item = (sw, text) => h("li", {}, h("span", { class: "ct-sw " + sw }), text);
       this.help = h("div", { class: "ct-help", hidden: true },
@@ -423,6 +426,14 @@
   Object.assign(CT.ui, { panel, layout, BeatDots, info, soonText, labelSig, shortcuts: SHORTCUTS, lastTime: null, fullscreenOn: false });
 
   CT.bus.on("settings", (s) => panel.applySettings(s));
+  // Bật/tắt "Khớp phách": dựng lại bài từ kết quả đang có (dải, panel, toàn màn hình).
+  let lastSnap = CT.settings.snapToBeats !== false;
+  CT.bus.on("settings", (st) => {
+    const snap = st.snapToBeats !== false;
+    if (snap === lastSnap) return;
+    lastSnap = snap;
+    if (CT.ui.song && CT.state.result) CT.bus.emit("song:ready", { videoId: CT.state.videoId, result: CT.state.result });
+  });
   CT.bus.on("time", (p) => { CT.ui.lastTime = p; panel.onTime(p); });
   // CT.ui.song chỉ là bài của video hiện tại: xóa ngay khi bắt đầu tải hoặc lỗi (fullscreen.js, sections.js đọc nó).
   CT.bus.on("song:loading", ({ job }) => { CT.ui.song = null; if (panel.el) panel.showLoading(job || {}); });
@@ -430,7 +441,7 @@
   CT.bus.on("song:ready", ({ result }) => {
     if (!panel.el) return;
     try {
-      CT.ui.song = T().buildSong(result, { snapToBeats: true });   // khớp phách luôn bật
+      CT.ui.song = T().buildSong(result, { snapToBeats: CT.settings.snapToBeats !== false });
       panel.setSong(CT.ui.song);
     } catch (e) {
       CT.ui.song = null;
