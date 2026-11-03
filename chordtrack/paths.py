@@ -1,14 +1,32 @@
 """Đường dẫn tới tài nguyên dùng chung, không nằm trong git.
 
-Các thư mục này chỉ có ở checkout chính, không có trong worktree, nên mặc định trỏ vào
-checkout chính. Đổi được bằng biến môi trường.
+Mặc định là thư mục gốc của repo (nơi clone về). Trong git worktree (không có `third_party_src`) thì trỏ vào
+checkout chính, vì weights và dữ liệu chỉ nằm ở đó. Đổi được bằng biến môi trường `CHORDTRACK_ROOT`,
+`CHORDTRACK_THIRD_PARTY`, `CHORDTRACK_DATA`.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-MAIN_ROOT = Path(os.environ.get("CHORDTRACK_ROOT", r"C:\Users\MakitJenamin\Documents\extension_chordtracking"))
+
+def _default_root() -> Path:
+    here = Path(__file__).resolve().parents[1]
+    if (here / "third_party_src").exists():
+        return here
+    git = here / ".git"
+    if git.is_file():  # worktree: ".git" là file "gitdir: <checkout chính>/.git/worktrees/<tên>"
+        try:
+            gitdir = Path(git.read_text(encoding="utf-8").split(":", 1)[1].strip())
+            main = gitdir.parents[2]
+            if (main / "third_party_src").exists():
+                return main
+        except (OSError, IndexError):
+            pass
+    return here
+
+
+MAIN_ROOT = Path(os.environ.get("CHORDTRACK_ROOT") or _default_root())
 
 THIRD_PARTY = Path(os.environ.get("CHORDTRACK_THIRD_PARTY", MAIN_ROOT / "third_party_src"))
 CHORDMINI_DIR = THIRD_PARTY / "ChordMini"

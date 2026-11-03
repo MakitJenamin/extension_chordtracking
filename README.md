@@ -1,17 +1,61 @@
-# extension_chordtracking
+# ChordTrack — hợp âm chạy theo video YouTube
 
-Chrome extension hiện hợp âm chạy theo video YouTube. Phần phân tích AI (bắt nhịp, nhận diện hợp âm và hợp âm đảo, giọng theo vùng, chia đoạn, vòng hợp âm) chạy hoàn toàn local trên GPU. Tách giọng và tách bass vẫn có nhưng tắt mặc định (`--separation`).
+Chrome extension hiện hợp âm chạy theo video YouTube, kiểu karaoke: hợp âm đang phát, vài hợp âm tiếp theo, vạch
+phách, metronome, cấu trúc bài (intro, verse, chorus) và vòng hợp âm, chế độ 🎹 Phím trắng cho người chơi piano
+(tự transpose theo vùng giọng), toàn màn hình. Phần phân tích AI (bắt nhịp, nhận hợp âm kể cả hợp âm 7, sus, dim và
+hợp âm đảo, giọng theo vùng) chạy **hoàn toàn trên máy bạn**, không gửi dữ liệu đi đâu.
 
-Trạng thái: **bản đầu tiên dùng được.** Kế hoạch, quyết định và số đo chất lượng: [PLAN.md](PLAN.md).
+*A Chrome extension that shows chords in sync with YouTube videos. All analysis (beats, chords incl. inversions,
+key regions, song sections) runs locally on your machine. Windows setup: see "Cài đặt" below — three commands.*
 
-## Dùng nhanh
+Kế hoạch, các quyết định và số đo chất lượng: [PLAN.md](PLAN.md). Hướng dẫn các nút trong extension:
+[extension/README.md](extension/README.md).
 
-1. Bật backend chạy nền (mỗi lần mở máy):
+> ⚠️ **Chỉ dùng cho mục đích cá nhân, học tập.** Server tải audio YouTube bằng [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+> để phân tích, việc này có thể trái [Điều khoản dịch vụ của YouTube](https://www.youtube.com/t/terms). Bạn tự chịu
+> trách nhiệm khi dùng. Audio tải về chỉ nằm trên máy bạn (`data/`), không được chia sẻ.
+>
+> *Personal and educational use only. The local server downloads YouTube audio with yt-dlp, which may violate
+> YouTube's Terms of Service. You are responsible for how you use it.*
+
+## Cài đặt (Windows)
+
+**Yêu cầu:** Windows 10/11, Google Chrome, khoảng 10 GB trống. Nên có GPU NVIDIA (khoảng 1 GB VRAM là đủ):
+mỗi bài mất 10–20 giây. Không có GPU vẫn chạy được trên CPU, chậm hơn. Script tự cài Python 3.11, git, ffmpeg và
+Deno bằng `winget` nếu máy chưa có.
+
+```powershell
+git clone https://github.com/MakitJenamin/extension_chordtracking.git
+cd extension_chordtracking
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
+`setup.ps1` tạo `.venv`, cài PyTorch (bản CUDA nếu có GPU NVIDIA, không thì bản CPU) và các thư viện, tải mã và
+weights các model hợp âm đúng phiên bản đã kiểm chứng (kiểm tra SHA-256, xem [THIRD_PARTY.md](THIRD_PARTY.md)),
+rồi chạy thử. Lần đầu mất khoảng 10–20 phút tùy mạng. Chạy lại nhiều lần không sao. Tùy chọn: `-Cpu` (ép bản CPU),
+`-Full` (thêm tách nguồn và công cụ đánh giá), `-NoTools` (không tự cài ffmpeg, Deno).
+
+## Dùng
+
+1. **Bật server** chạy nền (mỗi lần mở máy):
    `powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background`
-2. Nạp extension một lần: `chrome://extensions` → bật Developer mode → Load unpacked → chọn thư mục `extension/`.
-3. Mở video YouTube bất kỳ. Bài mới mất khoảng 10–20 giây để phân tích, lần sau hiện ngay.
+2. **Nạp extension** một lần: mở `chrome://extensions` → bật **Developer mode** → **Load unpacked** → chọn thư mục
+   `extension` trong repo.
+3. Mở một video YouTube, bấm nút ChordTrack trên thanh điều khiển của player (hoặc Alt+Shift+C). Bài mới mất
+   10–20 giây để phân tích, lần sau hiện ngay.
 
-Hướng dẫn chi tiết các nút, chế độ 🎹 Phím trắng, metronome và toàn màn hình: [extension/README.md](extension/README.md).
+**YouTube đòi xác minh "not a bot"?** Xuất cookie YouTube của trình duyệt đã đăng nhập ra file `cookies.txt`
+(định dạng Netscape, ví dụ bằng extension "Get cookies.txt LOCALLY"), rồi chạy server với
+`-Cookies C:\duong\dan\cookies.txt`. Chi tiết ở mục dưới.
+
+**Cập nhật:** `git pull` rồi chạy lại `scripts\setup.ps1`, bấm nút tải lại extension ở `chrome://extensions`.
+
+**Gỡ:** xóa extension ở `chrome://extensions` và xóa thư mục repo (mọi thứ, kể cả model và audio đã tải, nằm trong đó).
+
+## License
+
+Mã của dự án: [MIT](LICENSE). Các model hợp âm, bắt nhịp là của tác giả gốc, mỗi model một license riêng, xem
+[THIRD_PARTY.md](THIRD_PARTY.md). ⚠️ ChordFormer không có license; THIRD_PARTY.md hướng dẫn cách tắt nó.
 
 ## Chạy backend local
 

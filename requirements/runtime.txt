@@ -1,0 +1,7 @@
+# Thư viện để CHẠY extension + server (không gồm tách nguồn và đánh giá). Dùng bởi scripts/setup.ps1.
+# PyTorch cài riêng trước (bản CUDA hoặc CPU), xem setup.ps1.
+-r base.txt
+-r chords.txt
+-r beats.txt
+-r server.txt
+yt-dlp-ejs==0.8.0   # yt-dlp cần để giải mã chữ ký YouTube (kèm Deno)

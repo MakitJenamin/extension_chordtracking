@@ -6,8 +6,8 @@
   Nạp lại PATH của máy và user (để thấy ffmpeg, deno vừa cài bằng winget mà không cần mở
   shell mới), kích hoạt venv rồi chạy `python -m chordtrack.server`.
 
-  Venv tìm theo thứ tự: biến môi trường CHORDTRACK_VENV, `.venv` ở thư mục repo, rồi venv
-  của checkout chính (C:\Users\MakitJenamin\Documents\extension_chordtracking\.venv).
+  Venv tìm theo thứ tự: biến môi trường CHORDTRACK_VENV, `.venv` ở thư mục repo, rồi `.venv` của
+  checkout chính (khi chạy từ git worktree). Chưa có venv thì chạy scripts\setup.ps1 trước.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1
@@ -34,10 +34,14 @@ $env:Path = (@($machinePath, $userPath, $env:Path) | Where-Object { $_ }) -join 
 $candidates = @()
 if ($env:CHORDTRACK_VENV) { $candidates += $env:CHORDTRACK_VENV }
 $candidates += (Join-Path $RepoRoot ".venv")
-$candidates += "C:\Users\MakitJenamin\Documents\extension_chordtracking\.venv"
+# Git worktree: venv của checkout chính (thư mục cha của `git rev-parse --git-common-dir`).
+try {
+    $common = (& git -C $RepoRoot rev-parse --path-format=absolute --git-common-dir 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $common) { $candidates += (Join-Path (Split-Path -Parent $common) ".venv") }
+} catch { }
 $Venv = $candidates | Where-Object { Test-Path (Join-Path $_ "Scripts\python.exe") } | Select-Object -First 1
 if (-not $Venv) {
-    Write-Error "Không tìm thấy venv. Đặt CHORDTRACK_VENV=<thư mục venv> hoặc tạo .venv ở $RepoRoot."
+    Write-Error "Không tìm thấy venv. Chạy scripts\setup.ps1 trước, hoặc đặt CHORDTRACK_VENV=<thư mục venv>."
 }
 $Activate = Join-Path $Venv "Scripts\Activate.ps1"
 if (Test-Path $Activate) { . $Activate }
