@@ -51,7 +51,6 @@ html[dark] .ct-root {
 /* Bộ icon riêng (src/ui/icons.js). Logo: nốt theo màu chữ, vạch đang phát màu đỏ như vạch đỏ trên dải. */
 .ct-ic { flex: none; display: block; }
 .ct-ic-logo .ct-ic-head { fill: var(--ct-red, #f03); }
-.ct-brand .ct-ic-notes { opacity: 0.85; }
 .ct-ic-pend { transform-box: view-box; transform-origin: 12px 16.6px; }
 .ct-btn:has(> .ct-ic), .ct-seg button:has(> .ct-ic) { display: inline-flex; align-items: center; gap: 7px; }
 .ct-btn:has(> .ct-ic) { padding-left: 10px; }
@@ -320,16 +319,16 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
  * (trên YouTube thật, đặt icon tuyệt đối làm nó lệch 12/8 px so với icon của YouTube). */
 .ct-ctl-btn { position: relative; color: #fff; }
 .ct-ctl-btn .ct-ctl-icon { transition: color .15s, transform .15s; }
-.ct-ctl-btn[data-state="on"] { color: var(--yt-spec-call-to-action, #3ea6ff); }
+.ct-ctl-btn[data-state="on"] { color: #ff4081; }
 .ct-ctl-btn .ct-ic-head { fill: #f03; }
-.ct-ctl-btn[data-state="on"] .ct-ctl-icon { filter: drop-shadow(0 0 4px rgba(62, 166, 255, .55)); }
+.ct-ctl-btn[data-state="on"] .ct-ctl-icon { filter: drop-shadow(0 0 4px rgba(255, 64, 129, .55)); }
 .ct-ctl-btn[data-state="loading"] .ct-ctl-icon { transform: scale(.78); }
 /* .ytp-button svg của YouTube có padding 8px 12px (cách nó căn icon 24 px giữa nút 48×40): vòng phải bỏ padding đó. */
 .ytp-button.ct-ctl-btn .ct-ctl-ringsvg { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; padding: 0 !important; box-sizing: content-box;
   transform: rotate(-90deg); pointer-events: none; display: none; }
 .ytp-button.ct-ctl-btn[data-state="loading"] .ct-ctl-ringsvg { display: block; }
 .ct-ctl-track { fill: none; stroke: rgba(255, 255, 255, .25); stroke-width: 2.5; }
-.ct-ctl-ring { fill: none; stroke: var(--yt-spec-call-to-action, #3ea6ff); stroke-width: 2.5; stroke-linecap: round;
+.ct-ctl-ring { fill: none; stroke: #ff4081; stroke-width: 2.5; stroke-linecap: round;
   stroke-dasharray: 4 100; transition: stroke-dasharray .4s; }
 .ct-ctl-btn.ct-ctl-hidden-run .ct-ctl-ring { stroke: #fff; }
 .ct-ctl-dot { position: absolute; top: 8px; right: 11px; width: 7px; height: 7px; border-radius: 50%;
