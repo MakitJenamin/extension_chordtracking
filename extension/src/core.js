@@ -53,6 +53,7 @@
     pxPerSecond: 46,          // độ "zoom" của dải hợp âm
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
+    settingsRev: 2,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
   };
@@ -68,6 +69,11 @@
       try {
         const s = await chrome.storage.sync.get("settings");
         CT.settings = { ...DEFAULTS, ...(s.settings || {}) };
+        // Một lần (settingsRev < 2): bật lại "Khớp phách" cho người đã lỡ tắt, theo yêu cầu mặc định ON.
+        if ((CT.settings.settingsRev || 0) < 2) {
+          CT.settings = { ...CT.settings, snapToBeats: true, settingsRev: 2 };
+          try { await chrome.storage.sync.set({ settings: CT.settings }); } catch {}
+        }
       } catch { CT.settings = { ...DEFAULTS }; }
       bus.emit("settings", CT.settings);
     },

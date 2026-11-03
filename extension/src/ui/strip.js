@@ -28,6 +28,7 @@
       this.scale = Strip.BASE_SCALE;
       this.width = 0;
       this.idx = -1;
+      this.stuckIdx = -1;
       this.t = 0;
       this.chordEls = [];
       this.modEls = [];
@@ -187,6 +188,30 @@
       const j = this.indexAt(t);
       if (j !== this.idx || force) this.setCurrent(j);
       this.progress(t);
+      this.stickLabel(x);
+    }
+
+    /** Hợp âm dài hơn bề rộng nhìn thấy (ví dụ Cm giữ 25 s): nhãn nằm ở mép trái ô sẽ trôi khỏi khung,
+     * để lại một ô trống. Đẩy nhãn của ô đang cắt mép trái khung sang phải để luôn đọc được,
+     * nhưng không vượt quá mép phải của chính ô đó. */
+    stickLabel(x) {
+      const ch = this.song.chords;
+      const viewLeft = -x;                               // mép trái khung, theo tọa độ track (px)
+      const k = T().lastLE(ch, viewLeft / this.px, (c) => c.start);
+      if (k !== this.stuckIdx && this.stuckIdx >= 0 && this.chordEls[this.stuckIdx]) {
+        this.chordEls[this.stuckIdx].firstChild.style.transform = "";
+      }
+      this.stuckIdx = k;
+      if (k < 0) return;
+      const e = this.chordEls[k];
+      const c = ch[k];
+      const lbl = e && e.firstChild;
+      if (!lbl) return;
+      const left = c.start * this.px;
+      const room = (c.end - c.start) * this.px - (lbl.offsetWidth || 0) - 16;
+      const shift = Math.max(0, Math.min(viewLeft - left, room));
+      const v = shift > 0 ? `translateX(${Math.round(shift)}px)` : "";
+      if (lbl.style.transform !== v) lbl.style.transform = v;
     }
 
     /** Tiến độ trong hợp âm hiện tại (0–1): thanh đỏ mảnh ở đáy ô hiện tại. */
