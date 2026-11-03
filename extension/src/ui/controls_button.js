@@ -30,13 +30,14 @@
         svg("circle", { class: "ct-ctl-track", cx: 17, cy: 17, r: RING_R }), this.ring);
       const icon = CT.icons.logo(24);
       icon.classList.add("ct-ctl-icon");
-      const dot = document.createElement("span");
-      dot.className = "ct-ctl-dot";
+      // Chấm trạng thái (có kết quả sẵn / lỗi) vẽ trong chính icon, ở góc trên phải bàn phím, nên luôn bám icon
+      // dù YouTube co giãn nút thế nào.
+      icon.append(svg("circle", { class: "ct-ctl-dot", cx: 20.9, cy: 4, r: 2.4 }));
       this.el = document.createElement("button");
       this.el.className = "ytp-button ct-ctl-btn";
       this.el.type = "button";
       this.el.dataset.state = "off";
-      this.el.append(icon, ringSvg, dot);
+      this.el.append(icon, ringSvg);
       // Không chặn sự kiện: player của YouTube vẫn thấy cú bấm (giữ thanh điều khiển hiện).
       this.el.addEventListener("click", () => { CT.app && CT.app.toggle(); });
       // Không để YouTube coi phím Space/Enter trên nút là phím tắt của player.
