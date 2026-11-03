@@ -187,7 +187,10 @@ def load_data() -> list[dict]:
     b_align = {r["name"]: r for r in json.loads(D.REPORT_PATH.read_text(encoding="utf-8"))}
     k_report = K.read_report()
     changes_path = BEATS_DIR / "chord_changes.json"
-    changes = json.loads(changes_path.read_text(encoding="utf-8")) if changes_path.exists() else {}
+    # Cache có khóa theo FusionParams: đổi tham số fuse thì tính lại chỗ đổi hợp âm.
+    params_key = json.dumps(asdict(F.DEFAULT_PARAMS), sort_keys=True)
+    stored = json.loads(changes_path.read_text(encoding="utf-8")) if changes_path.exists() else {}
+    changes = stored.get("changes", {}) if stored.get("params") == params_key else {}
     dirty = False
     out = []
     for ds, name, _fp, _mix in _songs():
@@ -220,7 +223,7 @@ def load_data() -> list[dict]:
                 item["ref"] = {"changes": np.asarray(chord_changes(lab_to_segments(lab)))}
         out.append(item)
     if dirty:
-        changes_path.write_text(json.dumps(changes), encoding="utf-8")
+        changes_path.write_text(json.dumps({"params": params_key, "changes": changes}), encoding="utf-8")
     return out
 
 

@@ -348,11 +348,11 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   - `clean_beats`: bỏ phách tạo khoảng < 0,65 lần khoảng phách cục bộ nếu hai phách kề cách nhau khoảng 1 phách,
     dời về giữa nếu cách khoảng 2 phách. Không thêm phách vào chỗ trống.
   - `refine_downbeats`: Viterbi trên (số chỉ nhịp 2/3/4, vị trí trong ô); quan sát là log xác suất phách mạnh của
-    beat_this cộng điểm chỗ đổi hợp âm ở phách 1 (phách 3 của 4/4 được nửa điểm); cắt ngắn ô bị phạt 4, đổi số chỉ
-    nhịp phạt 20. JSON `meter` lấy từ đây. Cần thêm 2 vì Isophonics ghi 2/4 cho Blackbird, Octopus's Garden, Two of Us.
+    beat_this cộng điểm chỗ đổi hợp âm ở phách 1 (phách 3 của 4/4 được nửa điểm); cắt ngắn hoặc kéo dài ô thêm một
+    phách bị phạt 4, đổi số chỉ nhịp phạt 20. Phách được làm sạch trước khi fuse. JSON `meter` lấy từ đây. Cần thêm 2 vì Isophonics ghi 2/4 cho Blackbird, Octopus's Garden, Two of Us.
   - Beatles (42 bài, nhãn beat Isophonics, căn cục bộ theo phách vì bản YouTube trôi tới vài trăm ms): F phách mạnh
-    93,49 → **94,52**, F phách 98,33 → 98,36, đúng số chỉ nhịp 100% → 100%, ô lệch 8,1% → 2,2%. Kajiura (32 bài,
-    không có nhãn beat): chỗ đổi hợp âm ChordWiki rơi vào phách 1 60,0% → 62,6%, ô lệch 19,3% → 4,1%. Mọi cấu hình
+    93,49 → **94,63**, F phách 98,33 → 98,37, đúng số chỉ nhịp 100% → 100%, ô lệch 8,1% → 2,1%. Kajiura (32 bài,
+    không có nhãn beat): chỗ đổi hợp âm ChordWiki rơi vào phách 1 60,0% → 62,3%, ô lệch 19,3% → 6,6%. Mọi cấu hình
     trong lưới đều nằm trong 93,5–94,7: beat_this vốn đúng phách mạnh trên Beatles, tín hiệu hợp âm chủ yếu giúp Kajiura.
   - ⚠️ Mép hợp âm vẫn có thể rơi vào phách 2 (D ở ô 110, 114 của YAbhqJFPBFk): model hợp âm chạy theo khung, không theo
     phách; extension chỉ kéo mép về phách gần nhất.

@@ -126,43 +126,52 @@ def track_beats(audio_path: Path, max_duration: float | None = None) -> BeatGrid
 
 # ---------------------------------------------------------------- làm sạch phách
 
-def _local_ibi(beats: np.ndarray, i: int, half_window: int = 8) -> float:
-    """Trung vị khoảng phách quanh phách i (± `half_window` khoảng)."""
-    ibi = np.diff(beats)
-    lo, hi = max(0, i - half_window), min(len(ibi), i + half_window)
-    return float(np.median(ibi[lo:hi])) if hi > lo else float(np.median(ibi))
+def _local_ibi(ibi: np.ndarray, j: int, half_window: int = 8) -> float:
+    """Trung vị các khoảng phách quanh khoảng thứ j (± `half_window` khoảng)."""
+    lo, hi = max(0, j - half_window), min(len(ibi), j + half_window + 1)
+    return float(np.median(ibi[lo:hi]))
 
 
 def clean_beats(beats: np.ndarray, short: float = 0.65, tol: float = 0.25) -> np.ndarray:
     """Sửa lỗi beat_this hay gặp ở đoạn có nhiều nốt móc đơn: chèn thêm phách lẻ giữa hai phách.
 
-    Với L là khoảng phách cục bộ (trung vị), phách i tạo khoảng ngắn (< `short` × L) với phách trước:
-    - nếu bỏ nó thì phách trước và sau cách nhau khoảng L (sai số `tol`): bỏ phách i (phách thừa);
-    - nếu hai phách kề cách nhau khoảng 2L: dời phách i về giữa (phách bị đặt lệch).
+    Với mỗi khoảng ngắn (< `short` × L, L là trung vị khoảng phách cục bộ) giữa phách j và j+1:
+    1. thử bỏ phách j hoặc phách j+1; nhận cách nào làm khoảng mới gần L nhất (sai số ≤ `tol` × L).
+       Phách ở đầu/cuối mảng thì bỏ luôn;
+    2. nếu không được: thử dời phách j (hoặc j+1) về giữa hai phách kề của nó khi hai phách đó cách
+       nhau khoảng 2L (phách bị đặt lệch, phách thật bên cạnh bị mất).
     Không thêm phách vào chỗ trống, để không bịa phách ở đoạn nghỉ hoặc đoạn đổi tempo.
     """
     b = np.sort(np.asarray(beats, dtype=np.float64))
     if len(b) < 4:
         return b
-    changed = True
-    while changed:
-        changed = False
-        for i in range(1, len(b) - 1):
-            L = _local_ibi(b, i)
-            if L <= 0:
-                continue
-            prev_gap, next_gap = b[i] - b[i - 1], b[i + 1] - b[i]
-            if min(prev_gap, next_gap) >= short * L:
-                continue
-            span = b[i + 1] - b[i - 1]
-            if abs(span - L) <= tol * L:
-                b = np.delete(b, i)
-                changed = True
+    j = 0
+    while j < len(b) - 1:
+        ibi = np.diff(b)
+        L = _local_ibi(ibi, j)
+        if L <= 0 or ibi[j] >= short * L:
+            j += 1
+            continue
+        n = len(b)
+        best = None   # (sai số, chỉ số phách bỏ)
+        for k in (j, j + 1):
+            if k == 0 or k == n - 1:
+                err = 0.0
+            else:
+                err = abs((b[k + 1] - b[k - 1]) - L)
+            if err <= tol * L and (best is None or err < best[0]):
+                best = (err, k)
+        if best is not None:
+            b = np.delete(b, best[1])
+            j = max(0, j - 1)
+            continue
+        moved = False
+        for k in (j + 1, j):
+            if 0 < k < n - 1 and abs((b[k + 1] - b[k - 1]) - 2 * L) <= tol * L:
+                b[k] = (b[k - 1] + b[k + 1]) / 2
+                moved = True
                 break
-            if abs(span - 2 * L) <= tol * L:
-                b[i] = (b[i - 1] + b[i + 1]) / 2
-                changed = True
-                break
+        j = max(0, j - 1) if moved else j + 1
     return b
 
 
@@ -259,6 +268,8 @@ def refine_downbeats(
         if not full:
             trans[j, index[(m, k + 1)]] = 0.0
         trans[j, index[(m, 0)]] = 0.0 if full else -p.reset_penalty
+        if full:
+            trans[j, j] = -p.reset_penalty   # ô dài thêm phách (beat_this chèn phách hoặc ô nhịp lẻ thật)
         for m2 in p.meters:
             if m2 != m:
                 trans[j, index[(m2, 0)]] = -p.meter_penalty - (0.0 if full else p.reset_penalty)
@@ -287,6 +298,13 @@ def chord_change_times(segments) -> list[float]:
             if a.label not in ("N", "X") and b.label not in ("N", "X") and a.label != b.label]
 
 
+def clean_tracking(tracking: BeatTracking) -> BeatTracking:
+    """`clean_beats` trên lưới của beat_this; phách mạnh thô gán lại vào phách đã làm sạch."""
+    beats = clean_beats(tracking.grid.beats)
+    downs = _snap_downbeats(beats, np.asarray(tracking.grid.downbeats, dtype=np.float64))
+    return BeatTracking(BeatGrid(beats=beats, downbeats=downs, tempo=estimate_tempo(beats)), tracking.downbeat_frames)
+
+
 def postprocess(tracking: BeatTracking, segments=None, params: MeterParams | None = None) -> tuple[BeatGrid, int]:
     """Lưới phách cuối cùng của pipeline: `clean_beats` rồi `refine_downbeats` với xác suất phách mạnh của
     beat_this và chỗ đổi hợp âm của `segments` (None = chỉ dùng beat_this). Trả về (lưới, số chỉ nhịp)."""
@@ -295,13 +313,6 @@ def postprocess(tracking: BeatTracking, segments=None, params: MeterParams | Non
     changes = chord_change_times(segments) if segments else None
     downs, meter = refine_downbeats(beats, probs, changes, params)
     return BeatGrid(beats=beats, downbeats=downs, tempo=estimate_tempo(beats)), meter
-
-
-def refine_grid(grid: BeatGrid, beat_probs: np.ndarray | None, change_times=None,
-                params: MeterParams | None = None) -> tuple[BeatGrid, int]:
-    """`refine_downbeats` trên một BeatGrid: trả về (lưới cùng phách với phách mạnh mới, số chỉ nhịp)."""
-    downs, meter = refine_downbeats(grid.beats, beat_probs, change_times, params)
-    return BeatGrid(beats=np.asarray(grid.beats, dtype=np.float64), downbeats=downs, tempo=grid.tempo), meter
 
 
 def beat_synchronous_segments(grid: BeatGrid, duration: float) -> list[tuple[float, float]]:

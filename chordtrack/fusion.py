@@ -131,7 +131,8 @@ def fuse_probs(
     out = []
     for a, b, idx, lab in labeled:
         conf = _mean_prob(probs, times, a, b, idx)
-        if any(ra <= a + 1e-9 and b <= rb + 1e-9 for ra, rb in replaced):
+        # Có phần thời gian từng là N.C. bị thay (kể cả khi đã gộp với hợp âm bên cạnh): luôn "uncertain".
+        if any(min(b, rb) - max(a, ra) > 1e-9 for ra, rb in replaced):
             conf = min(conf, REPLACED_NC_CONF)
         out.append(ChordSegment(a, b, lab, conf))
     return _merge_same(out)
@@ -467,7 +468,7 @@ def merge_short(segs: list[tuple[float, float, int]], probs: np.ndarray, times: 
     return segs
 
 
-# Hợp âm thay cho N.C. giữa bài luôn có confidence dưới mức này, để pipeline đánh dấu "uncertain"
+# Đoạn có chứa phần N.C. giữa bài bị thay luôn có confidence dưới mức này, để pipeline đánh dấu "uncertain"
 # (pipeline.UNCERTAIN_THRESHOLD = 0.5).
 REPLACED_NC_CONF = 0.49
 

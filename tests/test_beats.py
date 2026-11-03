@@ -141,3 +141,10 @@ def test_postprocess_cleans_and_refines():
     assert meter == 3
     np.testing.assert_allclose(grid.beats, beats)
     np.testing.assert_allclose(grid.downbeats, beats[pos == 0])
+
+
+def test_clean_beats_keeps_true_beat_when_insert_is_close_to_it():
+    beats = np.arange(0, 6, 0.6)
+    # phách chèn ngay sau phách thật 1.2 và ngay trước phách 3.0; phách đầu thừa
+    noisy = np.sort(np.concatenate([beats, [1.35, 2.88, -0.1]]))
+    np.testing.assert_allclose(B.clean_beats(noisy), beats)

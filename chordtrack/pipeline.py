@@ -151,6 +151,7 @@ def analyze(
     report("beats", 0.0)
     t0 = time.perf_counter()
     tracking, vram["beats"] = _measure_vram(beats_mod.track_beats_full, getattr(stems, config.beat_stem))
+    tracking = beats_mod.clean_tracking(tracking)   # bỏ phách lẻ trước khi fuse dùng lưới phách
     grid = tracking.grid
     timing["beats"] = time.perf_counter() - t0
     free_vram()
