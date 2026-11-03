@@ -11,12 +11,12 @@ key regions, song sections) runs locally on your machine. Windows setup: see "C�
 Kế hoạch, các quyết định và số đo chất lượng: [PLAN.md](PLAN.md). Hướng dẫn các nút trong extension:
 [extension/README.md](extension/README.md).
 
-> ⚠️ **Chỉ dùng cho mục đích cá nhân, học tập.** Server tải audio YouTube bằng [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-> để phân tích, việc này có thể trái [Điều khoản dịch vụ của YouTube](https://www.youtube.com/t/terms). Bạn tự chịu
-> trách nhiệm khi dùng. Audio tải về chỉ nằm trên máy bạn (`data/`), không được chia sẻ.
+> ⚠️ **Tải audio YouTube có thể trái điều khoản của YouTube. Bạn tự chịu trách nhiệm.**
+> Server dùng [yt-dlp](https://github.com/yt-dlp/yt-dlp) tải riêng phần âm thanh của bài bạn bấm phân tích, giữ trên
+> máy (`data/audio/`) để phân tích. Đừng chia sẻ lại các file này.
 >
-> *Personal and educational use only. The local server downloads YouTube audio with yt-dlp, which may violate
-> YouTube's Terms of Service. You are responsible for how you use it.*
+> *Downloading YouTube audio may violate [YouTube's Terms of Service](https://www.youtube.com/t/terms). Use at your
+> own risk. Audio stays on your machine; don't redistribute it.*
 
 ## Cài đặt (Windows)
 
@@ -35,6 +35,10 @@ weights các model hợp âm đúng phiên bản đã kiểm chứng (kiểm tra
 rồi chạy thử. Lần đầu mất khoảng 10–20 phút tùy mạng. Chạy lại nhiều lần không sao. Tùy chọn: `-Cpu` (ép bản CPU),
 `-Full` (thêm tách nguồn và công cụ đánh giá), `-NoTools` (không tự cài ffmpeg, Deno).
 
+> ⚠️ **Script tải và chạy mã của bên thứ ba. Chỉ chạy nếu bạn tin các repo đó.** Weights được nạp bằng
+> `torch.load` (pickle), nên một file bị tráo có thể chạy lệnh trên máy bạn. `fetch_models.py` ghim commit và từ chối
+> file sai SHA-256; đừng tắt bước kiểm tra này hay thay weights bằng file lạ.
+
 ## Dùng
 
 1. **Bật server** chạy nền (mỗi lần mở máy):
@@ -47,6 +51,9 @@ rồi chạy thử. Lần đầu mất khoảng 10–20 phút tùy mạng. Chạ
 **YouTube đòi xác minh "not a bot"?** Xuất cookie YouTube của trình duyệt đã đăng nhập ra file `cookies.txt`
 (định dạng Netscape, ví dụ bằng extension "Get cookies.txt LOCALLY"), rồi chạy server với
 `-Cookies C:\duong\dan\cookies.txt`. Chi tiết ở mục dưới.
+
+> ⚠️ **`cookies.txt` là phiên đăng nhập Google của bạn: ai có file này là vào được tài khoản.** Để file ngoài thư mục
+> repo, không gửi cho ai. Nên dùng tài khoản phụ, vì YouTube có thể khóa tài khoản dùng để tải tự động.
 
 **Cập nhật:** `git pull` rồi chạy lại `scripts\setup.ps1`, bấm nút tải lại extension ở `chrome://extensions`.
 
