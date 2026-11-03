@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const T = require("../src/theory.js");
 
-const DATA = process.env.CHORDTRACK_DATA || "C:\\Users\\MakitJenamin\\Documents\\extension_chordtracking\\data";
+const DATA = process.env.CHORDTRACK_DATA || path.join(__dirname, "..", "..", "data");
 const loadResult = (id) => {
   const p = path.join(DATA, "cache", id, "result.json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;

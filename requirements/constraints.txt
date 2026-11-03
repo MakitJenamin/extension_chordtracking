@@ -1,0 +1,3 @@
+# Ràng buộc chung khi cài (pip install ... -c requirements/constraints.txt).
+# numpy phải ở 1.x: scipy 1.13, ChordMini, Chord-CNN-LSTM và audio-separator 0.30 đều cần numpy 1.26.
+numpy==1.26.4

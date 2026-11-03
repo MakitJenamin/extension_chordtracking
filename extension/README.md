@@ -79,7 +79,7 @@ tự trong manifest.json**, với shim `chrome.runtime` và `chrome.storage` (l�
 # 1. backend (cổng 8765)
 powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1
 # 2. server tĩnh + proxy /api tới backend (CORS của backend chỉ cho chrome-extension:// và youtube.com)
-C:\Users\MakitJenamin\Documents\extension_chordtracking\.venv\Scripts\python.exe extension\dev\serve.py
+.venv\Scripts\python.exe extension\dev\serve.py
 # 3. mở http://127.0.0.1:8770/watch?v=QDYfEBY9NM4
 ```
 

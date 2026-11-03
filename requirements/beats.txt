@@ -1,5 +1,6 @@
 # Bắt nhịp: beat_this (CPJKU 2024). Cài từ GitHub vì chưa có trên PyPI.
 # Kéo theo einops và rotary-embedding-torch; dùng torch, soxr có sẵn.
-beat_this @ https://github.com/CPJKU/beat_this/archive/main.zip
+# Ghim commit b95c8ab (main ngày 2026-05-28, bản đang dùng và đã kiểm chứng).
+beat_this @ https://github.com/CPJKU/beat_this/archive/b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c.zip
 einops
 rotary-embedding-torch
