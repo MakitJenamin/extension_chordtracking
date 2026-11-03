@@ -1,8 +1,7 @@
 """Ghép pipeline end-to-end: nguồn audio (videoId, URL, file) -> JSON hợp âm.
 
-    fetch_audio -> chuẩn hóa thành mix.wav (cache ở CACHE_DIR/<song_id>/) -> track_beats_full
-    -> run_chordmini + run_cnnlstm -> fusion.fuse -> beats.postprocess (làm sạch phách, chọn lại phách
-    mạnh và số chỉ nhịp theo chỗ đổi hợp âm) -> analysis.estimate_key, analyze_structure,
+    fetch_audio -> chuẩn hóa thành mix.wav (cache ở CACHE_DIR/<song_id>/) -> track_beats
+    -> run_chordmini + run_cnnlstm -> fusion.fuse -> analysis.estimate_key, analyze_structure,
     estimate_key_regions -> JSON (xem `build_result`)
 
 Mặc định **không tách nguồn**: model hợp âm và bắt nhịp chạy trên mix, bass lấy từ `bass_probs` của
@@ -10,7 +9,7 @@ CNN-LSTM. Tách nguồn (BS-Roformer + HTDemucs) chỉ thêm khoảng +0.1 đi�
 84 trên 89 giây mỗi bài (PLAN.md, "Kết quả đánh giá Kajiura"), nên chỉ bật khi `use_separation=True`;
 khi đó stem bass được trộn thêm vào phân bố bass (`bass_source="both"`).
 
-Mỗi bước dùng GPU tự lấy `gpu_lock()` riêng bên trong hàm của nó (separate, track_beats_full,
+Mỗi bước dùng GPU tự lấy `gpu_lock()` riêng bên trong hàm của nó (separate, track_beats,
 run_chordmini, run_cnnlstm), nên ở đây không lồng khóa; giữa các bước gọi `free_vram()`.
 Kết quả cuối cache ở `CACHE_DIR/<song_id>/result.json` (cấu hình mặc định) hoặc
 `result-<hash cấu hình>.json` (cấu hình khác), có rồi thì trả lại luôn, trừ khi `force`.
@@ -33,7 +32,7 @@ from chordtrack import analysis, fusion, paths
 from chordtrack import audio as audio_mod
 from chordtrack import separation, symbols, transpose
 from chordtrack.audio import read_json, write_json
-from chordtrack import beats as beats_mod
+from chordtrack.beats import track_beats
 from chordtrack.chords.chordmini import run_chordmini
 from chordtrack.chords.cnnlstm import run_cnnlstm
 from chordtrack.gpu import free_vram
@@ -150,9 +149,7 @@ def analyze(
 
     report("beats", 0.0)
     t0 = time.perf_counter()
-    tracking, vram["beats"] = _measure_vram(beats_mod.track_beats_full, getattr(stems, config.beat_stem))
-    tracking = beats_mod.clean_tracking(tracking)   # bỏ phách lẻ trước khi fuse dùng lưới phách
-    grid = tracking.grid
+    grid, vram["beats"] = _measure_vram(track_beats, getattr(stems, config.beat_stem))
     timing["beats"] = time.perf_counter() - t0
     free_vram()
     report("beats", 1.0)
@@ -172,8 +169,6 @@ def analyze(
     t0 = time.perf_counter()
     bass_audio, fusion_params = _fusion_inputs(stems, config)
     segments = fusion.fuse(models, grid, bass_audio, duration, fusion_params)
-    # Phách mạnh và số chỉ nhịp chọn lại sau khi có hợp âm (chỗ đổi hợp âm hay rơi vào phách 1).
-    grid, meter = beats_mod.postprocess(tracking, segments)
     timing["fusion"] = time.perf_counter() - t0
     report("fusion", 1.0)
 
@@ -189,7 +184,7 @@ def analyze(
 
     result = build_result(
         src, duration=duration, grid=grid, segments=segments, key=key, sections=sections,
-        timing=timing, config=config, peak_vram_mb=vram, regions=regions, meter=meter,
+        timing=timing, config=config, peak_vram_mb=vram, regions=regions,
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_json(result_path, result)
@@ -388,10 +383,8 @@ def build_result(
     config: PipelineConfig,
     peak_vram_mb: dict[str, Any] | None = None,
     regions: list[KeyRegion] | None = None,
-    meter: int | None = None,
 ) -> dict:
-    """Dựng JSON kết quả. `regions` (vùng giọng) None hoặc rỗng thì mọi hợp âm và đoạn dùng `key`.
-    `meter`: số chỉ nhịp của `beats.postprocess`; None thì suy ra từ phách mạnh (`estimate_meter`)."""
+    """Dựng JSON kết quả. `regions` (vùng giọng) None hoặc rỗng thì mọi hợp âm và đoạn dùng `key`."""
     regions = list(regions or [])
     chord_idx = [analysis.region_index(regions, s.start, s.end) for s in segments]
     chords = [chord_to_json(s, regions[i].key if i is not None else key, i) for s, i in zip(segments, chord_idx)]
@@ -408,7 +401,7 @@ def build_result(
         "source": src.to_json(),
         "duration": round(duration, 3),
         "tempo": round(float(grid.tempo), 1) if grid is not None else None,
-        "meter": int(meter) if meter is not None else estimate_meter(grid),
+        "meter": estimate_meter(grid),
         "key": None if key is None else {
             "tonic": key.tonic, "mode": key.mode, "confidence": _confidence(key.confidence),
         },
