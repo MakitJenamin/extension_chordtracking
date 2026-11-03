@@ -133,7 +133,7 @@
         "aria-expanded": "false", onclick: () => this.toggleHelp() }, "?");
 
       this.head = h("div", { class: "ct-head" },
-        h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, CT.icons.logo(16), "ChordTrack"),
+        h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, CT.icons.avatar(18), "ChordTrack"),
         this.miniEl,
         h("span", { class: "ct-keywrap" }, "Giọng ", this.keyEl),
         this.tempoEl, this.meterEl, this.dots.el, this.soonEl,
