@@ -35,10 +35,17 @@
       this.beatEls = [];
       this.pastCount = 0;
       this.lastX = null;
+      this.viewOff = 0;     // độ lệch khung nhìn do người dùng kéo (px, dương = xem lùi về trước)
+      this.returnAt = 0;    // performance.now() lúc bắt đầu trượt về vạch đỏ
+      this.drag = null;
       this.track.addEventListener("click", (e) => {
+        if (this.justDragged) { this.justDragged = false; return; } // nhả chuột sau khi kéo: không tua
         const c = e.target.closest(".ct-chord");
-        if (c && this.song) CT.seekTo(this.song.chords[+c.dataset.i].start + 0.01);
+        if (!c || !this.song) return;
+        this.viewOff = 0; // tua tới hợp âm vừa bấm thì nó về đúng vạch đỏ
+        CT.seekTo(this.song.chords[+c.dataset.i].start + 0.01);
       });
+      this.bindPan();
       this.ro = new ResizeObserver((entries) => {
         this.width = entries[0].contentRect.width;
         // Lần đầu dải hiện ra (trước đó bề rộng 0 nên chưa đo được chữ), hoặc đổi panel <-> toàn màn hình.
@@ -66,6 +73,8 @@
       this.idx = -1;
       this.pastCount = 0;
       this.lastX = null;
+      this.viewOff = 0;
+      this.returnAt = 0;
       if (!song) return;
       const frag = document.createDocumentFragment();
       song.beats.forEach((b, i) => {
@@ -104,6 +113,7 @@
     layout() {
       const s = this.song;
       if (!s) return;
+      this.viewOff = 0; // đổi độ phóng thì px cũ không còn đúng nghĩa
       const px = this.px;
       this.track.style.width = `${s.duration * px}px`;
       s.chords.forEach((c, i) => {
@@ -177,10 +187,79 @@
       return j >= 0 && t < ch[j].end ? j : -1;
     }
 
+    /** Kéo ngang (chuột, cảm ứng, bút) hoặc cuộn ngang (trackpad, Shift + lăn chuột) để xem trước/sau.
+     * Thả tay RETURN_MS thì dải tự trượt về vạch đỏ. Kéo dưới DRAG_MIN px vẫn tính là bấm (tua). */
+    bindPan() {
+      const host = this.el;
+      host.addEventListener("pointerdown", (e) => {
+        if (!this.song || (e.pointerType === "mouse" && e.button !== 0)) return;
+        this.drag = { id: e.pointerId, x0: e.clientX, off0: this.viewOff, moved: false };
+      });
+      host.addEventListener("pointermove", (e) => {
+        const d = this.drag;
+        if (!d || d.id !== e.pointerId) return;
+        const dx = e.clientX - d.x0;
+        if (!d.moved) {
+          if (Math.abs(dx) < Strip.DRAG_MIN) return;
+          d.moved = true;
+          try { host.setPointerCapture(e.pointerId); } catch (_) { /* con trỏ đã nhả */ }
+          host.classList.add("ct-dragging");
+        }
+        this.setViewOff(d.off0 + dx);
+      });
+      const end = (e) => {
+        const d = this.drag;
+        if (!d || d.id !== e.pointerId) return;
+        this.drag = null;
+        host.classList.remove("ct-dragging");
+        if (d.moved) {
+          this.justDragged = true;
+          setTimeout(() => { this.justDragged = false; }, 0); // click (nếu có) tới ngay sau pointerup
+          this.scheduleReturn();
+        }
+      };
+      host.addEventListener("pointerup", end);
+      host.addEventListener("pointercancel", end);
+      host.addEventListener("wheel", (e) => {
+        if (!this.song) return;
+        // Chỉ ăn cuộn ngang; lăn dọc thường vẫn cuộn trang YouTube.
+        const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+        if (!dx || (!e.shiftKey && Math.abs(e.deltaX) < Math.abs(e.deltaY))) return;
+        e.preventDefault();
+        this.setViewOff(this.viewOff - dx * (e.deltaMode === 1 ? 16 : 1));
+        this.scheduleReturn();
+      }, { passive: false });
+    }
+
+    /** Giới hạn để vạch đỏ luôn chỉ vào một thời điểm trong bài [0, duration]. */
+    setViewOff(v) {
+      const s = this.song;
+      if (!s) return;
+      const px = this.px;
+      this.viewOff = Math.max((this.t - s.duration) * px, Math.min(this.t * px, v));
+      this.returnAt = 0;
+      this.lastReturnTick = 0;
+      this.update(this.t, true);
+    }
+
+    scheduleReturn() { this.returnAt = performance.now() + Strip.RETURN_MS; }
+
+    /** Đang kéo thì giữ nguyên; hết thời gian chờ thì trượt dần về 0 (theo thời gian, không theo số khung hình). */
+    panOffset() {
+      if (!this.viewOff || this.drag?.moved || !this.returnAt) return this.viewOff;
+      const now = performance.now();
+      if (now < this.returnAt) return this.viewOff;
+      const dt = Math.min(100, now - (this.lastReturnTick || now));
+      this.lastReturnTick = now;
+      this.viewOff *= Math.exp(-dt / 90);
+      if (Math.abs(this.viewOff) < 0.5) { this.viewOff = 0; this.returnAt = 0; this.lastReturnTick = 0; }
+      return this.viewOff;
+    }
+
     update(t, force = false) {
       this.t = t;
       if (!this.song || !this.width) return;
-      const x = this.width * PLAYHEAD - t * this.px;
+      const x = this.width * PLAYHEAD - t * this.px + this.panOffset();
       if (force || x !== this.lastX) {
         this.track.style.transform = `translate3d(${x}px,0,0)`;
         this.lastX = x;
@@ -251,6 +330,8 @@
   // Panel ~800 px x 1.5 thì thấy trước ~8 giây (2–4 ô nhịp); toàn màn hình dùng FS_SCALE.
   Strip.BASE_SCALE = 1.5;
   Strip.FS_SCALE = 2;
+  Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua
+  Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
   CT.ui = CT.ui || {};
   CT.ui.Strip = Strip;
   CT.ui.strip = new Strip();
