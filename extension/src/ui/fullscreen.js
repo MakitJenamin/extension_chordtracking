@@ -123,7 +123,7 @@
       const white = CT.settings.mode === "white";
       const k = i.key;
       const keyText = !k ? "" : white
-        ? `Transpose ${T().signed(k.white_key_transpose | 0)} · ${T().keyName(k)}`
+        ? `Giữ Transpose, bấm ${T().transposeLabel(k.white_key_transpose | 0)} · ${T().keyName(k)}`
         : `${T().keyName(k)}${song.result.tempo ? ` · ${Math.round(song.result.tempo)} BPM` : ""} · ${song.meter}/4`;
       if (this.last.key !== keyText) { this.last.key = keyText; this.keyEl.textContent = keyText; }
       const soon = CT.ui.soonText(i, white);

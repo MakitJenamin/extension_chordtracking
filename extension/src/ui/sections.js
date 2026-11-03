@@ -102,7 +102,7 @@
         if (L.key && (multiKey || st.mode === "white")) {
           const k = document.createElement("div");
           k.className = "ct-sec-key";
-          k.textContent = T().keyName(L.key) + (st.mode === "white" ? ` · transpose ${T().signed(L.white)}` : "");
+          k.textContent = T().keyName(L.key) + (st.mode === "white" ? ` · bấm ${T().transposeLabel(L.white)}` : "");
           row.append(k);
         }
         this.list.append(row);
