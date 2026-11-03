@@ -20,12 +20,15 @@
  *   "time" có thêm `ad` (true khi YouTube đang chạy quảng cáo; lúc đó paused = true)
  *   "song:error" có thêm `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "extension_reloaded"
  *   CT.settings.snapToBeats          kéo mép hợp âm về phách khi hiển thị (mặc định bật)
+ *   CT.settings.autoShowCached       tự hiện cho bài đã có kết quả (mặc định tắt; chỉ phân tích khi người dùng bấm)
+ *   "app" {videoId, visible, status, cached, progress}   trạng thái bật/tắt của video hiện tại (content.js phát,
+ *                                    nút trên thanh điều khiển player nghe)
  *   CT.settings.panelCollapsed       khung hợp âm đang thu gọn (không có trong DEFAULTS, mặc định falsy)
  *   CT.api      gọi backend qua background.js (src/api.js)
  *   CT.theory   dịch giọng, nhãn theo chế độ, nhịp (src/theory.js)
  *   CT.sync     attach/detach vòng rAF, tick, videoIdFromUrl (src/sync.js)
  *   CT.ui       strip, panel, sections, fullscreen, layout (src/ui/*)
- *   CT.app      reload(force), check() (src/content.js)
+ *   CT.app      reload(force), toggle(), check() (src/content.js)
  */
 (() => {
   const listeners = {};
@@ -50,6 +53,7 @@
     pxPerSecond: 46,          // độ "zoom" của dải hợp âm
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
+    autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
   };
 

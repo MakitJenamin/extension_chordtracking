@@ -26,6 +26,7 @@
         "src/ui/panel.js",
         "src/ui/sections.js",
         "src/ui/fullscreen.js",
+        "src/ui/controls_button.js",
         "src/content.js"
       ],
       "css": ["src/ui/styles.css"],

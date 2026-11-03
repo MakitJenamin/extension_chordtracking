@@ -139,3 +139,6 @@ h2 { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacin
 .empty { color: var(--mut); font-size: 12px; padding: 4px 0 6px; }
 .st-sub.warn { color: var(--warn); }
 body.off .sub { color: var(--warn); }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.check input { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); }
+.hint-sm { margin: 4px 0 0 23px; font-size: 11.5px; color: var(--mut); }

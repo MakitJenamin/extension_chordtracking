@@ -339,6 +339,9 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - [x] Vùng giọng quá ngắn (2026-11-03): intro một hợp âm Ab của "Nơi này có anh" thành vùng "Ab trưởng". Thêm bước 6
   ở `estimate_key_regions`: gộp vùng < 12 s hoặc < 2 hợp âm khác nhau. Giọng theo vùng (w): Isophonics 0,841 → 0,852
   (đổi giọng 0,683 → 0,683), Kajiura 0,644 → 0,641. Ngưỡng 3 hợp âm làm nhóm đổi giọng Isophonics tụt 2,2 điểm.
+- [x] Chỉ phân tích khi người dùng bấm (2026-11-03): nút ♫ trong `.ytp-right-controls` (Alt+Shift+C). Mở video chỉ gọi
+  `GET /result/{id}` (đọc cache, không tạo job) để hiện chấm "có sẵn". YouTube bật Trusted Types: không dùng `innerHTML`,
+  dựng SVG bằng `createElementNS`. YouTube không hiện tooltip cho nút chèn thêm nên extension tự vẽ tooltip.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
