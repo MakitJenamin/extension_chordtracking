@@ -13,6 +13,8 @@ MAIN_ROOT = Path(os.environ.get("CHORDTRACK_ROOT", r"C:\Users\MakitJenamin\Docum
 THIRD_PARTY = Path(os.environ.get("CHORDTRACK_THIRD_PARTY", MAIN_ROOT / "third_party_src"))
 CHORDMINI_DIR = THIRD_PARTY / "ChordMini"
 CNNLSTM_DIR = THIRD_PARTY / "chord-cnn-lstm-model"
+CHORDFORMER_DIR = THIRD_PARTY / "ChordFormer"        # github.com/mwaseemrandhawa/ChordFormer, checkpoint lấy từ commit 0d1071a
+CONSONANCE_DIR = THIRD_PARTY / "consonance-ACE"     # github.com/andreamust/consonance-ACE (MIT)
 
 DATA_DIR = Path(os.environ.get("CHORDTRACK_DATA", MAIN_ROOT / "data"))
 AUDIO_DIR = DATA_DIR / "audio"          # audio tải bằng yt-dlp, đặt tên theo <videoId>.wav
