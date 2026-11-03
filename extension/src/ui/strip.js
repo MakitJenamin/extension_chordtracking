@@ -39,7 +39,6 @@
       this.returnAt = 0;    // performance.now() lúc bắt đầu trượt về vạch đỏ
       this.drag = null;
       this.track.addEventListener("click", (e) => {
-        if (this.justDragged) { this.justDragged = false; return; } // nhả chuột sau khi kéo: không tua
         const c = e.target.closest(".ct-chord");
         if (!c || !this.song) return;
         this.viewOff = 0; // tua tới hợp âm vừa bấm thì nó về đúng vạch đỏ
@@ -191,6 +190,10 @@
      * Thả tay RETURN_MS thì dải tự trượt về vạch đỏ. Kéo dưới DRAG_MIN px vẫn tính là bấm (tua). */
     bindPan() {
       const host = this.el;
+      // Click ngay sau khi kéo: không tua và không cho nổi lên player YouTube (toàn màn hình nằm trong #movie_player).
+      host.addEventListener("click", (e) => {
+        if (this.justDragged) { this.justDragged = false; e.stopPropagation(); }
+      }, true);
       host.addEventListener("pointerdown", (e) => {
         if (!this.song || (e.pointerType === "mouse" && e.button !== 0)) return;
         this.drag = { id: e.pointerId, x0: e.clientX, off0: this.viewOff, moved: false };
