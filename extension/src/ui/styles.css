@@ -320,7 +320,8 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-ctl-btn { position: relative; color: #fff; }
 .ct-ctl-btn .ct-ctl-icon { transition: color .15s, transform .15s; }
 .ct-ctl-btn[data-state="on"] { color: #ff4081; }
-.ct-ctl-btn .ct-ic-head { fill: #ff4081; }
+/* Chưa bật: một màu trắng như icon của YouTube (phím đen tách bằng khe hở). Bật: phím hồng, phím đen trắng. */
+.ct-ctl-btn .ct-ic-head { fill: currentColor; }
 .ct-ctl-btn[data-state="on"] .ct-ic-head { fill: #fff; }
 .ct-ctl-btn[data-state="on"] .ct-ctl-icon { filter: drop-shadow(0 0 4px rgba(255, 64, 129, .55)); }
 .ct-ctl-btn[data-state="loading"] .ct-ctl-icon { transform: scale(.78); }
@@ -332,10 +333,9 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-ctl-ring { fill: none; stroke: #ff4081; stroke-width: 2.5; stroke-linecap: round;
   stroke-dasharray: 4 100; transition: stroke-dasharray .4s; }
 .ct-ctl-btn.ct-ctl-hidden-run .ct-ctl-ring { stroke: #fff; }
-.ct-ctl-dot { position: absolute; top: 8px; right: 11px; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--yt-spec-call-to-action, #3ea6ff); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .6); display: none; pointer-events: none; }
-.ct-ctl-btn.ct-ctl-cached .ct-ctl-dot { display: block; }
-.ct-ctl-btn[data-state="error"] .ct-ctl-dot, .ct-ctl-btn.ct-ctl-down .ct-ctl-dot { display: block; background: #f03; }
+.ct-ctl-dot { display: none; fill: #3ea6ff; stroke: #000; stroke-opacity: .7; stroke-width: 1.3; paint-order: stroke; }
+.ct-ctl-btn.ct-ctl-cached .ct-ctl-dot { display: inline; }
+.ct-ctl-btn[data-state="error"] .ct-ctl-dot, .ct-ctl-btn.ct-ctl-down .ct-ctl-dot { display: inline; fill: #f03; }
 /* Tooltip giống tooltip của YouTube: chữ 13px, nền tối mờ, bo 8px, đặt trên thanh điều khiển. */
 .ct-ctl-tip { position: absolute; z-index: 1002; pointer-events: none; white-space: nowrap;
   display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 8px;
