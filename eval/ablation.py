@@ -143,8 +143,10 @@ def predict(song: Song, cfg: dict) -> list[ChordSegment]:
     if kind == "fusion":
         cnn_bass = song.cnn_bass(src) if p.bass_source in ("cnn", "both") else None
         stem = song.stem_chroma() if p.bass_source in ("stem", "both") else None
+        mix = song.stems_dir / "mix.wav"
+        loud = F.loudness_on_grid(mix, song.times) if mix.exists() else None
         return F.fuse_probs(song.chord(src, p.cnn_weight, p.mix_level, p.quality_weight), song.vocab(src), song.times, song.beats, song.duration, p,
-                            cnn_bass=cnn_bass, stem_chroma=stem)
+                            cnn_bass=cnn_bass, stem_chroma=stem, loud=loud)
     raise ValueError(kind)
 
 

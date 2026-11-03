@@ -27,7 +27,7 @@ Bộ cũ (chọn chỉ trên Beatles) nằm ở `eval.ablation_kajiura.OLD_DEFAU
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -61,6 +61,9 @@ class FusionParams:
     stem_weight: float = 0.3         # "both": trọng số của chroma stem bass
     bass_threshold: float = 0.5      # xác suất tối thiểu của nốt bass để thêm /x
     bass_per_beat: bool = False      # True: quyết định bass theo từng phách, đổi bass thì tách đoạn
+    nc_keep_prob: float = 0.6        # N.C. chỉ giữ khi P(N) trung bình >= mức này; không thì đoán hợp âm
+    nc_edges: bool = True            # đoán cả N.C. ở đầu và cuối bài (khi có âm thanh)
+    nc_silence_db: float = -30.0     # có audio: chỉ giữ N.C. khi đoạn nhỏ hơn trung vị âm lượng của bài quá mức này (lặng thật)
 
 
 DEFAULT_PARAMS = FusionParams()
@@ -72,12 +75,14 @@ def fuse(
     bass_audio: Path | None,
     duration: float,
     params: FusionParams | None = None,
+    mix_audio: Path | None = None,
 ) -> list[ChordSegment]:
     """Trả về chuỗi hợp âm phủ liên tục từ 0 tới `duration`, mỗi đoạn có confidence.
 
     models: các khóa đã biết là "chordmini" (BTC-PL) và "cnnlstm"; có thể thiếu khóa.
     beats: lưới phách để bỏ phiếu theo phách; None nếu không có.
     bass_audio: file WAV chỉ có bass (Stems.bass); None nếu không có.
+    mix_audio: file WAV của bản mix, dùng để đo âm lượng: N.C. chỉ giữ ở đoạn lặng thật.
     """
     p = params or DEFAULT_PARAMS
     if not models or duration <= 0:
@@ -95,7 +100,8 @@ def fuse(
     cnn_bass = None
     if "cnnlstm" in models and "bass_probs" in models["cnnlstm"].extras and p.bass_source in ("cnn", "both"):
         cnn_bass = cnnlstm_bass(models["cnnlstm"], times)
-    return fuse_probs(probs, vocab, times, beats, duration, p, cnn_bass=cnn_bass, stem_chroma=stem_chroma)
+    loud = loudness_on_grid(Path(mix_audio), times) if mix_audio is not None else None
+    return fuse_probs(probs, vocab, times, beats, duration, p, cnn_bass=cnn_bass, stem_chroma=stem_chroma, loud=loud)
 
 
 def fuse_probs(
@@ -107,11 +113,13 @@ def fuse_probs(
     p: FusionParams,
     cnn_bass: np.ndarray | None = None,
     stem_chroma: np.ndarray | None = None,
+    loud: np.ndarray | None = None,
 ) -> list[ChordSegment]:
     """Phần lõi của `fuse` trên dữ liệu đã đưa về lưới khung chung (dùng lại trong eval/ablation.py)."""
     labels = decode(probs, times, beats, duration, p)
     segs = frames_to_segments(labels, times, duration)
     segs = merge_short(segs, probs, times, p.min_duration)
+    segs = guess_inner_nochord(segs, probs, vocab, times, p.nc_keep_prob, p, p.nc_edges, loud)
     bass = bass_distribution(cnn_bass, stem_chroma, p)
     if bass is not None:
         intervals = _beat_intervals(beats, duration) if p.bass_per_beat else None
@@ -415,6 +423,75 @@ def frames_to_segments(labels: np.ndarray, times: np.ndarray, duration: float) -
             out.append((a, b, int(labels[s])))
     if out:
         out[-1] = (out[-1][0], float(duration), out[-1][2])
+    return out
+
+
+NO_CHORD = ("N", "X")
+
+
+@lru_cache(maxsize=8)
+def _loudness(path: str, hop: float = 0.1) -> tuple[np.ndarray, np.ndarray]:
+    """Âm lượng (dB RMS) theo khung `hop` giây của file audio, đọc từng khối để đỡ tốn RAM."""
+    import soundfile as sf
+    with sf.SoundFile(path) as f:
+        sr, n = f.samplerate, int(round(hop * f.samplerate))
+        vals = []
+        for blk in f.blocks(blocksize=n, dtype="float32", always_2d=True):
+            m = blk.mean(axis=1)
+            vals.append(np.sqrt(np.mean(m * m)) if len(m) else 0.0)
+    db = 20 * np.log10(np.asarray(vals) + 1e-9)
+    return (np.arange(len(db)) + 0.5) * hop, db
+
+
+def loudness_on_grid(path: Path, times: np.ndarray) -> np.ndarray:
+    """Âm lượng trên lưới khung `times`, tính bằng dB so với trung vị âm lượng của cả bài."""
+    t, db = _loudness(str(path))
+    if len(db) == 0:
+        return np.zeros(len(times))
+    rel = db - np.median(db)
+    return resample_probs(t, rel[:, None], times)[:, 0]
+
+
+def guess_inner_nochord(segs: list[tuple[float, float, int]], probs: np.ndarray, vocab: list[str],
+                        times: np.ndarray, keep_prob: float, p: "FusionParams | None" = None,
+                        edges: bool = True, loud: np.ndarray | None = None) -> list[tuple[float, float, int]]:
+    """Đoạn "không có hợp âm" (N/X): nếu model không thật chắc (P(N) trung bình < keep_prob) thì giải mã lại
+    riêng đoạn đó với cột N/X bị loại, ra chuỗi hợp âm có khả năng cao nhất (có thể nhiều hợp âm). Độ tin cậy
+    tính sau đó từ xác suất gốc nên thường thấp và hợp âm bị đánh dấu "uncertain".
+    `edges=False`: giữ nguyên N ở đầu bài (trước hợp âm đầu tiên) và cuối bài (sau hợp âm cuối cùng).
+    `loud` (dB theo khung, so với trung vị của bài): nếu có thì quyết định theo âm lượng thay cho P(N):
+    đoạn lặng thật (trung bình < p.nc_silence_db) giữ N, đoạn có âm thanh thì đoán hợp âm."""
+    nc_idx = [i for i, lab in enumerate(vocab) if lab in NO_CHORD]
+    if not nc_idx or not segs:
+        return segs
+    is_nc = [vocab[idx] in NO_CHORD for _, _, idx in segs]
+    if all(is_nc):
+        return segs
+    first = is_nc.index(False)
+    last = len(segs) - 1 - is_nc[::-1].index(False)
+    p = p or DEFAULT_PARAMS
+    out: list[tuple[float, float, int]] = []
+    for k, (a, b, idx) in enumerate(segs):
+        inner = first < k < last
+        if not is_nc[k] or (not edges and not inner):
+            out.append((a, b, idx)); continue
+        lo, hi = np.searchsorted(times, a), np.searchsorted(times, b)
+        hi = max(hi, min(lo + 1, len(times)))
+        block = probs[lo:hi].copy()
+        if loud is not None:
+            keep = float(np.mean(loud[lo:hi])) < p.nc_silence_db
+        else:
+            keep = block[:, nc_idx].sum(axis=1).mean() >= keep_prob
+        if keep:
+            out.append((a, b, idx)); continue
+        block[:, nc_idx] = 0.0
+        block /= np.maximum(block.sum(axis=1, keepdims=True), 1e-12)
+        labels = decode(block, times[lo:hi], None, b, replace(p, smoothing="hmm"))
+        sub = frames_to_segments(labels, times[lo:hi] - times[lo], b - a)
+        for sa, sb, si in sub:
+            out.append((a + sa, min(b, a + sb), int(si)))
+        if out and out[-1][1] < b:
+            out[-1] = (out[-1][0], b, out[-1][2])
     return out
 
 
