@@ -279,16 +279,17 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 
 /* ---------------- Nút trên thanh điều khiển player (controls_button.js) ----------------
  * Kế thừa .ytp-button của YouTube (kích thước, hover, focus). Chỉ thêm icon, vòng tiến độ, chấm trạng thái. */
-/* Không đặt display: để YouTube tự ẩn nút khi player hẹp như các nút khác. Icon căn giữa tuyệt đối. */
+/* Không đặt display và không định vị icon: để YouTube tự ẩn nút khi player hẹp và tự căn icon 24 px như các nút khác
+ * (trên YouTube thật, đặt icon tuyệt đối làm nó lệch 12/8 px so với icon của YouTube). */
 .ct-ctl-btn { position: relative; color: #fff; }
-.ct-ctl-btn .ct-ctl-icon { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px;
-  transition: color .15s, transform .15s; }
+.ct-ctl-btn .ct-ctl-icon { transition: color .15s, transform .15s; }
 .ct-ctl-btn[data-state="on"] { color: var(--yt-spec-call-to-action, #3ea6ff); }
 .ct-ctl-btn[data-state="on"] .ct-ctl-icon { filter: drop-shadow(0 0 4px rgba(62, 166, 255, .55)); }
 .ct-ctl-btn[data-state="loading"] .ct-ctl-icon { transform: scale(.78); }
-.ct-ctl-ringsvg { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px;
+/* .ytp-button svg của YouTube có padding 8px 12px (cách nó căn icon 24 px giữa nút 48×40): vòng phải bỏ padding đó. */
+.ytp-button.ct-ctl-btn .ct-ctl-ringsvg { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; padding: 0 !important; box-sizing: content-box;
   transform: rotate(-90deg); pointer-events: none; display: none; }
-.ct-ctl-btn[data-state="loading"] .ct-ctl-ringsvg { display: block; }
+.ytp-button.ct-ctl-btn[data-state="loading"] .ct-ctl-ringsvg { display: block; }
 .ct-ctl-track { fill: none; stroke: rgba(255, 255, 255, .25); stroke-width: 2.5; }
 .ct-ctl-ring { fill: none; stroke: var(--yt-spec-call-to-action, #3ea6ff); stroke-width: 2.5; stroke-linecap: round;
   stroke-dasharray: 4 100; transition: stroke-dasharray .4s; }
