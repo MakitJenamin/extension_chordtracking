@@ -342,6 +342,28 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - [x] Chỉ phân tích khi người dùng bấm (2026-11-03): nút ♫ trong `.ytp-right-controls` (Alt+Shift+C). Mở video chỉ gọi
   `GET /result/{id}` (đọc cache, không tạo job) để hiện chấm "có sẵn". YouTube bật Trusted Types: không dùng `innerHTML`,
   dựng SVG bằng `createElementNS`. YouTube không hiện tooltip cho nút chèn thêm nên extension tự vẽ tooltip.
+- [x] **Phách mạnh và số chỉ nhịp** (2026-11-03, `beats.postprocess`, chấm bằng `python -m eval.eval_beats`).
+  "Fuyu No Hi" (`YAbhqJFPBFk`) thật ra là 3/4: beat_this cho xác suất phách mạnh ≈ 1,0 đều mỗi 3 phách. Lỗi nằm ở đoạn
+  có nhiều móc đơn (238–245 s): beat_this **chèn phách lẻ** giữa hai phách, sinh ô 1, 2, 4, 5, 6, 9 phách.
+  - `clean_beats`: bỏ phách tạo khoảng < 0,65 lần khoảng phách cục bộ nếu hai phách kề cách nhau khoảng 1 phách,
+    dời về giữa nếu cách khoảng 2 phách. Không thêm phách vào chỗ trống.
+  - `refine_downbeats`: Viterbi trên (số chỉ nhịp 2/3/4, vị trí trong ô); quan sát là log xác suất phách mạnh của
+    beat_this cộng điểm chỗ đổi hợp âm ở phách 1 (phách 3 của 4/4 được nửa điểm); cắt ngắn hoặc kéo dài ô thêm một
+    phách bị phạt 4, đổi số chỉ nhịp phạt 20. Phách được làm sạch trước khi fuse. JSON `meter` lấy từ đây. Cần thêm 2 vì Isophonics ghi 2/4 cho Blackbird, Octopus's Garden, Two of Us.
+  - Beatles (42 bài, nhãn beat Isophonics, căn cục bộ theo phách vì bản YouTube trôi tới vài trăm ms): F phách mạnh
+    93,49 → **94,63**, F phách 98,33 → 98,37, đúng số chỉ nhịp 100% → 100%, ô lệch 8,1% → 2,1%. Kajiura (32 bài,
+    không có nhãn beat): chỗ đổi hợp âm ChordWiki rơi vào phách 1 60,0% → 62,3%, ô lệch 19,3% → 6,6%. Mọi cấu hình
+    trong lưới đều nằm trong 93,5–94,7: beat_this vốn đúng phách mạnh trên Beatles, tín hiệu hợp âm chủ yếu giúp Kajiura.
+  - ⚠️ Mép hợp âm vẫn có thể rơi vào phách 2 (D ở ô 110, 114 của YAbhqJFPBFk): model hợp âm chạy theo khung, không theo
+    phách; extension chỉ kéo mép về phách gần nhất.
+- [x] **N.C. giữa bài và đoạn ngắn kém tin cậy** (2026-11-03, `fusion.replace_inner_nc`, `merge_weak`, chấm bằng
+  `python -m eval.eval_postprocess`). N.C. không chạm đầu/cuối bài chỉ giữ khi P(N) trung bình ≥ 0,6 **và** dài
+  ≥ 4 s, nếu không thì lấy nhãn tốt thứ hai (confidence ≤ 0,49 nên luôn "uncertain"). Đoạn < 1,5 phách và confidence
+  < 0,25 gộp vào đoạn bên cạnh (làm ở fusion để có số đo; gần như không gặp vì `min_duration` 0,25 s đã gộp trước).
+  WCSR trước → sau: Kajiura majmin 79,01 → 79,06, majmin_inv 76,89 → 76,95, sevenths 67,38 → 67,43, sevenths_inv
+  66,07 → 66,13; Beatles 88,58 → 88,62, 85,31 → 85,35, 79,73 → 79,69, 78,29 → 78,26. N.C. giữa bài 0,30 → 0,04 đoạn mỗi bài.
+  - Ô D ngắn của "Fuyu No Hi" (ô 110, 114) dài khoảng 2 phách, không phải 1, nên được giữ: Cmaj7 – D – Em là IV – V – vi
+    của G, rất có thể là hợp âm thật; ô vẫn mang dấu ⚠.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

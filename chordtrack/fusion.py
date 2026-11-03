@@ -14,7 +14,8 @@ Luồng xử lý của `fuse()`:
    - `"beat"`: bỏ phiếu theo phách (trung bình log-xác suất trong mỗi phách, lấy argmax);
    - `"hmm"`: Viterbi theo khung, xác suất giữ nguyên hợp âm `self_prob`;
    - `"beat_hmm"`: Viterbi trên quan sát theo phách (hợp âm chỉ đổi ở phách).
-   Sau đó gộp đoạn ngắn hơn `min_duration` vào đoạn bên cạnh.
+   Sau đó gộp đoạn ngắn hơn `min_duration` vào đoạn bên cạnh, thay N.C. giữa bài kém tin cậy bằng hợp âm
+   tốt thứ hai (`replace_inner_nc`) và gộp đoạn vừa ngắn vừa kém tin cậy (`merge_weak`).
 4. **Gán bass:** phân bố nốt bass (12 nốt) trong mỗi đoạn lấy từ `bass_probs` của CNN-LSTM, từ
    chroma dải thấp của stem bass, hoặc trộn cả hai (`bass_source`, `stem_weight`). Chỉ thêm `/x`
    khi nốt bass nổi bật nhất thuộc hợp âm, khác nốt gốc và có xác suất ≥ `bass_threshold`.
@@ -61,6 +62,10 @@ class FusionParams:
     stem_weight: float = 0.3         # "both": trọng số của chroma stem bass
     bass_threshold: float = 0.5      # xác suất tối thiểu của nốt bass để thêm /x
     bass_per_beat: bool = False      # True: quyết định bass theo từng phách, đổi bass thì tách đoạn
+    nc_min_prob: float = 0.6         # N.C. giữa bài chỉ giữ khi P(N) trung bình của đoạn ≥ mức này (0 = tắt)
+    nc_min_duration: float = 4.0     # ... và đoạn dài ít nhất chừng này giây; đầu/cuối bài luôn giữ
+    weak_max_beats: float = 1.5      # gộp đoạn ngắn hơn chừng này phách (0 = tắt) ...
+    weak_max_conf: float = 0.25      # ... và có confidence nhỏ hơn mức này vào đoạn bên cạnh
 
 
 DEFAULT_PARAMS = FusionParams()
@@ -112,6 +117,11 @@ def fuse_probs(
     labels = decode(probs, times, beats, duration, p)
     segs = frames_to_segments(labels, times, duration)
     segs = merge_short(segs, probs, times, p.min_duration)
+    replaced: set[tuple[float, float]] = set()
+    if p.nc_min_prob > 0:
+        segs, replaced = replace_inner_nc(segs, probs, vocab, times, duration, p.nc_min_prob, p.nc_min_duration)
+    if p.weak_max_beats > 0:
+        segs = merge_weak(segs, probs, times, beats, p.weak_max_beats, p.weak_max_conf)
     bass = bass_distribution(cnn_bass, stem_chroma, p)
     if bass is not None:
         intervals = _beat_intervals(beats, duration) if p.bass_per_beat else None
@@ -121,6 +131,9 @@ def fuse_probs(
     out = []
     for a, b, idx, lab in labeled:
         conf = _mean_prob(probs, times, a, b, idx)
+        # Có phần thời gian từng là N.C. bị thay (kể cả khi đã gộp với hợp âm bên cạnh): luôn "uncertain".
+        if any(min(b, rb) - max(a, ra) > 1e-9 for ra, rb in replaced):
+            conf = min(conf, REPLACED_NC_CONF)
         out.append(ChordSegment(a, b, lab, conf))
     return _merge_same(out)
 
@@ -452,6 +465,88 @@ def merge_short(segs: list[tuple[float, float, int]], probs: np.ndarray, times: 
             else:
                 merged.append(s)
         segs = merged
+    return segs
+
+
+# Đoạn có chứa phần N.C. giữa bài bị thay luôn có confidence dưới mức này, để pipeline đánh dấu "uncertain"
+# (pipeline.UNCERTAIN_THRESHOLD = 0.5).
+REPLACED_NC_CONF = 0.49
+
+
+def _merge_adjacent(segs: list[tuple[float, float, int]]) -> list[tuple[float, float, int]]:
+    out: list[tuple[float, float, int]] = []
+    for s in segs:
+        if out and out[-1][2] == s[2]:
+            out[-1] = (out[-1][0], s[1], s[2])
+        else:
+            out.append(s)
+    return out
+
+
+def replace_inner_nc(segs: list[tuple[float, float, int]], probs: np.ndarray, vocab: list[str], times: np.ndarray,
+                     duration: float, min_prob: float, min_duration: float
+                     ) -> tuple[list[tuple[float, float, int]], set[tuple[float, float]]]:
+    """Đoạn N.C. ở giữa bài (không chạm đầu/cuối) mà P(N) trung bình < `min_prob` hoặc ngắn hơn
+    `min_duration` thì lấy nhãn tốt thứ hai: nhãn không phải N/X có xác suất trung bình cao nhất trong đoạn.
+    Nhạc vẫn chơi mà model thấy "không có hợp âm" thường là đoạn hòa âm mỏng (chỉ giai điệu, nốt ngân),
+    hiện hợp âm gần đúng kèm dấu không chắc có ích hơn một ô N.C. dài.
+
+    Trả về (đoạn mới đã gộp đoạn liền nhau cùng nhãn, tập (đầu, cuối) của các đoạn bị thay)."""
+    if "N" not in vocab:
+        return segs, set()
+    n_idx = vocab.index("N")
+    no_chord = [i for i, lab in enumerate(vocab) if lab in ("N", "X")]
+    mask = np.ones(len(vocab), dtype=bool)
+    mask[no_chord] = False
+    out = []
+    replaced: set[tuple[float, float]] = set()
+    for a, b, idx in segs:
+        inner = a > 1e-9 and b < duration - 1e-9
+        if idx == n_idx and inner:
+            mean = _mean_rows(probs, times, a, b)
+            if mean[n_idx] < min_prob or b - a < min_duration:
+                alt = int(np.argmax(np.where(mask, mean, -1.0)))
+                out.append((a, b, alt))
+                replaced.add((a, b))
+                continue
+        out.append((a, b, idx))
+    return _merge_adjacent(out), replaced
+
+
+def merge_weak(segs: list[tuple[float, float, int]], probs: np.ndarray, times: np.ndarray, beats: BeatGrid | None,
+               max_beats: float, max_conf: float) -> list[tuple[float, float, int]]:
+    """Gộp đoạn vừa ngắn (< `max_beats` khoảng phách tại đó) vừa kém tin cậy (xác suất trung bình của nhãn
+    < `max_conf`) vào đoạn bên cạnh có xác suất trung bình trên đoạn đó cao hơn. Không có phách thì giữ nguyên.
+    Gộp lần lượt đoạn yếu nhất trước, giống `merge_short`."""
+    if beats is None or len(beats.beats) < 2:
+        return segs
+    bt = np.asarray(beats.beats, dtype=np.float64)
+    ibi = np.diff(bt)
+
+    def beat_len(a: float, b: float) -> float:
+        k = int(np.clip(np.searchsorted(bt, (a + b) / 2) - 1, 0, len(ibi) - 1))
+        return float(ibi[k])
+
+    segs = list(segs)
+    while len(segs) > 1:
+        weak = []
+        for i, (a, b, idx) in enumerate(segs):
+            if b - a < max_beats * beat_len(a, b):
+                conf = _mean_prob(probs, times, a, b, idx)
+                if conf < max_conf:
+                    weak.append((conf, i))
+        if not weak:
+            break
+        _, i = min(weak)
+        a, b, _ = segs[i]
+        cands = []
+        if i > 0:
+            cands.append((_mean_prob(probs, times, a, b, segs[i - 1][2]), i - 1))
+        if i + 1 < len(segs):
+            cands.append((_mean_prob(probs, times, a, b, segs[i + 1][2]), i + 1))
+        _, j = max(cands)
+        segs[i] = (a, b, segs[j][2])
+        segs = _merge_adjacent(segs)
     return segs
 
 
