@@ -276,3 +276,32 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 /* --ct-cap do fullscreen.js tính theo vị trí thật của lớp phủ. */
 #movie_player.ct-fs-on .ytp-caption-window-bottom { margin-bottom: var(--ct-cap, 170px) !important; }
 .ct-collapsed .ct-help-btn, .ct-panel[data-state="loading"] .ct-help-btn, .ct-panel[data-state="error"] .ct-help-btn { display: none !important; }
+
+/* ---------------- Nút trên thanh điều khiển player (controls_button.js) ----------------
+ * Kế thừa .ytp-button của YouTube (kích thước, hover, focus). Chỉ thêm icon, vòng tiến độ, chấm trạng thái. */
+/* Không đặt display: để YouTube tự ẩn nút khi player hẹp như các nút khác. Icon căn giữa tuyệt đối. */
+.ct-ctl-btn { position: relative; color: #fff; }
+.ct-ctl-btn .ct-ctl-icon { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px;
+  transition: color .15s, transform .15s; }
+.ct-ctl-btn[data-state="on"] { color: var(--yt-spec-call-to-action, #3ea6ff); }
+.ct-ctl-btn[data-state="on"] .ct-ctl-icon { filter: drop-shadow(0 0 4px rgba(62, 166, 255, .55)); }
+.ct-ctl-btn[data-state="loading"] .ct-ctl-icon { transform: scale(.78); }
+.ct-ctl-ringsvg { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  transform: rotate(-90deg); pointer-events: none; display: none; }
+.ct-ctl-btn[data-state="loading"] .ct-ctl-ringsvg { display: block; }
+.ct-ctl-track { fill: none; stroke: rgba(255, 255, 255, .25); stroke-width: 2.5; }
+.ct-ctl-ring { fill: none; stroke: var(--yt-spec-call-to-action, #3ea6ff); stroke-width: 2.5; stroke-linecap: round;
+  stroke-dasharray: 4 100; transition: stroke-dasharray .4s; }
+.ct-ctl-btn.ct-ctl-hidden-run .ct-ctl-ring { stroke: #fff; }
+.ct-ctl-dot { position: absolute; top: 8px; right: 11px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--yt-spec-call-to-action, #3ea6ff); box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .6); display: none; pointer-events: none; }
+.ct-ctl-btn.ct-ctl-cached .ct-ctl-dot { display: block; }
+.ct-ctl-btn[data-state="error"] .ct-ctl-dot, .ct-ctl-btn.ct-ctl-down .ct-ctl-dot { display: block; background: #f03; }
+/* Tooltip giống tooltip của YouTube: chữ 13px, nền tối mờ, bo 8px, đặt trên thanh điều khiển. */
+.ct-ctl-tip { position: absolute; z-index: 1002; pointer-events: none; white-space: nowrap;
+  display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 8px;
+  background: rgba(28, 28, 28, .9); color: #eee;
+  font: 500 13px/15px "YouTube Noto", Roboto, Arial, Helvetica, sans-serif; }
+.ct-ctl-tip[hidden] { display: none; }
+.ct-ctl-tip-key { color: #aaa; font-weight: 400; }
+.ytp-autohide .ct-ctl-tip { display: none; }

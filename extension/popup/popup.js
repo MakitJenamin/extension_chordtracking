@@ -174,9 +174,11 @@
     if (document.activeElement !== $("vol")) $("vol").value = vol;
     $("volOut").textContent = `${vol}%`;
     if (document.activeElement !== $("server")) $("server").value = s.serverUrl;
+    $("autoShowCached").checked = !!s.autoShowCached;
   }
 
   $("enabled").addEventListener("change", (e) => CT.setSettings({ enabled: e.target.checked }));
+  $("autoShowCached").addEventListener("change", (e) => CT.setSettings({ autoShowCached: e.target.checked }));
 
   const modes = [...$("mode").querySelectorAll("button")];
   for (const b of modes) b.addEventListener("click", () => CT.setSettings({ mode: b.dataset.mode }));

@@ -27,6 +27,7 @@
 
   /* ---------------- Phím tắt ---------------- */
   const SHORTCUTS = [
+    { code: "KeyC", key: "C", label: "Bật/tắt ChordTrack cho video này", run: () => CT.app && CT.app.toggle() },
     { code: "Digit1", key: "1", label: "Chế độ Gốc", run: () => CT.setSettings({ mode: "orig" }) },
     { code: "Digit2", key: "2", label: "Chế độ Phím trắng", run: () => CT.setSettings({ mode: "white" }) },
     { code: "Digit3", key: "3", label: "Chế độ Bậc La Mã", run: () => CT.setSettings({ mode: "roman" }) },

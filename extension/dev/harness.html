@@ -66,6 +66,7 @@
   .ytp-chrome-bottom button, .ytp-chrome-bottom select { background: none; border: 0; color: #fff; font-size: 18px; cursor: pointer; }
   .ytp-chrome-bottom select { font-size: 13px; background: rgba(255,255,255,.15); border-radius: 6px; }
   .ytp-chrome-bottom input[type=range] { flex: 1; accent-color: #f03; }
+  .ytp-chrome-bottom .ytp-button { width: 48px; height: 40px; padding: 0; } /* như .ytp-button của YouTube */
   .ytp-time { font-variant-numeric: tabular-nums; font-size: 13px; min-width: 96px; text-align: right; }
   .ytp-caption-window-bottom { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); background: rgba(8,8,8,.75);
                                padding: 2px 8px; font-size: 20px; pointer-events: none; }
@@ -120,8 +121,8 @@
             <input id="seek" type="range" min="0" max="1000" value="0" title="Tua">
             <span class="ytp-time" id="time">0:00 / 0:00</span>
             <select id="rate" title="Tốc độ phát"><option>0.5</option><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select>
-            <button id="cc" title="Phụ đề">CC</button>
-            <button id="fsBtn" title="Toàn màn hình (f)">⛶</button>
+            <span class="ytp-right-controls" style="display:flex;align-items:center"><button id="cc" class="ytp-button ytp-subtitles-button" title="Phụ đề">CC</button>
+            <button id="fsBtn" class="ytp-button" title="Toàn màn hình (f)">⛶</button></span>
           </div>
         </div>
       </div></div>
@@ -256,6 +257,7 @@
     onChanged: { addListener: (fn) => changeFns.push(fn) },
   };
   chrome.runtime = {
+    id: "harness",
     lastError: undefined,
     onMessage: { addListener: (fn) => msgFns.push(fn) },
     sendMessage(msg, cb) {

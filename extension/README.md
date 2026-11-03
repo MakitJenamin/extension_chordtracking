@@ -8,7 +8,8 @@ Hiện hợp âm chạy theo video YouTube: dải hợp âm trượt ngang kiể
    Kiểm tra: mở http://127.0.0.1:8765/health, phải thấy `"status": "ok"`.
 2. Mở `chrome://extensions`, bật **Developer mode** (góc phải trên).
 3. Bấm **Load unpacked**, chọn thư mục `extension/` của repo này.
-4. Mở một video YouTube (`https://www.youtube.com/watch?v=...`). Khung ChordTrack hiện ngay dưới player.
+4. Mở một video YouTube (`https://www.youtube.com/watch?v=...`). Trên thanh điều khiển của player (bên phải, cạnh nút
+   phụ đề) có nút ♫ ChordTrack. **Bấm nút (hoặc Alt+Shift+C) thì mới tải audio và phân tích**; mở video không tự phân tích.
    Bài chưa phân tích thì có thanh tiến độ (lần đầu mất khoảng 1–2 phút, video vẫn xem bình thường); lần sau có ngay.
 5. Sửa mã xong: bấm nút ↻ của extension ở `chrome://extensions`, rồi tải lại tab YouTube (F5).
 
@@ -27,12 +28,20 @@ extension, không đọc hay gửi dữ liệu gì. Lần đầu (bản đang n�
 ## Dùng
 | Điều khiển | Ý nghĩa | Phím tắt |
 |---|---|---|
+| Nút ♫ trên thanh điều khiển player | Bật/tắt ChordTrack cho video này. Chỉ khi bật mới phân tích (POST /analyze) | Alt+Shift+C |
 | Gốc / 🎹 Phím trắng / Bậc La Mã | Cách hiện hợp âm. Mặc định Phím trắng | Alt+Shift+1 / 2 / 3 |
 | Tông − / + | Dịch tông ở chế độ Gốc (−6..+6) | Alt+Shift+↓ / ↑ |
 | Ô "Đặt transpose đàn" | Giá trị nút transpose của đàn cho vùng giọng đang phát; chuyển vàng và đếm ngược 8 giây trước chỗ đổi giọng | |
 | Metronome + thanh âm lượng | Tiếng phách theo `beats` của bài (src/metronome.js) | Alt+Shift+M |
 | ▴ / ▾ | Thu gọn khung (chỉ còn hợp âm hiện tại và chấm phách) | Alt+Shift+H |
 | Bấm hợp âm / đoạn | Tua video tới đó | |
+
+**Nút ♫ trên thanh điều khiển:** trắng là đang tắt; có **chấm xanh** là bài đã có kết quả trên server (bấm là hiện
+ngay, biết nhờ `GET /result/{videoId}` chỉ đọc cache, không tải audio, không dùng GPU); vòng tròn là đang phân tích
+(vòng trắng: đang chạy ngầm trong khi panel đã ẩn); xanh sáng là đang hiện; chấm đỏ là lỗi. Bấm lần nữa thì ẩn panel và
+lớp phủ, job đang chạy vẫn chạy tiếp. Đã bật cho video nào thì quay lại video đó (trong cùng tab) vẫn bật; video mới
+mặc định tắt. Popup có tùy chọn **"Tự hiện cho bài đã có kết quả"** (mặc định tắt, `CT.settings.autoShowCached`):
+bật thì bài có sẵn hiện luôn, nhưng bài mới vẫn không bao giờ tự phân tích.
 
 Phím tắt dùng Alt+Shift để không đụng phím của YouTube (k, j, l, f, số…). Trên dải: vạch đỏ là thời điểm đang phát,
 vạch cao kèm số là phách 1 của ô nhịp, vạch thấp là phách nhẹ, vạch vàng đứt là chỗ đổi giọng, ⚠ là hợp âm model không chắc.
@@ -52,7 +61,8 @@ nên theo theme sáng/tối của YouTube.
 | `src/api.js` | `CT.api.loadSong`: `POST /analyze`, poll `/jobs/{id}` mỗi giây, `GET /result/{song_id}` |
 | `src/theory.js` | Dịch giọng theo ký hiệu (kể cả hợp âm đảo), đơn giản hóa, ẩn bass, nhãn theo chế độ, số chỉ nhịp |
 | `src/sync.js` | Vòng `requestAnimationFrame` đọc `video.currentTime` (phát `time`), `CT.seekTo`, toàn màn hình |
-| `src/content.js` | Điều phối: videoId khi YouTube điều hướng SPA, tải bài, tự thử lại khi server tắt, dọn khi rời trang video |
+| `src/content.js` | Điều phối: videoId khi YouTube điều hướng SPA, chỉ phân tích khi người dùng bật, nhớ video đã bật trong phiên, tự thử lại khi server tắt, dọn khi rời trang video |
+| `src/ui/controls_button.js` | Nút ♫ trong `.ytp-right-controls` (trạng thái tắt/đang phân tích/bật/lỗi, tooltip), gắn lại khi YouTube vẽ lại thanh điều khiển |
 | `src/ui/strip.js` | Dải karaoke: dựng DOM một lần mỗi bài; mỗi khung hình chỉ đặt `transform` và đổi class khi hợp âm đổi |
 | `src/ui/panel.js` | Panel dưới player, trạng thái đang phân tích/lỗi, phím tắt, gắn vào DOM YouTube (`MutationObserver`) |
 | `src/ui/sections.js` | Bảng cấu trúc: đầu `#secondary`; chế độ rạp hát hoặc trang một cột thì xếp dưới panel |
