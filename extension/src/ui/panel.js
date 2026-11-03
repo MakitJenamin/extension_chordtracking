@@ -150,8 +150,8 @@
         this.seg, this.stepper, h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
-          check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
-          check("snapToBeats", "Khớp phách", "Kéo đầu/cuối hợp âm về phách gần nhất. Model nhận hợp âm theo khung ~0,09 s nên mép ô hay lệch vạch phách")));
+          check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C")));
+      // Khớp phách luôn bật theo yêu cầu người dùng (không còn ô tắt).
       // Chú thích và phím tắt: gom vào nút "?" (trước đây là một dòng chữ dài dưới dải).
       const item = (sw, text) => h("li", {}, h("span", { class: "ct-sw " + sw }), text);
       this.help = h("div", { class: "ct-help", hidden: true },
@@ -240,7 +240,8 @@
         this.keyEl.textContent = T().keyName(k);
         const w = k ? k.white_key_transpose | 0 : 0;
         this.tval.textContent = T().signed(w);
-        this.tkey.textContent = k ? `${T().keyName(k)} → chơi như ${k.mode === "minor" ? "A thứ" : "C trưởng"}` : "";
+        this.tkey.textContent = k ? T().keyName(k) : "";   // tông chủ của vùng giọng đang phát
+        this.tkey.title = k ? `Chơi như ${k.mode === "minor" ? "A thứ" : "C trưởng"} trên phím trắng` : "";
         this.tbox.hidden = !k;
       }
       // Chế độ phím trắng: cảnh báo nằm trong ô transpose (đếm ngược), không lặp lại ở hàng đầu.
@@ -422,14 +423,6 @@
   Object.assign(CT.ui, { panel, layout, BeatDots, info, soonText, labelSig, shortcuts: SHORTCUTS, lastTime: null, fullscreenOn: false });
 
   CT.bus.on("settings", (s) => panel.applySettings(s));
-  // Bật/tắt "Khớp phách": dựng lại bài từ kết quả đang có (đổi mốc hợp âm ở dải, panel, toàn màn hình).
-  let lastSnap = CT.settings.snapToBeats !== false;
-  CT.bus.on("settings", (s) => {
-    const snap = s.snapToBeats !== false;
-    if (snap === lastSnap) return;
-    lastSnap = snap;
-    if (CT.ui.song && CT.state.result) CT.bus.emit("song:ready", { videoId: CT.state.videoId, result: CT.state.result });
-  });
   CT.bus.on("time", (p) => { CT.ui.lastTime = p; panel.onTime(p); });
   // CT.ui.song chỉ là bài của video hiện tại: xóa ngay khi bắt đầu tải hoặc lỗi (fullscreen.js, sections.js đọc nó).
   CT.bus.on("song:loading", ({ job }) => { CT.ui.song = null; if (panel.el) panel.showLoading(job || {}); });
@@ -437,7 +430,7 @@
   CT.bus.on("song:ready", ({ result }) => {
     if (!panel.el) return;
     try {
-      CT.ui.song = T().buildSong(result, { snapToBeats: CT.settings.snapToBeats !== false });
+      CT.ui.song = T().buildSong(result, { snapToBeats: true });   // khớp phách luôn bật
       panel.setSong(CT.ui.song);
     } catch (e) {
       CT.ui.song = null;
