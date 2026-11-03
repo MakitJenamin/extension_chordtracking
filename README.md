@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🎸 ChordTrack
+<img src="extension/icons/icon.svg" width="112" alt="ChordTrack logo">
+
+# ChordTrack
 
 **Hợp âm chạy theo video YouTube, kiểu karaoke. AI chạy ngay trên máy bạn.**
 
@@ -9,7 +11,7 @@
 ![Chrome](https://img.shields.io/badge/Chrome-extension-4285F4?logo=googlechrome&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![Offline](https://img.shields.io/badge/AI-local%20only-2ea44f)
+![Offline](https://img.shields.io/badge/AI-local%20only-ff4081)
 ![License](https://img.shields.io/badge/license-MIT-yellow)
 
 </div>
