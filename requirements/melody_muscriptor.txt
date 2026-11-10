@@ -1,0 +1,8 @@
+# MuScriptor (Kyutai + Mirelo, code MIT; weights CC BY-NC 4.0, repo gated trên Hugging Face).
+# Cài với --no-deps: muscriptor 0.4.0 khai báo numpy>=2 và soundfile>=0.14, nhưng phần chép nốt chạy được với
+# numpy 1.26.4 / soundfile 0.12.1 có sẵn (không được lên numpy 2). Các phụ thuộc khác chỉ dùng cho server/CLI
+# (fastapi, uvicorn, typer...) nên không cài. beat_this (dò phách để trừ độ trễ onset) đã có ở requirements/beats.txt.
+#   pip install --no-deps -r requirements/melody_muscriptor.txt -c requirements/constraints.txt
+# Ghim commit 8a1ef88 (bản 0.4.0, 2026-11-10).
+muscriptor @ git+https://github.com/muscriptor/muscriptor.git@8a1ef88672cc23c26619adaff37ec48d82c0b906
+mido>=1.3
