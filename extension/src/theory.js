@@ -321,10 +321,80 @@
     return { main, sub, key, white: w };
   }
 
+  /* ---------------- Giai điệu (docs/melody_api.md) ---------------- */
+
+  /* Bậc của nốt kiểu số (1–7, "do di động"): 1 là chủ âm của giọng trưởng; giọng thứ dùng giọng trưởng
+   * song song (A thứ: A = 6), nên số trùng đúng phím trắng của chế độ Phím trắng (C = 1, D = 2 … B = 7)
+   * và nốt trong giọng không bao giờ cần dấu. Nốt ngoài giọng: b2 b3 #4 b6 b7. */
+  const DEGREES = ["1", "b2", "2", "b3", "3", "4", "#4", "5", "b6", "6", "b7", "7"];
+  const majorTonic = (key) => {
+    const t = key ? pcOf(key.tonic) : null;
+    if (t === null) return 0;
+    return key.mode === "minor" ? mod12(t + 3) : t;
+  };
+
+  /** Tên một nốt giai điệu (số MIDI `pitch`) trong giọng `key` theo chế độ, không có số quãng tám.
+   * - "orig": tên nốt của pitch + transpose, viết theo giọng sau khi dịch (như hợp âm).
+   * - "white": dịch -white_key_transpose của vùng giọng (như hợp âm), viết theo C trưởng / A thứ.
+   * - "roman": bậc kiểu số 1–7 (xem DEGREES); bằng đúng phím trắng phải bấm ở chế độ Phím trắng. */
+  function melodyName(pitch, key, s) {
+    const mode = s && s.mode;
+    if (mode === "white") {
+      const w = key ? (key.white_key_transpose ?? whiteOffset(key)) : 0;
+      return noteName(mod12(pitch - w), key && { tonic: key.mode === "minor" ? "A" : "C", mode: key.mode });
+    }
+    if (mode === "roman") return DEGREES[mod12(pitch - majorTonic(key))];
+    const k = (s && s.transpose) | 0;
+    return noteName(mod12(pitch + k), k ? shiftKey(key, k) : key);
+  }
+
+  /** Mũi tên so với nốt trước: cao hơn "↑", thấp hơn "↓", bằng nhau hoặc không có nốt trước "".
+   * So pitch gốc (cả quãng tám), nên dịch giọng hay đổi vùng giọng không đổi mũi tên. */
+  function melodyArrow(prev, pitch) {
+    if (prev == null || pitch == null) return "";
+    return pitch > prev ? "↑" : pitch < prev ? "↓" : "";
+  }
+
+  /** Nhãn mọi nốt: [{name, arrow}], giọng của mỗi nốt là vùng giọng tại lúc nốt bắt đầu. */
+  function melodyLabels(song, notes, s) {
+    const out = new Array(notes.length);
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      const key = song ? keyAt(song, n.start) : null;
+      out[i] = { name: melodyName(n.pitch, key, s), arrow: melodyArrow(i ? notes[i - 1].pitch : null, n.pitch) };
+    }
+    return out;
+  }
+
+  /** Lọc và sắp các nốt hợp lệ của một <Melody> (bỏ nốt hỏng, sắp theo start). Trả [] nếu không có. */
+  function melodyNotes(melody) {
+    const raw = melody && Array.isArray(melody.notes) ? melody.notes : [];
+    return raw.filter((n) => n && Number.isFinite(n.start) && Number.isFinite(n.end) && n.end > n.start
+      && Number.isFinite(n.pitch)).sort((a, b) => a.start - b.start);
+  }
+
+  /** Chỉ số nốt đang phát tại t (start <= t < end), -1 nếu đang nghỉ. `hint`: chỉ số lần trước (thử trước). */
+  function noteIndexAt(notes, t, hint = -1) {
+    if (hint >= 0 && hint < notes.length && t >= notes[hint].start && t < notes[hint].end) return hint;
+    const n1 = hint + 1;
+    if (n1 > 0 && n1 < notes.length && t >= notes[n1].start && t < notes[n1].end) return n1;
+    const j = lastLE(notes, t, (n) => n.start);
+    return j >= 0 && t < notes[j].end ? j : -1;
+  }
+
+  /** Cách hiện nhãn mỗi nốt khi dòng nốt dày. room[i]: số px từ đầu nốt i tới đầu nốt kế (khe nhãn được dùng),
+   * full[i]/name[i]: bề rộng nhãn đầy đủ / chỉ tên. Trả "full" | "name" (bỏ mũi tên) | "bare" (chỉ còn thanh). */
+  function noteFit(room, full, name) {
+    if (full <= room) return "full";
+    if (name <= room) return "name";
+    return "bare";
+  }
+
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
+    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
   else window.CT.theory = theory;

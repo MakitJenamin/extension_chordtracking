@@ -4,6 +4,11 @@
  * (fullscreen.js chuyển chính phần tử này qua lại).
  * Hiệu năng: DOM chỉ dựng lại khi có bài mới; đổi chế độ thì chỉ đổi chữ; mỗi khung hình chỉ đặt
  * transform của dải và đổi class khi chỉ số hợp âm hiện tại đổi.
+ *
+ * Dòng giai điệu (setMelody): một làn nốt nằm TRONG track, dưới các ô hợp âm, nên trượt cùng transform, cùng
+ * px/giây và cùng vạch đỏ, và đi theo dải sang lớp phủ toàn màn hình. Nhãn: tên nốt theo chế độ
+ * (CT.theory.melodyName) kèm ↑/↓ so với nốt trước; nốt uncertain mờ. Dòng dày: nhãn không vừa khe tới nốt kế
+ * thì bỏ mũi tên, hẹp nữa thì chỉ còn thanh (tooltip vẫn đủ).
  */
 (() => {
   const PLAYHEAD = 0.28;
@@ -20,6 +25,12 @@
   class Strip {
     constructor() {
       this.el = el("div", "ct-strip-wrap");
+      this.melody = null;   // <Melody> của bài (docs/melody_api.md)
+      this.notes = [];      // nốt hợp lệ, đã sắp
+      this.noteEls = [];
+      this.lane = null;
+      this.nIdx = -1;
+      this.nPast = 0;
       this.track = el("div", "ct-strip");
       this.head = el("div", "ct-playhead");
       this.empty = el("div", "ct-strip-empty", "Đoạn này không có hợp âm");
@@ -45,6 +56,12 @@
       this.returnAt = 0;    // performance.now() lúc bắt đầu trượt về vạch đỏ
       this.drag = null;
       this.track.addEventListener("click", (e) => {
+        const n = e.target.closest(".ct-note");
+        if (n && this.song) {
+          this.viewOff = 0;
+          CT.seekTo(this.notes[+n.dataset.i].start + 0.01);
+          return;
+        }
         const c = e.target.closest(".ct-chord");
         if (!c || !this.song) return;
         this.viewOff = 0; // tua tới hợp âm vừa bấm thì nó về đúng vạch đỏ
@@ -80,7 +97,7 @@
       this.lastX = null;
       this.viewOff = 0;
       this.returnAt = 0;
-      if (!song) return;
+      if (!song) { this.buildMelody(false); return; }
       const frag = document.createDocumentFragment();
       song.beats.forEach((b, i) => {
         const strong = song.beatPos[i] === 1;
@@ -111,8 +128,110 @@
         this.modEls.push(e);
       });
       this.track.append(frag);
+      this.buildMelody(false);
       this.layout();
       this.relabel();
+    }
+
+    /* ---------------- Dòng giai điệu ---------------- */
+
+    /** Đặt <Melody> (hoặc null). Dựng lại làn nốt nếu dải đang có bài. */
+    setMelody(melody) {
+      if (melody === this.melody) return;
+      this.melody = melody || null;
+      this.notes = T().melodyNotes(this.melody);
+      this.buildMelody(true);
+    }
+
+    /** Làn nốt có hiện không: có bài, có nốt và người dùng bật "Giai điệu". */
+    get melodyOn() { return !!(this.song && this.notes.length && CT.settings.showMelody !== false); }
+
+    /** Dựng (hoặc bỏ) DOM làn nốt. full: đặt luôn vị trí và nhãn (khi không gọi từ setSong). */
+    buildMelody(full) {
+      this.lane?.remove();
+      this.lane = null;
+      this.noteEls = [];
+      this.nIdx = -1;
+      this.nPast = 0;
+      const on = this.melodyOn;
+      this.el.classList.toggle("ct-has-melody", on);
+      if (!on) return;
+      const lane = (this.lane = el("div", "ct-mel-lane"));
+      const frag = document.createDocumentFragment();
+      this.notes.forEach((n, i) => {
+        const e = el("div", "ct-note" + (n.uncertain ? " ct-nunc" : ""));
+        e.dataset.i = i;
+        const lbl = el("span", "ct-nl");
+        lbl.append(el("b"), el("i"));         // tên nốt, mũi tên
+        e.append(lbl, el("span", "ct-nbar"));
+        frag.append(e);
+        this.noteEls.push(e);
+      });
+      lane.append(frag);
+      this.track.append(lane);
+      if (full) {
+        this.layoutMelody();
+        this.relabelMelody();
+      }
+    }
+
+    layoutMelody() {
+      if (!this.lane) return;
+      const px = this.px;
+      this.notes.forEach((n, i) => {
+        const e = this.noteEls[i];
+        e.style.left = `${n.start * px}px`;
+        e.style.width = `${Math.max(2, (n.end - n.start) * px)}px`;
+      });
+    }
+
+    relabelMelody(fit = true) {
+      if (!this.lane) return;
+      const L = T().melodyLabels(this.song, this.notes, CT.settings);
+      this.notes.forEach((n, i) => {
+        const e = this.noteEls[i];
+        const lbl = e.firstChild;
+        lbl.firstChild.textContent = L[i].name;
+        lbl.lastChild.textContent = L[i].arrow;
+        const conf = Number.isFinite(n.confidence) ? ` · độ tin cậy ${Math.round(n.confidence * 100)}%` : "";
+        e.title = `${L[i].name}${L[i].arrow ? " " + L[i].arrow : ""} · ${fmt(n.start)}${conf}`
+          + `${n.uncertain ? " (model không chắc)" : ""}. Bấm để tua tới đây`;
+      });
+      if (!fit) return;
+      this.fitMelody();
+      this.update(this.t, true);
+    }
+
+    /** Nhãn chỉ được dùng khe từ đầu nốt tới đầu nốt kế (nốt cuối: không giới hạn). Đo chữ thật một lượt.
+     * Dải đang ẩn (bề rộng 0) thì bỏ qua; fitLabels gọi lại khi dải hiện ra. */
+    fitMelody() {
+      if (!this.lane || !this.width) return;
+      const els = this.noteEls;
+      for (const e of els) e.classList.remove("ct-nname", "ct-nbare");
+      const full = els.map((e) => e.firstChild.offsetWidth);
+      const name = els.map((e) => e.firstChild.firstChild.offsetWidth);
+      const px = this.px, ns = this.notes;
+      els.forEach((e, i) => {
+        const room = i + 1 < ns.length ? (ns[i + 1].start - ns[i].start) * px - 1 : Infinity;
+        const f = T().noteFit(room, full[i], name[i]);
+        if (f !== "full") e.classList.add(f === "name" ? "ct-nname" : "ct-nbare");
+      });
+    }
+
+    /** Nốt đang phát: lớp ct-cur; các nốt đã qua: ct-past (chỉ sửa đoạn giữa chỉ số cũ và mới). */
+    updateMelody(t, force) {
+      if (!this.lane) return;
+      const ns = this.notes, els = this.noteEls;
+      const j = T().noteIndexAt(ns, t, this.nIdx);
+      const past = j >= 0 ? j : T().lastLE(ns, t, (n) => n.start) + 1;
+      if (j === this.nIdx && past === this.nPast && !force) return;
+      if (this.nIdx >= 0 && els[this.nIdx]) els[this.nIdx].classList.remove("ct-cur");
+      const prev = this.nPast;
+      if (past > prev) for (let k = prev; k < past; k++) els[k].classList.add("ct-past");
+      else for (let k = past; k < prev; k++) els[k].classList.remove("ct-past");
+      this.nPast = past;
+      if (j >= 0) els[j].classList.add("ct-cur");
+      this.nIdx = j;
     }
 
     layout() {
@@ -128,6 +247,7 @@
       });
       s.beats.forEach((b, i) => { this.beatEls[i].style.left = `${b * px}px`; });
       s.modulations.forEach((m, i) => { this.modEls[i].style.left = `${m.time * px}px`; });
+      this.layoutMelody();
       this.fitLabels();
       this.lastX = null;
       this.update(this.t, true);
@@ -152,6 +272,7 @@
         if (lbl[i] <= room) return;
         e.classList.add(room < Math.max(18, minSym * 0.9) ? "ct-hide" : "ct-clip");
       });
+      this.fitMelody();
       this.fitWidth = this.width;
       this.fitScale = this.scale;
     }
@@ -178,7 +299,8 @@
         this.modEls[i].firstChild.textContent = label;
         this.modEls[i].title = `Đổi giọng lúc ${fmt(m.time)}: ${T().keyName(T().parseKeyText(m.from))} → ${T().keyName(to)}`;
       });
-      this.fitLabels(); // bề rộng chữ đổi theo chế độ
+      this.relabelMelody(false);
+      this.fitLabels(); // bề rộng chữ đổi theo chế độ (đo lại cả nhãn nốt)
       this.update(this.t, true);
     }
 
@@ -275,6 +397,7 @@
       }
       const j = this.indexAt(t);
       if (j !== this.idx || force) this.setCurrent(j);
+      this.updateMelody(t, force);
       this.progress(t);
       this.stickLabel(x);
       this.panBar(x);

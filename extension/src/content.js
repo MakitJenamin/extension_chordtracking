@@ -12,6 +12,9 @@
  * CT.app.toggle()        bật/tắt ChordTrack cho video hiện tại
  * Sự kiện "app" {videoId, visible, status, cached, progress} cho nút trên thanh điều khiển.
  * Server tắt: khi đang hiện thì tự thử lại mỗi 5 giây cho tới khi kết nối được (chỉ khi tab đang hiện).
+ *
+ * Giai điệu (docs/melody_api.md): job riêng, chỉ chạy khi người dùng bấm "Dò giai điệu" (CT.app.detectMelody).
+ *   Khi hợp âm của bài đã hiện, GET /melody/{id} một lần: đã dò rồi thì hiện luôn. Phát sự kiện "melody".
  */
 (() => {
   const RETRY_MS = 5000;
@@ -36,10 +39,63 @@
 
   function stopRetry() { clearTimeout(retryTimer); retryTimer = 0; }
 
+  /* ----- giai điệu ----- */
+  const newMel = () => ({ status: "unknown", melody: null, stale: false, job: null, error: null, ctrl: null });
+
+  function emitMelody(c) {
+    if (c !== cur) return;
+    const m = c.mel;
+    // Đang dò lại hoặc dò lại lỗi: vẫn hiện dòng nốt cũ (nếu có) cho tới khi có kết quả mới.
+    CT.state.melody = m.melody;
+    CT.bus.emit("melody", { videoId: c.id, status: m.status, melody: CT.state.melody, stale: m.stale, job: m.job, error: m.error });
+  }
+
+  /** GET /melody/{id}: chỉ đọc kết quả đã có. Server tắt thì để "unknown" để lần hợp âm hiện sau hỏi lại. */
+  async function probeMelody(c) {
+    if (c.mel.status !== "unknown" || c.mel.probing) return;
+    c.mel.probing = true;
+    let r;
+    try { r = await CT.api.getMelody(c.id); } finally { c.mel.probing = false; }
+    if (cur !== c || c.mel.status !== "unknown") return;    // người dùng đã bấm dò trong lúc chờ
+    if (r.melody) Object.assign(c.mel, { status: "ready", melody: r.melody, stale: r.stale });
+    else if (r.status === 0) return;
+    else c.mel.status = "none";                              // 404 (chưa dò) hoặc server chưa có /melody
+    emitMelody(c);
+  }
+
+  async function detectMelody(c, force = false) {
+    const m = c.mel;
+    if (m.status === "loading" && !force) return;
+    m.ctrl?.abort();
+    const my = (m.ctrl = new AbortController());
+    Object.assign(m, { status: "loading", error: null,
+      job: { status: "queued", progress: 0, step: null, message: "Đang gửi yêu cầu dò giai điệu", eta_seconds: null } });
+    emitMelody(c);
+    try {
+      const melody = await CT.api.loadMelody(c.id, { force, signal: my.signal, onProgress: (job) => {
+        if (m.ctrl !== my) return;
+        m.job = job;
+        emitMelody(c);
+      } });
+      if (m.ctrl !== my) return;
+      Object.assign(m, { ctrl: null, status: "ready", melody, stale: false, job: null });
+      if (CT.settings.showMelody === false) CT.setSettings({ showMelody: true });   // vừa bấm dò: hiện ngay
+    } catch (e) {
+      if (m.ctrl !== my || e.code === "aborted") return;
+      Object.assign(m, { ctrl: null, status: "error", job: null, error: { code: e.code || "unknown", message: e.message } });
+    }
+    emitMelody(c);
+  }
+
   /** Gửi trạng thái hiện tại của video ra panel/dải/lớp phủ (chỉ khi đang hiện). */
   function emitSong(c) {
     if (!c.visible || c !== cur) return;
-    if (c.status === "ready") { CT.state.result = c.result; CT.bus.emit("song:ready", { videoId: c.id, result: c.result }); }
+    if (c.status === "ready") {
+      CT.state.result = c.result;
+      CT.bus.emit("song:ready", { videoId: c.id, result: c.result });
+      emitMelody(c);
+      probeMelody(c);
+    }
     else if (c.status === "loading") CT.bus.emit("song:loading", { videoId: c.id, job: c.job });
     else if (c.status === "error") CT.bus.emit("song:error", { videoId: c.id, ...c.error });
   }
@@ -154,6 +210,7 @@
     const c = cur;
     if (!c) return;
     c.ctrl?.abort();      // chỉ ngừng theo dõi; job trên server vẫn chạy và lưu cache
+    c.mel.ctrl?.abort();
     clearTimeout(c.probeTimer);
     stopRetry();
     cur = null;
@@ -171,13 +228,16 @@
     leave();
     CT.state.videoId = id;
     CT.state.result = null;
+    CT.state.melody = null;
+    CT.bus.emit("melody", { videoId: id, status: "unknown", melody: null });
     if (!id) {
       CT.ui.ctlButton.unmount();
       CT.bus.emit("song:none", {});
       notify();
       return;
     }
-    const c = (cur = { id, visible: false, status: "off", cached: null, result: null, job: null, error: null, ctrl: null, userHid: false });
+    const c = (cur = { id, visible: false, status: "off", cached: null, result: null, job: null, error: null, ctrl: null, userHid: false,
+      mel: newMel() });
     CT.ui.ctlButton.mount();
     notify();
     if (active.has(id)) show(c);
@@ -199,6 +259,7 @@
     },
     toggle,
     check,
+    detectMelody(force = false) { if (cur) detectMelody(cur, force); },
   };
 
   async function start() {

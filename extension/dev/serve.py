@@ -13,6 +13,10 @@
     devmagia_01  kết quả thật của "Magia" (Kajiura, đổi giọng nhiều), audio data/eval/kajiura/audio/magia.wav
     devslow_001  job giả chạy ~15 giây (thanh tiến độ, các bước, ETA), xong thì trả kết quả Let It Be
     devblock_01  job giả lỗi "YouTube đòi xác minh không phải bot" (hướng dẫn cookie)
+- Giai điệu (docs/melody_api.md) khi backend chưa có `/melody` (trả 404/405) hoặc với videoId giả:
+  `POST /melody` tạo job giả ~12 giây (các bước fetch, melody_voice, melody_fill, melody_line), xong thì
+  `GET /melody/<id>` trả `data/cache/dev_melody/<id>.json` (tạo bằng extension/dev/make_dev_melody.py).
+  devslow_001 (sau khi hiện hợp âm) cho job giai điệu lỗi. `--melody-cached`: coi như các bài có file đã dò sẵn (thử tự tải khi mở bài).
 """
 from __future__ import annotations
 
@@ -45,6 +49,12 @@ SLOW_STEPS = ["fetch", "beats", "chords", "fusion", "analysis"]
 BLOCK_MSG = ("YouTube đòi xác minh \"không phải bot\". Xuất cookie YouTube (đã đăng nhập) ra file cookies.txt "
              "định dạng Netscape, đặt biến môi trường CHORDTRACK_YT_COOKIES=<đường dẫn file> rồi khởi động lại server.")
 fake_jobs: dict[str, dict] = {}
+DEV_MELODY = paths.CACHE_DIR / "dev_melody"
+MELODY_SECONDS = 12.0
+MELODY_STEPS = [("fetch", "Dùng lại audio đã tải"), ("melody_voice", "Dò giọng hát (YourMT3+)"),
+                ("melody_fill", "Dò nhạc cụ (MuScriptor small)"), ("melody_line", "Ghép dòng nốt")]
+MELODY_ERR = "MuScriptor small hết bộ nhớ GPU (CUDA out of memory)"
+melody_done: set[str] = set()   # bài đã "dò" xong bằng job giả (hoặc --melody-cached)
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -179,7 +189,12 @@ class Handler(SimpleHTTPRequestHandler):
                     fake_jobs[jid] = {"src": src, "t0": time.time()}
                     return self._json({"status": "queued", "job_id": jid, "song_id": src})
                 return self._relay(*self._backend("POST", path, raw))
-            m = re.fullmatch(r"/jobs/(dev\w+-\d+)", path)
+            if method == "POST" and path == "/melody":
+                return self._melody_post()
+            m = re.fullmatch(r"/melody/([\w-]+)", path)
+            if method == "GET" and m:
+                return self._melody_get(m.group(1))
+            m = re.fullmatch(r"/jobs/(dev[\w-]+)", path)
             if m and m.group(1) in fake_jobs:
                 return self._json(self._fake_job(m.group(1)))
             if path == "/result/devslow_001":
@@ -198,8 +213,74 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # ---------------- giai điệu giả ----------------
+    @staticmethod
+    def _route_missing(status: int, data: bytes) -> bool:
+        """Backend chưa có route /melody (FastAPI trả 404 "Not Found" hoặc 405)."""
+        if status == 405:
+            return True
+        if status != 404:
+            return False
+        try:
+            return json.loads(data or b"{}").get("detail") == "Not Found"
+        except ValueError:
+            return True
+
+    def _melody_post(self):
+        raw = self._body()
+        body = json.loads(raw or b"{}")
+        src, force = str(body.get("source") or ""), bool(body.get("force"))
+        if not src.startswith("dev"):
+            st, data, hdr = self._backend("POST", "/melody", raw)
+            if not self._route_missing(st, data):
+                return self._relay(st, data, hdr)
+        f = DEV_MELODY / f"{src}.json"
+        if src in melody_done and not force and f.exists():
+            return self._json({"status": "done", "song_id": src, "melody": json.loads(f.read_text(encoding="utf-8"))})
+        for jid, j in fake_jobs.items():   # job đang chạy của bài này: trả lại job đó (như backend)
+            if j.get("kind") == "melody" and j["src"] == src and not j.get("finished"):
+                return self._json({"status": "running", "job_id": jid, "song_id": src})
+        jid = f"devmel_{src}-{int(time.time() * 1000)}"
+        fake_jobs[jid] = {"src": src, "t0": time.time(), "kind": "melody"}
+        return self._json({"status": "queued", "job_id": jid, "song_id": src})
+
+    def _melody_get(self, sid: str):
+        if not sid.startswith("dev"):
+            st, data, hdr = self._backend("GET", f"/melody/{sid}")
+            if st == 200 or not (st in (404, 405)):
+                return self._relay(st, data, hdr)
+        f = DEV_MELODY / f"{sid}.json"
+        if sid in melody_done and f.exists():
+            return self._file(f, "application/json; charset=utf-8")
+        return self._json({"detail": "Chưa dò giai điệu cho bài này"}, 404)
+
+    def _fake_melody_job(self, jid: str, j: dict) -> dict:
+        el = time.time() - j["t0"]
+        base = {"job_id": jid, "song_id": j["src"], "kind": "melody", "error": None}
+        if el < 1.5:
+            return base | {"status": "queued", "progress": 0.0, "step": None, "message": "Đang chờ GPU (1 job phía trước)",
+                           "eta_seconds": round(MELODY_SECONDS + 1.5 - el, 1)}
+        frac = min(1.0, (el - 1.5) / MELODY_SECONDS)
+        i = min(len(MELODY_STEPS) - 1, int(frac * len(MELODY_STEPS)))
+        if j["src"] in ("devblock_01", "devslow_001") and frac >= 0.6:
+            j["finished"] = True
+            return base | {"status": "error", "progress": round(frac, 3), "step": "melody_fill", "message": "Lỗi",
+                           "error": MELODY_ERR}
+        if frac >= 1:
+            j["finished"] = True
+            if not (DEV_MELODY / f"{j['src']}.json").exists():
+                return base | {"status": "error", "progress": 1.0, "step": "melody_line", "message": "Lỗi",
+                               "error": "harness không có giai điệu giả cho bài này (chạy make_dev_melody.py)"}
+            melody_done.add(j["src"])
+            return base | {"status": "done", "progress": 1.0, "step": None, "message": "Xong", "eta_seconds": 0}
+        step, msg = MELODY_STEPS[i]
+        return base | {"status": "running", "progress": round(frac, 3), "step": step, "message": msg,
+                       "eta_seconds": round(MELODY_SECONDS * (1 - frac), 1)}
+
     def _fake_job(self, jid: str) -> dict:
         j = fake_jobs[jid]
+        if j.get("kind") == "melody":
+            return self._fake_melody_job(jid, j)
         el = time.time() - j["t0"]
         base = {"job_id": jid, "song_id": j["src"], "error": None}
         if el < 2:
@@ -221,8 +302,12 @@ def main():
     ap.add_argument("--host", default="127.0.0.1",
                     help="địa chỉ lắng nghe; chỉ đổi khi trình duyệt kiểm thử chạy ở máy khác (lộ proxy ra mạng LAN)")
     ap.add_argument("--backend", default="http://127.0.0.1:8765")
+    ap.add_argument("--melody-cached", action="store_true",
+                    help="coi như các bài có data/cache/dev_melody/<id>.json đã dò giai điệu (thử tự tải khi mở bài)")
     a = ap.parse_args()
     Handler.backend = a.backend.rstrip("/")
+    if a.melody_cached:
+        melody_done.update(p.stem for p in DEV_MELODY.glob("*.json"))
     srv = ThreadingHTTPServer((a.host, a.port), Handler)
     print(f"Harness: http://{a.host}:{a.port}/watch?v=QDYfEBY9NM4   (backend {Handler.backend})", flush=True)
     srv.serve_forever()

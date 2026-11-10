@@ -29,6 +29,14 @@
  *   CT.sync     attach/detach vòng rAF, tick, videoIdFromUrl (src/sync.js)
  *   CT.ui       strip, panel, sections, fullscreen, layout (src/ui/*)
  *   CT.app      reload(force), toggle(), check() (src/content.js)
+ *
+ * GIAI ĐIỆU (docs/melody_api.md):
+ *   "melody" {videoId, status, melody, stale, job, error}   trạng thái dòng giai điệu của video hiện tại
+ *            status: "unknown" (chưa hỏi server) | "none" (chưa dò) | "loading" (job đang chạy, có job)
+ *                    | "ready" (có melody) | "error" (có error {code, message})
+ *   CT.state.melody                  <Melody> đang hiện (hoặc null)
+ *   CT.settings.showMelody           hiện dòng giai điệu dưới dải hợp âm (mặc định bật, nhớ lựa chọn)
+ *   CT.app.detectMelody(force)       bấm "Dò giai điệu": POST /melody và theo dõi job
  */
 (() => {
   const listeners = {};
@@ -53,6 +61,7 @@
     pxPerSecond: 46,          // độ "zoom" của dải hợp âm
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
+    showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
     settingsRev: 2,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
@@ -62,7 +71,7 @@
     bus,
     DEFAULTS,
     settings: { ...DEFAULTS },
-    state: { videoId: null, result: null, video: null },
+    state: { videoId: null, result: null, video: null, melody: null },
     seekTo: () => {},
     log: (...a) => console.debug("[ChordTrack]", ...a),
     async loadSettings() {
