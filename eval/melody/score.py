@@ -748,6 +748,26 @@ def tests_md(tests: list[dict], title: str) -> list[str]:
     return out
 
 
+def balanced_rank_md(summary: list[dict], primary: dict[str, str | None], selection: str, title: str) -> list[str]:
+    """Xếp hạng model theo trung bình cân bằng các bộ có đáp án của chỉ số mục tiêu từng bộ (OA hoặc F1 onset);
+    chỉ các model có mặt ở mọi bộ có đáp án."""
+    labelled = sorted(ds for ds, p in primary.items() if p)
+    tab: dict[str, dict[str, dict]] = {}
+    for s in summary:
+        if s["selection"] == selection and s["quant"] == 0 and s["dataset"] in labelled:
+            tab.setdefault(s["model"], {})[s["dataset"]] = s
+    ranked = sorted(((float(np.mean([d[ds][primary[ds]] for ds in labelled])), m, d) for m, d in tab.items()
+                     if len(d) == len(labelled)), key=lambda x: -x[0])
+    if not ranked:
+        return []
+    out = [f"\n### {title}\n", "| model | trung bình | " + " | ".join(
+        f"{ds} {COL_NAMES[primary[ds]]}" for ds in labelled) + " |", "|---" * (len(labelled) + 2) + "|"]
+    for v, m, d in ranked:
+        out.append(f"| {m} | {100 * v:.1f} | " + " | ".join(
+            f"{_fmt(d[ds][primary[ds]])} ({d[ds]['n_tracks']})" for ds in labelled) + " |")
+    return out
+
+
 def named_tests_md(tests: list[dict], title: str) -> list[str]:
     if not tests:
         return []
@@ -892,6 +912,10 @@ def report_from_rows(rows: list[dict], entries: dict[str, list[dict]], models: l
          "tests_family": tests_f, "tests_nn": tests_nn, "tests_nn_rpa_vr": tests_nn_r},
         indent=1, ensure_ascii=False), encoding="utf-8")
     brief = (["\n## Tóm tắt: top cấu hình mỗi bộ"]
+             + balanced_rank_md(summary, primary, "cv_model", "Xếp hạng chung, mục tiêu OA / F1 onset (trung bình "
+                                                              "cân bằng các bộ có đáp án; trong ngoặc: số bài)")
+             + balanced_rank_md(summary, primary, "cv_model_rpa_vr", "Xếp hạng chung, cấu hình chọn theo (RPA+VR)/2 "
+                                                                     "(điểm vẫn là OA / F1 onset)")
              + tables_md(summary, primary, "cv_model", "top 5, cấu hình chung, mục tiêu OA / F1 onset",
                          compact=True, top=5)
              + tables_md(summary, primary, "cv_model_rpa_vr", "top 5, cấu hình chung, mục tiêu (RPA+VR)/2 "

@@ -475,6 +475,29 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     > 1 quãng tám mỗi phút. Basic Pitch 64% thời gian, 75% trong hợp âm (bám bè hòa âm nhiều hơn). RMVPE 58%, 56%.
   - Thêm MuScriptor: khi cache xong chỉ cần chạy lại `python -m eval.melody.score --jobs 8` (tự tìm model trong
     cache, mặc định bỏ `muscriptor_medium`). Chỉ đổi cách chọn hay in bảng thì dùng `--reuse`, không phải chấm lại.
+  - **Ghép hai model nốt (2026-11-11, họ `nn_gated`, tên `A>B`)**: dòng A ở đoạn có nốt `voice` (cổng của A hoặc
+    của B, nới 0.1/0.3/0.6 s), dòng B ở phần còn lại. Chạy lại đủ 5 model + ghép: khoảng 10 phút CPU (10 tiến trình).
+    **`yourmt3>muscriptor_small` đứng đầu xếp hạng chung**: trung bình cân bằng 4 bộ có đáp án (OA / F1 onset) là
+    47.5, so với YourMT3+ 45.5, RMVPE + Basic Pitch 45.5, RMVPE 43.8, MuScriptor small 33.6. CV chọn ở cả 3 phần:
+    YourMT3+ `source_viterbi` trong cổng giọng của chính YourMT3+ (nới 0.6 s), MuScriptor small `salience` ngoài cổng.
+
+    | bộ | yourmt3>muscriptor_small | YourMT3+ | MuScriptor small | Wilcoxon ghép − YourMT3+ / − MuScriptor small |
+    |---|---|---|---|---|
+    | Orchset OA | 53.2 | 43.0 | 53.5 | +10.2 (p<0.001) / −0.4 (chỉ 5 bài khác) |
+    | ADC2004 OA | 49.6 | 44.6 | 32.6 | +4.9 (p 0.28) / +17.0 (p 0.008) |
+    | MIREX05 OA | 38.3 | 41.4 | 23.7 | −3.1 (p 0.58) / +14.6 (p 0.007) |
+    | MIR-ST500 F1 onset | 49.0 | 53.1 | 24.5 | −4.2 (p<0.001) / +24.5 (p<0.001) |
+
+    Tức là bằng MuScriptor ở dàn nhạc, gần YourMT3+ ở bộ có giọng (MIR-ST500: mất khoảng 4 điểm F1, OA ngang nhau,
+    RPA nhỉnh hơn +1.3). Kajiura: có nốt 90.5% thời gian, 68.3% nốt thuộc hợp âm, 3.8 bước nhảy > 1 quãng tám
+    mỗi phút.
+    Chiều ngược lại (`muscriptor_small>yourmt3`, cổng giọng của MuScriptor) kém hơn: 44.3, Orchset chỉ 42.7.
+  - ⚠️ Chỉ số: ADC2004, MIREX05, MIR-ST500 chỉ gán nhãn giọng hát, nên nốt nhạc cụ ở đoạn không hát bị tính VFA và
+    làm giảm OA, dù đúng mục tiêu sản phẩm (giai điệu nổi nhất bất kể nguồn). Ví dụ YourMT3+ ở MIR-ST500 có VFA 83%
+    so với RMVPE 26%. Báo cáo giờ ghi kèm RPA, VR, VFA. Biến thể chọn cấu hình theo (RPA+VR)/2 (không phạt VFA)
+    cho cùng thứ hạng đầu (`yourmt3>muscriptor_small` 46.4, YourMT3+ 44.5). Nhưng biến thể này thưởng cả việc bật
+    nốt mọi lúc: RMVPE khi đó chọn ngưỡng thấp, VFA ở MIREX05 tăng từ 14% lên 73%. Vì vậy nên dùng nó để so sánh,
+    không dùng làm mục tiêu chính.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
