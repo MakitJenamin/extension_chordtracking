@@ -249,6 +249,35 @@ def transcribe_locked(audio_path: Path, *, batch_size: int = 8, dtype: str = "fp
     return out
 
 
+def exit_with_parent(pid: int) -> None:
+    """Luồng nền thoát cả tiến trình khi tiến trình `pid` kết thúc.
+
+    Không dùng cách đọc stdin tới EOF: trên Windows một luồng đang chặn đọc pipe stdin làm treo cả `import` ở luồng
+    chính (đã gặp khi chạy thật). Windows: chờ handle tiến trình bằng `WaitForSingleObject` (ctypes nhả GIL); nơi
+    khác: kiểm tra `os.getppid()` mỗi giây."""
+    import os
+    import threading
+    import time
+
+    def watch_windows() -> None:
+        import ctypes
+
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x00100000, False, pid)   # SYNCHRONIZE
+        if not handle:      # tiến trình cha đã thoát (hoặc không mở được)
+            os._exit(3)
+        k32.WaitForSingleObject(handle, 0xFFFFFFFF)        # INFINITE
+        os._exit(3)
+
+    def watch_posix() -> None:
+        while os.getppid() == pid:
+            time.sleep(1.0)
+        os._exit(3)
+
+    target = watch_windows if sys.platform == "win32" else watch_posix
+    threading.Thread(target=target, name="exit-with-parent", daemon=True).start()
+
+
 def main(argv: list[str] | None = None) -> int:
     """`python -m chordtrack.melody.yourmt3 <audio> <out.npz>`: chép nốt một bài, lưu bằng `chordtrack.melody.io`.
 
@@ -260,20 +289,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("out", type=Path)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--dtype", default="fp32", choices=["fp32", "fp16", "bf16"])
-    ap.add_argument("--exit-with-parent", action="store_true",
-                    help="thoát ngay khi stdin đóng (tiến trình cha giữ pipe stdin mở trong lúc chờ)")
+    ap.add_argument("--parent-pid", type=int, default=None,
+                    help="thoát ngay khi tiến trình này (server) kết thúc, để không còn tiến trình mồ côi giữ gpu_lock")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    if args.exit_with_parent:
-        import os
-        import threading
-
-        def watch() -> None:
-            sys.stdin.buffer.read()   # chặn tới khi tiến trình cha đóng pipe hoặc chết
-            os._exit(3)
-
-        threading.Thread(target=watch, daemon=True).start()
+    if args.parent_pid:
+        exit_with_parent(args.parent_pid)
     out = transcribe_locked(args.audio, batch_size=args.batch_size, dtype=args.dtype)
     mio.save_output(out, args.out)
     voice = sum(n.source == "voice" for n in out.notes)

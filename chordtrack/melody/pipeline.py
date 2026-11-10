@@ -185,14 +185,14 @@ def run_yourmt3(audio_path: Path, out_path: Path) -> MelodyModelOutput:
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     env["PYTHONPATH"] = os.pathsep.join([str(root)] + [p for p in [env.get("PYTHONPATH")] if p])
-    # --exit-with-parent: tiến trình con đọc stdin và tự thoát khi pipe đóng, tức khi server (tiến trình cha) tắt
-    # giữa chừng, để không còn tiến trình mồ côi giữ gpu_lock.
-    cmd = [sys.executable, "-m", "chordtrack.melody.yourmt3", str(audio_path), str(tmp), "--exit-with-parent"]
+    # --parent-pid: tiến trình con tự thoát khi server tắt giữa chừng, để không còn tiến trình mồ côi giữ gpu_lock.
+    cmd = [sys.executable, "-m", "chordtrack.melody.yourmt3", str(audio_path), str(tmp),
+           "--parent-pid", str(os.getpid())]
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     import tempfile
 
     with tempfile.TemporaryFile() as out_f, tempfile.TemporaryFile() as err_f:
-        proc = subprocess.Popen(cmd, cwd=str(root), env=env, stdin=subprocess.PIPE, stdout=out_f, stderr=err_f,
+        proc = subprocess.Popen(cmd, cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f,
                                 creationflags=flags)
         try:
             returncode = proc.wait(timeout=YOURMT3_TIMEOUT)
@@ -200,9 +200,6 @@ def run_yourmt3(audio_path: Path, out_path: Path) -> MelodyModelOutput:
             proc.kill()
             proc.wait()
             raise
-        finally:
-            if proc.stdin is not None:
-                proc.stdin.close()
         out_f.seek(0)
         err_f.seek(0)
         stdout = out_f.read().decode("utf-8", "replace")

@@ -117,7 +117,9 @@ Vẫn **một worker** cho cả hai loại; mỗi loại có bước, câu thôn
   thì chạy lại mất dưới 1 giây. `force` chạy lại cả hai model.
 - **YourMT3+ chạy ở tiến trình con** `python -m chordtrack.melody.yourmt3 <wav> <out.npz>` (transformers 4.45.1 riêng
   không nạp chung được với huggingface_hub 2.x). Tiến trình con tự lấy `gpu_lock()` (tiến trình cha không được giữ
-  khóa khi gọi, nếu không sẽ chờ nhau mãi) và thoát khi xong, nên không giữ VRAM. Tốn thêm khoảng 15–20 s khởi động
+  khóa khi gọi, nếu không sẽ chờ nhau mãi) và thoát khi xong, nên không giữ VRAM. Tiến trình con nhận `--parent-pid` và tự thoát khi server chết (chờ handle tiến trình bằng
+  `WaitForSingleObject`). ⚠️ Không dùng cách đọc stdin tới EOF: trên Windows một luồng đang chặn đọc pipe stdin làm
+  treo cả `import numpy` ở luồng chính (đã gặp: job đứng mãi ở `melody_voice`, sửa ở PR sau #67). Tốn thêm khoảng 15–20 s khởi động
   và nạp model mỗi bài. MuScriptor chạy trong tiến trình server, model giữ trên CPU, lên GPU trong `gpu_lock()`.
 - Đo thật qua server (RTX 3060 Ti, GPU có agent khác chạy xen): "Let It Be" 243 s: tổng **159 s** (YourMT3+ 44 s
   gồm khởi động, MuScriptor 115 s, ghép 0,2 s), VRAM đỉnh YourMT3+ 2,6 GB (reserved), MuScriptor 0,64 GB
