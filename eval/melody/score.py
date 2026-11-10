@@ -432,6 +432,11 @@ def select_cv(rows: list[dict], entries: dict[str, list[dict]], folds: int,
     `level="family"`: mỗi (model, họ, căn phách) chọn trong lưới của họ đó; nhãn `default`, `full`, `cv`.
     `level="model"`: mỗi (model, căn phách) chọn trong mọi cấu hình của mọi họ (trừ `f0raw`, không phải dòng
     nốt), nên họ chiến lược cũng được chọn bằng CV; nhãn `full_model`, `cv_model`, cột `family` = `*`.
+    `level="model_ds"`: như `model` nhưng chọn riêng trong từng bộ có đáp án (trần của model theo loại nhạc,
+    không phải một cấu hình chung); nhãn `full_model_ds`, `cv_model_ds`. Bộ không đáp án bị bỏ.
+
+    Hàm mục tiêu cân bằng theo bộ: trung bình của (trung bình chỉ số mục tiêu theo bài trong từng bộ), để bộ
+    nhiều bài (MIR-ST500) không lấn các bộ khác.
     """
     prim = {(ds, str(e["track_id"])): _primary(e) for ds, es in entries.items() for e in es}
     fold_of = {}
@@ -447,21 +452,28 @@ def select_cv(rows: list[dict], entries: dict[str, list[dict]], folds: int,
             if r["family"] == "f0raw":
                 continue
             key, ck = (r["model"], r["quant"]), (r["family"], r["cfg"])
+            if level == "model_ds":
+                if not prim.get((r["dataset"], r["track_id"])):
+                    continue
+                key = key + (r["dataset"],)
         groups.setdefault(key, {}).setdefault(ck, []).append(r)
 
     def objective(cfg_rows: list[dict], keep) -> float:
-        v = [r[prim[(r["dataset"], r["track_id"])]] for r in cfg_rows
-             if keep((r["dataset"], r["track_id"])) and prim.get((r["dataset"], r["track_id"]))]
-        v = [x for x in v if np.isfinite(x)]
-        return float(np.mean(v)) if v else -math.inf
+        by_ds: dict[str, list[float]] = {}
+        for r in cfg_rows:
+            t = (r["dataset"], r["track_id"])
+            m = prim.get(t)
+            if m and keep(t) and np.isfinite(r[m]):
+                by_ds.setdefault(r["dataset"], []).append(r[m])
+        return float(np.mean([np.mean(v) for v in by_ds.values()])) if by_ds else -math.inf
 
-    sfx = "" if level == "family" else "_model"
+    sfx = {"family": "", "model": "_model", "model_ds": "_model_ds"}[level]
     chosen: list[dict] = []
     choices: dict = {}
 
     def tag(r: dict, sel: str) -> dict:
         out = {**r, "selection": sel + sfx}
-        if level == "model":
+        if level != "family":
             out["family"] = "*"     # họ và cấu hình được chọn ghi trong `choices`
         return out
 
@@ -602,13 +614,15 @@ def tests_md(tests: list[dict], title: str) -> list[str]:
     return out
 
 
-def choices_md(choices: dict) -> list[str]:
-    out = ["\n### Cấu hình chọn trên cả các bộ có đáp án (dùng cho bộ không đáp án)\n"]
+def choices_md(choices: dict, title: str = "Cấu hình chọn trên cả các bộ có đáp án (dùng cho bộ không đáp án)"
+               ) -> list[str]:
+    out = [f"\n### {title}\n"]
     for key, d in sorted(choices.items()):
-        model, quant = key.split("|")
+        model, quant, *ds = key.split("|")
         fam, ci = d["full"]
         folds = ", ".join(f"{f}#{c}" for f, c in d["folds"])
-        out.append(f"- {model}{'+beats' if quant == '1' else ''}: {fam}#{ci} `{d['full_params']}` "
+        where = f" [{ds[0]}]" if ds else ""
+        out.append(f"- {model}{'+beats' if quant == '1' else ''}{where}: {fam}#{ci} `{d['full_params']}` "
                    f"(các phần CV: {folds})")
     return out
 
@@ -627,12 +641,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--boot", type=int, default=2000)
     ap.add_argument("--no-beats", action="store_true", help="không chấm bản căn phách")
     ap.add_argument("--out-dir", type=Path, default=paths.EVAL_DIR / "results" / "melody")
+    ap.add_argument("--reuse", action="store_true",
+                    help="không chấm lại: đọc out-dir/per_track.csv, chỉ chọn cấu hình và in bảng")
     args = ap.parse_args(argv)
 
     entries = read_manifests(args.datasets.split(",") if args.datasets else None)
     if not entries:
         print("Không tìm thấy manifest nào trong", paths.EVAL_DIR / "melody", file=sys.stderr)
         return 1
+    if args.reuse:
+        rows = [r for r in read_per_track(args.out_dir / "per_track.csv") if r["dataset"] in entries]
+        if args.models:
+            keep = set(args.models.split(","))
+            rows = [r for r in rows if set(r["model"].split("+")) <= keep]
+        return report_from_rows(rows, entries, sorted({r["model"] for r in rows if "+" not in r["model"]}), args)
     only = args.models.split(",") if args.models else None
     # model ghi rõ trong --models thì không bị --exclude bỏ
     exclude = [x for x in args.exclude.split(",") if x and not (only and x in only)]
@@ -658,29 +680,55 @@ def main(argv: list[str] | None = None) -> int:
         print("Không có bài nào có cache.", file=sys.stderr)
         return 1
 
-    chosen_f, choices_f = select_cv(rows, entries, args.folds, level="family")
-    chosen_m, choices_m = select_cv(rows, entries, args.folds, level="model")
-    summary = summarize(chosen_f + chosen_m)
-    primary = dataset_primary(entries)
-    tests_m = compare_top2(chosen_m, summary, primary, args.boot, selection="cv_model")
-    tests_f = compare_top2(chosen_f, summary, primary, args.boot, selection="cv")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.out_dir / "per_track.csv", rows)
+    return report_from_rows(rows, entries, models, args)
+
+
+def read_per_track(path: Path) -> list[dict]:
+    """Đọc lại `per_track.csv` (để chọn cấu hình và in bảng lại mà không chấm lại)."""
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            for k, v in r.items():
+                if k in ("cfg", "quant"):
+                    r[k] = int(v)
+                elif k not in ("dataset", "track_id", "model", "family", "params"):
+                    r[k] = float(v) if v not in ("", "nan") else math.nan
+            rows.append(r)
+    return rows
+
+
+def report_from_rows(rows: list[dict], entries: dict[str, list[dict]], models: list[str], args) -> int:
+    chosen_f, choices_f = select_cv(rows, entries, args.folds, level="family")
+    chosen_m, choices_m = select_cv(rows, entries, args.folds, level="model")
+    chosen_d, choices_d = select_cv(rows, entries, args.folds, level="model_ds")
+    summary = summarize(chosen_f + chosen_m + chosen_d)
+    primary = dataset_primary(entries)
+    tests_m = compare_top2(chosen_m, summary, primary, args.boot, selection="cv_model")
+    tests_d = compare_top2(chosen_d, summary, primary, args.boot, selection="cv_model_ds")
+    tests_f = compare_top2(chosen_f, summary, primary, args.boot, selection="cv")
+    args.out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.out_dir / "summary.csv", summary)
     (args.out_dir / "cv_choices.json").write_text(json.dumps(
-        {"model": choices_m, "family": choices_f, "tests_model": tests_m, "tests_family": tests_f},
-        indent=1, ensure_ascii=False), encoding="utf-8")
-    head = (tables_md(summary, primary, "cv_model", "mỗi model ở cấu hình tốt nhất (họ + tham số chọn bằng CV "
-                                                    "theo bài), trung bình theo bài", compact=True)
-            + tests_md(tests_m, "So cặp hai model tốt nhất") + choices_md(choices_m))
+        {"model": choices_m, "model_per_dataset": choices_d, "family": choices_f, "tests_model": tests_m,
+         "tests_model_per_dataset": tests_d, "tests_family": tests_f}, indent=1, ensure_ascii=False),
+        encoding="utf-8")
+    head = (tables_md(summary, primary, "cv_model", "mỗi model ở MỘT cấu hình chung cho mọi bộ (họ + tham số chọn "
+                                                    "bằng CV theo bài, mục tiêu cân bằng theo bộ)", compact=True)
+            + tests_md(tests_m, "So cặp hai model tốt nhất (cấu hình chung)") + choices_md(choices_m))
+    per_ds = (tables_md(summary, primary, "cv_model_ds", "mỗi model, cấu hình chọn riêng trong bộ này bằng CV theo "
+                                                         "bài (trần theo loại nhạc)", compact=True)
+              + tests_md(tests_d, "So cặp hai model tốt nhất (cấu hình riêng từng bộ)")
+              + choices_md(choices_d, "Cấu hình chọn trên cả từng bộ"))
     detail = (tables_md(summary, primary, "cv", "từng họ chiến lược, điểm CV, trung bình theo bài "
                                                 "(theo thời lượng trong ngoặc)")
               + tests_md(tests_f, "So cặp hai (model, họ) tốt nhất"))
     report = ["# Kết quả dò giai điệu", f"\nModel: {', '.join(models)}. CV {args.folds} phần theo bài; mục tiêu "
-              "OA (bộ f0) hoặc F1 onset (MIR-ST500). Điểm %.", "\n## Theo model"] + head + \
-             ["\n## Theo họ chiến lược"] + detail
+              "OA (bộ f0) hoặc F1 onset (MIR-ST500). Điểm %.", "\n## Theo model, cấu hình chung"] + head + \
+             ["\n## Theo model, cấu hình riêng từng bộ"] + per_ds + ["\n## Theo họ chiến lược"] + detail
     (args.out_dir / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
-    print("\n".join(head))
+    print("\n".join(head + ["\n## Cấu hình riêng từng bộ"] + per_ds))
     print(f"\nĐã ghi {args.out_dir} (report.md có thêm bảng theo từng họ chiến lược)", flush=True)
     return 0
 
