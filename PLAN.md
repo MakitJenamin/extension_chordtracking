@@ -126,6 +126,15 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
 - **Metronome:** tiếng phách đồng bộ với `beats` của video. Phách mạnh cao và to hơn. Có nút bật/tắt và **thanh chỉnh âm lượng**. Tiếng tạo bằng Web Audio. Phải theo đúng tốc độ phát của video (0.5×, 0.75×…) và khi tua.
 - **Toàn màn hình:** khi video YouTube ở chế độ toàn màn hình, đưa **chính dải hợp âm karaoke như lúc bình thường** (cùng vạch phách, vạch đổi giọng, vạch đỏ đang phát) đè lên phía dưới video, nền bán trong suốt. Phía trên dải có chấm phách, giọng hoặc transpose, và cảnh báo sắp đổi giọng. Phải gắn vào phần tử fullscreen của YouTube thì mới hiện được.
 - ⚠ đánh dấu hợp âm có `uncertain = true`.
+- **Dòng giai điệu (2026-11-11, hợp đồng `docs/melody_api.md`):** nút "♪ Dò giai điệu" trong hàng điều khiển của panel
+  (bấm mới `POST /melody`, hiện tiến độ job: phần trăm, bước, `message`, thời gian còn lại; lỗi bằng câu tiếng Việt kèm
+  "Thử lại"). Bài đã dò thì tự `GET /melody/{id}` khi hợp âm hiện. Công tắc "Giai điệu" ẩn/hiện (nhớ trong
+  `CT.settings.showMelody`, Alt+Shift+G), ↻ dò lại. Làn nốt nằm trong chính track của dải hợp âm (cùng transform,
+  px/giây, vạch đỏ; tự sang lớp phủ toàn màn hình). Nốt: tên không số quãng tám + ↑/↓ so với nốt trước; nốt đang phát nền
+  sáng, thanh đỏ; `uncertain` mờ, thanh chấm. Dịch giọng: Gốc theo Tông −/+, Phím trắng theo `white_key_transpose` của
+  vùng giọng, **Bậc La Mã hiện số 1–7 kiểu ký âm số** (giọng thứ dùng giọng trưởng song song) vì số trùng đúng phím
+  trắng phải bấm (1 = C … 7 = B). Dòng dày (giai điệu nhanh, ~0,17 s/nốt ở 69 px/s): nhãn không vừa khe tới nốt kế
+  thì mũi tên nhỏ xuống dưới tên, hẹp nữa thì chỉ còn mũi tên và thanh (Magia: 151/715 nốt thu gọn, 67 chỉ còn thanh).
 
 ## 8. Đo chất lượng (quan trọng nhất)
 

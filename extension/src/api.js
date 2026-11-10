@@ -5,6 +5,10 @@
  *   POST /analyze; có kết quả thì trả ngay, chưa có thì poll GET /jobs/{id} mỗi ~1 s
  *   (onProgress(job) mỗi lần), xong thì GET /result/{song_id}.
  *   Lỗi ném ra là CT.api.ApiError với `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "aborted".
+ * CT.api.getMelody(id) -> {melody, stale} | {melody: null, status}   GET /melody/{id} (không tạo job)
+ * CT.api.loadMelody(videoId, {onProgress, signal, force}) -> <Melody>
+ *   POST /melody, theo dõi GET /jobs/{id}, xong thì GET /melody/{song_id} (docs/melody_api.md).
+ *   Lỗi có message tiếng Việt; thêm code "unsupported" khi server chưa có /melody.
  */
 (() => {
   const POLL_MS = 1000;
@@ -54,15 +58,9 @@
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 
-  async function loadSong(videoId, { onProgress, signal, force = false } = {}) {
+  /** Theo dõi job (GET /jobs/{id} mỗi ~1 s) tới khi xong; trả job cuối (status "done"). `fail(msg)` tạo lỗi job. */
+  async function waitJob(first, { onProgress, signal, fail = jobError } = {}) {
     const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
-    const res = await request("/analyze", { method: "POST", body: { source: videoId, force } });
-    check();
-    if (!res.ok) throw toError(res);
-    const first = res.data || {};
-    if (first.status === "done" && first.result) return first.result;
-    if (!first.job_id) throw new ApiError("http", "Phản hồi /analyze không có job_id");
-
     let job = { status: first.status, progress: 0, step: null, message: "Đang chờ", eta_seconds: null };
     onProgress?.(job);
     let failures = 0;
@@ -81,10 +79,21 @@
       }
       failures = 0;
       job = r.data;
-      if (job.status === "error") throw jobError(job.error || job.message);
-      if (job.status === "done") break;
+      if (job.status === "error") throw fail(job.error || job.message);
+      if (job.status === "done") return job;
       onProgress?.(job);
     }
+  }
+
+  async function loadSong(videoId, { onProgress, signal, force = false } = {}) {
+    const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
+    const res = await request("/analyze", { method: "POST", body: { source: videoId, force } });
+    check();
+    if (!res.ok) throw toError(res);
+    const first = res.data || {};
+    if (first.status === "done" && first.result) return first.result;
+    if (!first.job_id) throw new ApiError("http", "Phản hồi /analyze không có job_id");
+    const job = await waitJob(first, { onProgress, signal });
     const songId = job.song_id || first.song_id;
     const rr = await request(`/result/${encodeURIComponent(songId)}`);
     check();
@@ -92,5 +101,56 @@
     return rr.data;
   }
 
-  CT.api = { request, loadSong, ApiError };
+  /* ---------------- Giai điệu (docs/melody_api.md) ---------------- */
+
+  /** Lỗi của phần giai điệu, câu tiếng Việt cho người dùng (giữ `code` như lỗi hợp âm). */
+  function melodyError(e) {
+    if (!(e instanceof ApiError)) return new ApiError("http", "Không dò được giai điệu: " + String(e && e.message || e));
+    if (e.code === "server_down") return new ApiError("server_down", "Chưa kết nối được server ChordTrack. Bật server rồi bấm lại.");
+    if (e.code === "http" && e.post && (e.status === 404 || e.status === 405)) {   // chỉ khi chính POST /melody 404/405
+      return new ApiError("unsupported", "Server chưa hỗ trợ dò giai điệu. Cập nhật mã server (git pull) rồi khởi động lại.", { status: e.status });
+    }
+    if (e.code === "youtube_blocked") return new ApiError("youtube_blocked", "YouTube chặn tải audio, cần file cookie (xem hướng dẫn khi phân tích hợp âm).");
+    if (e.code === "job_error") return new ApiError("job_error", "Không dò được giai điệu: " + e.message);
+    if (e.code === "http") return new ApiError("http", "Không dò được giai điệu: " + e.message, { status: e.status });
+    return e;
+  }
+
+  /** <Melody> hợp lệ tối thiểu: có mảng notes. */
+  const isMelody = (d) => !!d && typeof d === "object" && Array.isArray(d.notes);
+
+  /** GET /melody/{id}: kết quả đã có, không tạo job. Trả {melody, stale} hoặc null (404, server tắt…). */
+  async function getMelody(songId) {
+    const r = await request(`/melody/${encodeURIComponent(songId)}`);
+    if (r.ok && isMelody(r.data)) return { melody: r.data, stale: !!r.stale };
+    return { melody: null, status: r.status, error: r.error };
+  }
+
+  /** POST /melody rồi theo dõi job, xong thì GET /melody/{song_id}. Ném ApiError (message tiếng Việt). */
+  async function loadMelody(videoId, { onProgress, signal, force = false } = {}) {
+    const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
+    try {
+      const res = await request("/melody", { method: "POST", body: { source: videoId, force } });
+      check();
+      if (!res.ok) throw Object.assign(toError(res), { post: true });
+      const first = res.data || {};
+      if (first.status === "done" && isMelody(first.melody)) return first.melody;
+      if (!first.job_id) throw new ApiError("http", "phản hồi /melody không có job_id");
+      const job = await waitJob(first, { onProgress, signal, fail: (m) => {
+        const e = jobError(m);
+        return e.code === "youtube_blocked" ? e : new ApiError("job_error", m || "lỗi không rõ");
+      } });
+      const rr = await request(`/melody/${encodeURIComponent(job.song_id || first.song_id || videoId)}`);
+      check();
+      if (!rr.ok) throw new ApiError("http", rr.status === 404 ? "job đã xong nhưng server không có kết quả giai điệu" : (rr.error || `HTTP ${rr.status}`), { status: rr.status });
+      if (!isMelody(rr.data)) throw new ApiError("http", "kết quả giai điệu không đọc được");
+      return rr.data;
+    } catch (e) {
+      if (e && e.code === "aborted") throw e;
+      if (e && e.code === "extension_reloaded") throw e;
+      throw melodyError(e);
+    }
+  }
+
+  CT.api = { request, loadSong, waitJob, getMelody, loadMelody, ApiError };
 })();

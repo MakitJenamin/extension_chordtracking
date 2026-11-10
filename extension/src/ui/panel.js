@@ -35,7 +35,12 @@
     { code: "ArrowDown", key: "↓", label: "Tông −1 (chế độ Gốc)", run: () => stepTranspose(-1) },
     { code: "KeyM", key: "M", label: "Bật/tắt metronome", run: () => CT.setSettings({ metronome: !CT.settings.metronome }) },
     { code: "KeyH", key: "H", label: "Thu gọn/mở khung hợp âm", run: () => CT.setSettings({ panelCollapsed: !CT.settings.panelCollapsed }) },
+    { code: "KeyG", key: "G", label: "Ẩn/hiện dòng giai điệu", run: () => CT.setSettings({ showMelody: CT.settings.showMelody === false }) },
   ];
+  // Bước của job dò giai điệu (docs/melody_api.md).
+  const MELODY_STEPS = { fetch: "Tải audio", melody_voice: "Dò giọng hát", melody_fill: "Dò nhạc cụ", melody_line: "Ghép dòng nốt" };
+  const etaText = (eta) => (eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
+    : `còn khoảng ${Math.round(eta / 60)} phút`);
   const sc = (code) => "Alt+Shift+" + SHORTCUTS.find((s) => s.code === code).key;
   function stepTranspose(d) {
     const v = Math.max(-6, Math.min(6, (CT.settings.transpose | 0) + d));
@@ -151,8 +156,9 @@
       this.fsNote = h("div", { class: "ct-fs-note", text: "Dải hợp âm đang hiện trên video (toàn màn hình)." });
       const check = (key, text, tip) => h("label", { title: tip },
         h("input", { type: "checkbox", role: "switch", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), text);
+      this.melBox = h("span", { class: "ct-melbox" });
       this.opts = h("div", { class: "ct-controls" },
-        this.seg, this.stepper, h("span", { class: "ct-grow" }),
+        this.seg, this.stepper, this.melBox, h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
@@ -165,6 +171,7 @@
           item("ct-sw-bar", "Vạch cao kèm số: phách 1 của ô nhịp"),
           item("ct-sw-mod", "Vạch vàng: đổi giọng"),
           item("ct-sw-unc", "⚠ Model không chắc, nên nghe lại"),
+          item("ct-sw-mel", "Dòng nốt dưới hợp âm: giai điệu (bấm “Dò giai điệu”). ↑/↓ cao/thấp hơn nốt trước; nốt mờ là model không chắc. Chế độ Bậc La Mã hiện số 1–7 (1 = phím C khi chơi phím trắng)"),
           h("li", {}, h("span", { class: "ct-sw" }), "Bấm vào hợp âm hoặc đoạn để tua tới đó")),
         h("ul", { class: "ct-help-keys" },
           ...SHORTCUTS.map((x) => h("li", {}, h("kbd", {}, "Alt+Shift+" + x.key), x.label))));
@@ -173,6 +180,44 @@
       this.el = h("div", { id: "ct-panel", class: "ct-root ct-panel", hidden: true }, this.head, this.status, this.body);
       this.slot.append(CT.ui.strip.el);
       this.applySettings(CT.settings);
+    },
+
+    /** Nút "Dò giai điệu" / tiến độ job / lỗi / công tắc "Giai điệu" theo sự kiện "melody" mới nhất (this.mel). */
+    renderMelody() {
+      const box = this.melBox;
+      if (!box) return;
+      const m = this.mel || { status: "unknown" };
+      const run = (force) => () => CT.app && CT.app.detectMelody(force);
+      const btn = (kids, tip, onclick, cls = "ct-btn") => h("button", { type: "button", class: cls, title: tip, onclick }, ...kids);
+      let kids;
+      if (m.status === "loading") {
+        const j = m.job || {};
+        const pct = Math.round((j.progress || 0) * 100);
+        const queued = j.status === "queued";
+        const what = j.message || MELODY_STEPS[j.step] || (queued ? "Đang chờ tới lượt" : "Đang dò");
+        const text = queued ? `Giai điệu: ${what}` : `Giai điệu ${pct}% · ${what}`;
+        const eta = etaText(j.eta_seconds);
+        kids = [h("span", { class: "ct-chip ct-mel-prog", title: [MELODY_STEPS[j.step], j.message, eta].filter(Boolean).join(" · "),
+          role: "status" },
+          h("span", { class: "ct-spinner" }), h("span", { class: "ct-mel-txt", text: eta ? `${text} · ${eta}` : text }),
+          h("span", { class: "ct-mel-bar" }, h("i", { style: `width:${queued ? 0 : pct}%` })))];
+      } else if (m.status === "error") {
+        const msg = (m.error && m.error.message) || "Không dò được giai điệu";
+        kids = [h("span", { class: "ct-chip ct-warn ct-mel-err", title: msg, text: "⚠ " + msg }),
+          btn(["Thử lại"], "Gửi lại yêu cầu dò giai điệu", run(false))];
+      } else if (m.status === "ready" && m.melody) {
+        const on = CT.settings.showMelody !== false;
+        kids = [h("label", { class: "ct-mel-sw", title: `Hiện/ẩn dòng nốt giai điệu dưới dải hợp âm (${sc("KeyG")})` },
+          h("input", { type: "checkbox", role: "switch", checked: on, onchange: (e) => CT.setSettings({ showMelody: e.target.checked }) }),
+          "Giai điệu"),
+        btn(["↻"], m.stale ? "Giai điệu dò bằng mã cũ: dò lại" : "Dò lại giai điệu (bỏ kết quả đã lưu, mất vài phút)",
+          run(true), "ct-btn ct-icon ct-mel-redo")];
+        if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để dò lại", text: "bản cũ" }));
+      } else {
+        kids = [btn(["♪ Dò giai điệu"],
+          "Dò dòng nốt giai điệu bằng AI trên máy (chạy riêng, mất vài phút). Kết quả hiện dưới dải hợp âm", run(false))];
+      }
+      box.replaceChildren(...kids);
     },
 
     toggleHelp(force) {
@@ -219,6 +264,7 @@
       this.collapseBtn.title = (col ? "Mở khung hợp âm" : "Thu gọn khung hợp âm") + ` (${sc("KeyH")})`;
       if (this.state !== "hidden") this.show(this.state);
       this.last = {};
+      if (this.melOn !== (s.showMelody !== false)) { this.melOn = s.showMelody !== false; this.renderMelody(); }
       // Chỉ đổi chữ trên dải khi cài đặt ảnh hưởng tới nhãn (không phải mỗi lần đổi âm lượng).
       const sig = labelSig(s);
       if (this.song && sig !== this.labelSig) {
@@ -461,6 +507,23 @@
       console.error("[ChordTrack] result lỗi", e);
       panel.showError({ code: "bad_result", message: "Kết quả từ server không đọc được: " + e.message });
     }
+  });
+  // Giai điệu: dải giữ <Melody> (vẽ khi có bài), panel hiện nút/tiến độ/công tắc.
+  CT.bus.on("melody", (m) => {
+    panel.mel = m;
+    CT.ui.strip.setMelody(m.melody || null);
+    panel.renderMelody();
+    refitOverlay();
+  });
+  /** Dải cao/thấp đi khi làn nốt hiện/ẩn: lớp phủ toàn màn hình đặt lại vị trí phụ đề theo chiều cao mới. */
+  function refitOverlay() { if (CT.ui.fullscreen && CT.ui.fullscreen.on) CT.ui.fullscreen.syncControls(); }
+  let lastShowMel = CT.settings.showMelody !== false;
+  CT.bus.on("settings", (st) => {
+    const on = st.showMelody !== false;
+    if (on === lastShowMel) return;
+    lastShowMel = on;
+    CT.ui.strip.buildMelody(true);
+    refitOverlay();
   });
   CT.bus.on("song:none", () => { CT.ui.song = null; if (panel.el) { panel.song = null; CT.ui.strip.setSong(null); panel.show("hidden"); } });
 })();

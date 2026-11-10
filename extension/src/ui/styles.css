@@ -263,6 +263,38 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 }
 .ct-ad .ct-strip-wrap { opacity: 0.35; }
 
+/* ---------------- Dòng giai điệu (strip.js, làn nốt dưới ô hợp âm, trên thước phách) ----------------
+ * Dải cao thêm --ct-mel-h; ô hợp âm kết thúc phía trên làn nốt. Nốt: nhãn (tên + ↑/↓) trên một thanh mảnh dài
+ * đúng thời lượng nốt. Nốt đang phát: nhãn có nền như ô hợp âm hiện tại, thanh đỏ. Nốt uncertain: mờ, thanh đứt nét.
+ * Dòng dày (strip.js đo chữ thật): ct-nname = nhãn "C↑" không vừa khe tới nốt kế, mũi tên xuống dòng dưới tên
+ * (nhỏ, nằm trên thanh); ct-nbare = tên cũng không vừa, chỉ còn mũi tên nhỏ và thanh (tooltip vẫn đủ). */
+.ct-strip-wrap { --ct-mel-h: 0px; --ct-mel: #6a3fe0; }
+html[dark] .ct-strip-wrap { --ct-mel: #b69cff; }
+.ct-strip-wrap.ct-has-melody { --ct-mel-h: 32px; height: calc(104px + var(--ct-mel-h)); }
+.ct-has-melody .ct-chord { bottom: calc(var(--ct-lane-bottom) + var(--ct-mel-h)); }
+.ct-mel-lane { position: absolute; left: 0; right: 0; bottom: var(--ct-lane-bottom); height: var(--ct-mel-h); z-index: 5; } /* trên vạch phách (z 4), dưới vạch đỏ (z 10) */
+.ct-note { position: absolute; top: 0; bottom: 0; cursor: pointer; }
+.ct-nl {
+  position: absolute; left: -1px; top: 1px; padding: 0 1px; border-radius: 4px; white-space: nowrap;
+  font-size: 14px; line-height: 16px; font-weight: 700; letter-spacing: -0.2px; color: var(--ct-text);
+}
+.ct-nl b { font-weight: inherit; }
+.ct-nl i { font-style: normal; font-weight: 700; font-size: 11px; color: var(--ct-mel); }
+.ct-nbar { position: absolute; left: 0; right: 1px; bottom: 2px; height: 3px; border-radius: 2px; background: var(--ct-mel); }
+.ct-note:hover .ct-nl { background: var(--ct-layer); }
+.ct-note.ct-past { opacity: 0.45; }
+.ct-note.ct-nunc { opacity: 0.38; }
+.ct-note.ct-nunc .ct-nbar { height: 0; background: none; border-top: 3px dotted var(--ct-mel); }
+.ct-note.ct-cur { opacity: 1; z-index: 1; }
+.ct-note.ct-cur.ct-nunc { opacity: 0.7; }
+.ct-note.ct-cur .ct-nl { background: var(--ct-cur-bg); box-shadow: inset 0 0 0 1px var(--ct-cur-border); color: var(--ct-cur-fg); }
+.ct-note.ct-cur .ct-nbar { background: var(--ct-red); }
+.ct-note.ct-cur.ct-nunc .ct-nbar { background: none; border-top-color: var(--ct-red); }
+.ct-note.ct-nname .ct-nl i, .ct-note.ct-nbare .ct-nl i {
+  position: absolute; left: 1px; top: 15px; font-size: 10px; line-height: 10px; visibility: visible;
+}
+.ct-note.ct-nbare .ct-nl { visibility: hidden; }
+
 /* Khi dải đang ở lớp phủ toàn màn hình */
 .ct-fs-note { display: none; margin-top: 10px; font-size: 13px; color: var(--ct-text2); }
 .ct-strip-away .ct-fs-note { display: block; }
@@ -310,6 +342,12 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-fs .ct-rn { font-size: 15px; line-height: 18px; }
 .ct-fs .ct-chord.ct-past { opacity: 0.35; }
 .ct-fs .ct-beat span { font-size: 11px; }
+.ct-root.ct-fs .ct-strip-wrap { --ct-mel: #c9b6ff; }
+.ct-fs .ct-strip-wrap.ct-has-melody { --ct-mel-h: 40px; height: calc(128px + var(--ct-mel-h)); }
+.ct-fs .ct-nl { font-size: 18px; line-height: 21px; top: 1px; }
+.ct-fs .ct-nl i { font-size: 14px; }
+.ct-fs .ct-note.ct-nname .ct-nl i, .ct-fs .ct-note.ct-nbare .ct-nl i { top: 20px; font-size: 12px; line-height: 12px; }
+.ct-fs .ct-note.ct-past { opacity: 0.4; }
 /* Đẩy phụ đề YouTube lên trên lớp phủ. */
 /* --ct-cap do fullscreen.js tính theo vị trí thật của lớp phủ. */
 #movie_player.ct-fs-on .ytp-caption-window-bottom { margin-bottom: var(--ct-cap, 170px) !important; }
@@ -346,3 +384,30 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-ctl-tip[hidden] { display: none; }
 .ct-ctl-tip-key { color: #aaa; font-weight: 400; }
 .ytp-autohide .ct-ctl-tip { display: none; }
+
+/* ---------------- Nút / tiến độ dò giai điệu (panel.js renderMelody) ---------------- */
+.ct-melbox { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.ct-melbox:empty { display: none; }
+.ct-mel-prog { position: relative; gap: 8px; max-width: 420px; overflow: hidden; }
+.ct-mel-prog .ct-spinner { width: 12px; height: 12px; flex: none; }
+.ct-mel-txt { overflow: hidden; text-overflow: ellipsis; }
+.ct-mel-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; }
+.ct-mel-bar i { display: block; height: 100%; background: var(--ct-red); transition: width 0.8s linear; }
+.ct-mel-err { max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.ct-mel-sw {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px;
+  cursor: pointer; color: var(--ct-text2); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.ct-mel-sw:hover { background: var(--ct-layer); }
+.ct-mel-sw:has(input:checked) { color: var(--ct-text); }
+.ct-mel-sw input {
+  appearance: none; margin: 0; width: 30px; height: 18px; border-radius: 9px; position: relative; cursor: pointer;
+  background: color-mix(in srgb, var(--ct-text) 28%, transparent); transition: background 0.15s;
+}
+.ct-mel-sw input::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  transition: transform 0.15s;
+}
+.ct-mel-sw input:checked { background: var(--ct-accent); }
+.ct-mel-sw input:checked::after { transform: translateX(12px); }
+.ct-sw-mel { height: 4px !important; align-self: center; background: #6a3fe0 !important; border-radius: 2px; }

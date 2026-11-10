@@ -1,4 +1,4 @@
-// Test cho extension/src/theory.js. Chạy: node --test extension/dev/
+// Test cho extension/src/theory.js. Chạy: node --test extension/dev/theory.test.js
 // Dùng thêm result.json thật ở data/cache nếu có (bỏ qua nếu máy không có dữ liệu).
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -169,4 +169,115 @@ test("snapChords trên bài thật: mép ô trùng phách", (t) => {
   const onBeat = inGrid.filter((c) => off(c) < 1e-6).length;
   assert.equal(song.chords.length, r.chords.length);
   assert.ok(onBeat / inGrid.length > 0.9, `chỉ ${onBeat}/${inGrid.length} hợp âm trùng phách`);
+});
+
+/* ---------------- Giai điệu ---------------- */
+
+test("melodyName chế độ Gốc: tên theo giọng, không số quãng tám, dịch tông", () => {
+  const orig = { mode: "orig", transpose: 0 };
+  assert.equal(T.melodyName(60, K("C"), orig), "C");
+  assert.equal(T.melodyName(72, K("C"), orig), "C");          // khác quãng tám: cùng tên
+  assert.equal(T.melodyName(66, K("D"), orig), "F#");
+  assert.equal(T.melodyName(70, K("D"), orig), "Bb");         // bVI mượn: viết giáng như hợp âm
+  assert.equal(T.melodyName(63, K("C", "minor"), orig), "Eb");
+  assert.equal(T.melodyName(61, null, orig), "Db");           // không rõ giọng: bảng FLAT_NAMES
+  assert.equal(T.melodyName(66, null, orig), "F#");
+  // Tông +2: C trưởng -> D trưởng
+  assert.equal(T.melodyName(64, K("C"), { mode: "orig", transpose: 2 }), "F#");
+  assert.equal(T.melodyName(60, K("C"), { mode: "orig", transpose: -1 }), "B");
+  // C thứ +3 = Eb thứ: Ab -> B, G -> Bb (cùng kiểu dấu với hợp âm, xem shiftSym)
+  assert.equal(T.melodyName(68, K("C", "minor"), { mode: "orig", transpose: 3 }), "B");
+  assert.equal(T.melodyName(67, K("C", "minor"), { mode: "orig", transpose: 3 }), "Bb");
+});
+
+test("melodyName chế độ Phím trắng: dịch theo white_key_transpose của vùng giọng", () => {
+  const white = { mode: "white", transpose: 5 };              // transpose của chế độ Gốc bị bỏ qua
+  const cm = { tonic: "C", mode: "minor", white_key_transpose: 3 };
+  assert.equal(T.melodyName(60, cm, white), "A");             // C trong C thứ -> A (A thứ)
+  assert.equal(T.melodyName(63, cm, white), "C");             // Eb -> C
+  assert.equal(T.melodyName(67, cm, white), "E");
+  assert.equal(T.melodyName(71, cm, white), "Ab");            // B (bậc 7 nâng) -> G#, viết Ab như hợp âm (FLAT_NAMES)
+  const d = { tonic: "D", mode: "major", white_key_transpose: 2 };
+  assert.equal(T.melodyName(66, d, white), "E");              // F# -> E
+  assert.equal(T.melodyName(68, d, white), "F#");             // G# (#4) -> F#
+  assert.equal(T.melodyName(72, d, white), "Bb");             // C (b7) -> Bb
+  // Không có white_key_transpose: không dịch, như hợp âm (chordLabels)
+  assert.equal(T.melodyName(69, K("A"), white), "A");
+  assert.equal(T.melodyName(62, null, white), "D");
+});
+
+test("melodyName chế độ Bậc: số 1–7 theo giọng trưởng (giọng thứ dùng giọng trưởng song song)", () => {
+  const roman = { mode: "roman", transpose: 0 };
+  assert.deepEqual([60, 62, 64, 65, 67, 69, 71].map((p) => T.melodyName(p, K("C"), roman)), ["1", "2", "3", "4", "5", "6", "7"]);
+  assert.equal(T.melodyName(66, K("C"), roman), "#4");
+  assert.equal(T.melodyName(70, K("C"), roman), "b7");
+  assert.equal(T.melodyName(62, K("D"), roman), "1");
+  // A thứ: A = 6, C = 1; C thứ: C = 6, Eb = 1
+  assert.equal(T.melodyName(69, K("A", "minor"), roman), "6");
+  assert.equal(T.melodyName(60, K("C", "minor"), roman), "6");
+  assert.equal(T.melodyName(63, K("C", "minor"), roman), "1");
+  // Bậc = phím trắng ở chế độ Phím trắng (C = 1 … B = 7) cho mọi nốt trong giọng
+  const cm = { tonic: "C", mode: "minor", white_key_transpose: 3 };
+  const LETTER = { C: "1", D: "2", E: "3", F: "4", G: "5", A: "6", B: "7" };
+  for (const p of [60, 62, 63, 65, 67, 68, 70]) {
+    assert.equal(T.melodyName(p, cm, roman), LETTER[T.melodyName(p, cm, { mode: "white" })]);
+  }
+});
+
+test("melodyArrow và melodyLabels: mũi tên theo pitch gốc, giọng theo vùng", () => {
+  assert.equal(T.melodyArrow(null, 60), "");
+  assert.equal(T.melodyArrow(60, 62), "↑");
+  assert.equal(T.melodyArrow(62, 60), "↓");
+  assert.equal(T.melodyArrow(60, 60), "");
+  assert.equal(T.melodyArrow(60, 72), "↑");                   // lên quãng tám: cùng tên nhưng có mũi tên
+  const song = T.buildSong({
+    duration: 20, beats: [], downbeats: [], chords: [],
+    keys: [{ start: 0, end: 10, tonic: "C", mode: "major", white_key_transpose: 0 },
+           { start: 10, end: 20, tonic: "D", mode: "major", white_key_transpose: 2 }],
+  }, { snapToBeats: false });
+  const notes = [
+    { start: 1, end: 2, pitch: 64 }, { start: 2, end: 3, pitch: 64 }, { start: 3, end: 4, pitch: 62 },
+    { start: 11, end: 12, pitch: 66 }, { start: 12, end: 13, pitch: 78 },
+  ];
+  const L = T.melodyLabels(song, notes, { mode: "white" });
+  assert.deepEqual(L.map((x) => x.name), ["E", "E", "D", "E", "E"]);
+  assert.deepEqual(L.map((x) => x.arrow), ["", "", "↓", "↑", "↑"]);
+  assert.deepEqual(T.melodyLabels(song, notes, { mode: "orig", transpose: 0 }).map((x) => x.name), ["E", "E", "D", "F#", "F#"]);
+  assert.deepEqual(T.melodyLabels(song, notes, { mode: "roman" }).map((x) => x.name), ["3", "3", "2", "3", "3"]);
+  // Mũi tên không đổi theo chế độ hay transpose
+  assert.deepEqual(T.melodyLabels(song, notes, { mode: "orig", transpose: 4 }).map((x) => x.arrow), ["", "", "↓", "↑", "↑"]);
+  assert.deepEqual(T.melodyLabels(null, notes.slice(0, 1), { mode: "orig" }), [{ name: "E", arrow: "" }]);
+});
+
+test("melodyNotes, noteIndexAt, noteFit", () => {
+  const m = { notes: [{ start: 3, end: 4, pitch: 60 }, { start: 1, end: 2, pitch: 62 }, { start: 5, end: 5, pitch: 1 },
+                      null, { start: 6, end: 7 }, { start: 2, end: 2.5, pitch: 64 }] };
+  const notes = T.melodyNotes(m);
+  assert.deepEqual(notes.map((n) => n.start), [1, 2, 3]);
+  assert.deepEqual(T.melodyNotes(null), []);
+  assert.deepEqual(T.melodyNotes({}), []);
+  assert.equal(T.melodyNotes({ notes: [{ start: 0, end: 1, pitch: 60.6 }] })[0].pitch, 61);   // pitch lẻ: làm tròn
+  assert.equal(T.noteIndexAt(notes, 0.5), -1);
+  assert.equal(T.noteIndexAt(notes, 1), 0);
+  assert.equal(T.noteIndexAt(notes, 2.2), 1);
+  assert.equal(T.noteIndexAt(notes, 2.7), -1);                // nghỉ giữa hai nốt
+  assert.equal(T.noteIndexAt(notes, 3.5, 1), 2);
+  assert.equal(T.noteIndexAt(notes, 1.5, 2), 0);              // hint sai vẫn tìm đúng
+  assert.equal(T.noteIndexAt(notes, 9), -1);
+  assert.equal(T.noteFit(30, 20, 10), "full");
+  assert.equal(T.noteFit(15, 20, 10), "name");
+  assert.equal(T.noteFit(5, 20, 10), "bare");
+});
+
+const magiaMel = (() => {
+  const p = path.join(DATA, "cache", "dev_melody", "devmagia_01.json");
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+})();
+test("Magia: dòng nốt giả ở chế độ Phím trắng hầu hết là phím trắng", { skip: !(magia && magiaMel) && "không có dữ liệu" }, () => {
+  const song = T.buildSong(magia);
+  const notes = T.melodyNotes(magiaMel);
+  const L = T.melodyLabels(song, notes, { mode: "white" });
+  const white = L.filter((x) => /^[A-G]$/.test(x.name)).length;
+  assert.ok(white / L.length > 0.8, `chỉ ${white}/${L.length} nốt là phím trắng`);
+  for (let i = 1; i < notes.length; i++) assert.ok(notes[i].start >= notes[i - 1].start);
 });

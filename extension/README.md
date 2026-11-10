@@ -33,6 +33,8 @@ extension, không đọc hay gửi dữ liệu gì. Lần đầu (bản đang n�
 | Tông − / + | Dịch tông ở chế độ Gốc (−6..+6) | Alt+Shift+↓ / ↑ |
 | Ô "Đặt transpose đàn" | Giá trị nút transpose của đàn cho vùng giọng đang phát; chuyển vàng và đếm ngược 8 giây trước chỗ đổi giọng | |
 | Metronome + thanh âm lượng | Tiếng phách theo `beats` của bài (src/metronome.js) | Alt+Shift+M |
+| ♪ Dò giai điệu | Dò dòng nốt giai điệu (`POST /melody`, job riêng, chỉ chạy khi bấm; hiện tiến độ, bước, thời gian còn lại). Bài đã dò thì tự tải khi bật ChordTrack (`GET /melody/{id}`) | |
+| Công tắc "Giai điệu" / ↻ | Ẩn/hiện dòng nốt (nhớ lựa chọn, `CT.settings.showMelody`); ↻ dò lại (bỏ kết quả đã lưu) | Alt+Shift+G |
 | ▴ / ▾ | Thu gọn khung (chỉ còn hợp âm hiện tại và chấm phách) | Alt+Shift+H |
 | Bấm hợp âm / đoạn | Tua video tới đó | |
 | Kéo ngang dải hợp âm | Xem trước/sau (chuột, cảm ứng, cuộn ngang trackpad hoặc Shift + lăn chuột). Lúc kéo, thanh mỏng ở đáy dải cho biết khung đang xem nằm đâu trong bài (vệt sáng), chỗ đang phát (vạch đỏ) và thời điểm đang xem, lệch bao nhiêu giây. Thả tay 2,5 giây thì dải tự trượt về vạch đỏ; video không bị tua | |
@@ -47,6 +49,16 @@ bật thì bài có sẵn hiện luôn, nhưng bài mới vẫn không bao giờ
 Phím tắt dùng Alt+Shift để không đụng phím của YouTube (k, j, l, f, số…). Trên dải: vạch đỏ là thời điểm đang phát,
 vạch cao kèm số là phách 1 của ô nhịp, vạch thấp là phách nhẹ, vạch vàng đứt là chỗ đổi giọng, ⚠ là hợp âm model không chắc.
 
+**Dòng giai điệu** (sau khi dò): làn nốt ngay dưới các ô hợp âm, cùng tỷ lệ thời gian, cùng vạch đỏ; nốt đang phát có
+nền sáng và thanh đỏ, nốt đã qua mờ đi. Mỗi nốt: tên C D E F G A B (thăng/giáng như hợp âm, **không có số quãng tám**)
+và ↑/↓ so với nốt trước (bằng nhau thì không có). Nốt model không chắc (`uncertain`) mờ, thanh chấm. Dịch giọng theo chế
+độ: Gốc dùng Tông −/+; 🎹 Phím trắng dịch theo vùng giọng đang phát như hợp âm; **Bậc La Mã hiện số 1–7** (1 là chủ âm
+giọng trưởng, giọng thứ dùng giọng trưởng song song nên A thứ: A = 6; nốt ngoài giọng b2 b3 #4 b6 b7). Lý do chọn số
+thay vì tên nốt: số không phụ thuộc giọng, đọc được như ký âm số, và **trùng đúng phím trắng phải bấm** ở chế độ Phím
+trắng (1 = C, 2 = D … 7 = B), nên chuyển qua lại hai chế độ không phải nhớ hai cách gọi. Giai điệu nhanh: nhãn "C↑"
+không vừa khe tới nốt kế thì mũi tên nhỏ xuống dưới tên; hẹp nữa thì chỉ còn mũi tên và thanh (rê chuột xem tooltip).
+Bấm vào nốt để tua tới đó. Toàn màn hình: dòng nốt đi cùng dải hợp âm vào lớp phủ.
+
 **Toàn màn hình:** dải hợp âm chuyển vào lớp phủ trong `#movie_player`, nằm ngay trên thanh điều khiển YouTube. Khi
 YouTube tự ẩn thanh điều khiển, lớp phủ hạ xuống sát đáy và nền trong hơn nhưng **không mờ chữ hợp âm**, vì người
 dùng vừa xem vừa đàn và cần đọc hợp âm liên tục. Phụ đề YouTube được đẩy lên trên lớp phủ.
@@ -59,13 +71,13 @@ nên theo theme sáng/tối của YouTube.
 | File | Việc |
 |---|---|
 | `src/background.js` | Service worker: chuyển `{type:"ct:fetch", path, method, body}` tới `CT.settings.serverUrl`, trả `{ok, status, data \| error}` |
-| `src/api.js` | `CT.api.loadSong`: `POST /analyze`, poll `/jobs/{id}` mỗi giây, `GET /result/{song_id}` |
-| `src/theory.js` | Dịch giọng theo ký hiệu (kể cả hợp âm đảo), đơn giản hóa, ẩn bass, nhãn theo chế độ, số chỉ nhịp |
+| `src/api.js` | `CT.api.loadSong`: `POST /analyze`, poll `/jobs/{id}` mỗi giây, `GET /result/{song_id}`; `loadMelody`/`getMelody` cho `/melody` (docs/melody_api.md) |
+| `src/theory.js` | Dịch giọng theo ký hiệu (kể cả hợp âm đảo), đơn giản hóa, ẩn bass, nhãn theo chế độ, số chỉ nhịp; tên nốt giai điệu theo chế độ, mũi tên, chọn cách hiện nhãn khi dòng dày |
 | `src/sync.js` | Vòng `requestAnimationFrame` đọc `video.currentTime` (phát `time`), `CT.seekTo`, toàn màn hình |
 | `src/content.js` | Điều phối: videoId khi YouTube điều hướng SPA, chỉ phân tích khi người dùng bật, nhớ video đã bật trong phiên, tự thử lại khi server tắt, dọn khi rời trang video |
 | `src/ui/icons.js` | Bộ icon SVG riêng (`CT.icons`): logo và avatar piano cách điệu, metronome có quả lắc xoay theo phách, phím đàn |
 | `src/ui/controls_button.js` | Nút ChordTrack trong `.ytp-right-controls` (trạng thái tắt/đang phân tích/bật/lỗi, tooltip), gắn lại khi YouTube vẽ lại thanh điều khiển |
-| `src/ui/strip.js` | Dải karaoke: dựng DOM một lần mỗi bài; mỗi khung hình chỉ đặt `transform` và đổi class khi hợp âm đổi |
+| `src/ui/strip.js` | Dải karaoke: dựng DOM một lần mỗi bài; mỗi khung hình chỉ đặt `transform` và đổi class khi hợp âm đổi; làn nốt giai điệu nằm trong cùng track |
 | `src/ui/panel.js` | Panel dưới player, trạng thái đang phân tích/lỗi, phím tắt, gắn vào DOM YouTube (`MutationObserver`) |
 | `src/ui/sections.js` | Bảng cấu trúc: đầu `#secondary`; chế độ rạp hát hoặc trang một cột thì xếp dưới panel |
 | `src/ui/fullscreen.js` | Lớp phủ toàn màn hình dùng chính phần tử dải hợp âm |
@@ -82,10 +94,16 @@ powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1
 .venv\Scripts\python.exe extension\dev\serve.py
 # 3. mở http://127.0.0.1:8770/watch?v=QDYfEBY9NM4
 ```
+Test JS (hàm thuần của `theory.js`, gồm tên nốt giai điệu, mũi tên, transpose): `node --test extension/dev/theory.test.js`
+(đặt `CHORDTRACK_DATA=<checkout chính>\data` để chạy cả test dùng dữ liệu thật khi chạy từ worktree).
 
 - Thanh trên cùng của harness có sẵn: Let It Be (một giọng), Magia (Kajiura, 5 chỗ đổi giọng), "Đang phân tích"
   (job giả ~15 giây), "Lỗi YouTube" (job giả đòi cookie), "Server tắt" (proxy đóng kết nối), "Trang chủ" (không
   phải trang video), nút đổi theme và chế độ rạp hát.
+- **Giai điệu khi backend chưa có `/melody`:** chạy một lần `.venv\Scripts\python.exe extension\dev\make_dev_melody.py`
+  (tạo `data/cache/dev_melody/<id>.json` từ cache model của Magia và Let It Be). `serve.py` thấy backend trả 404/405
+  cho `/melody` (hoặc videoId giả) thì chạy job giả ~12 giây rồi trả file đó. Bài "Đang phân tích" cho job giai điệu lỗi.
+  `serve.py --melody-cached` coi như các bài đó đã dò sẵn (thử tự tải khi mở bài).
 - Tham số URL: `dark=0|1`, `theater=1`, `down=1`, `w=900` (bó trang vào 900 px để thử bố cục một cột khi không đổi
   được kích thước cửa sổ), `measure=1` (xem dưới).
 - Trình duyệt kiểm thử chạy ở máy khác hoặc không vào được 127.0.0.1 (ví dụ Claude in Chrome trên máy này):
