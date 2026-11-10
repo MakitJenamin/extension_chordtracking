@@ -1,0 +1,4 @@
+# Dữ liệu đánh giá dò giai điệu (eval/melody/datasets.py): tải nhãn và audio công khai (Zenodo, LabROSA, GitHub).
+# requests đã có sẵn trong venv, ghi ra để môi trường mới cài đủ.
+requests>=2.31
+# Dùng thêm librosa, soundfile (base.txt), yt-dlp, yt-dlp-ejs (eval.txt) và ffmpeg trong PATH.

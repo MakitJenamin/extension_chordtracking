@@ -19,6 +19,7 @@ import csv
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -198,6 +199,21 @@ def prepare_sanity() -> list[dict]:
 
 # ---------------------------------------------------------------- Orchset
 
+def _safe_extract(zpath: Path, dest: Path) -> None:
+    """Giải nén vào thư mục tạm rồi đổi tên, để lần giải nén bị ngắt giữa chừng không để lại `dest` thiếu file."""
+    if dest.exists():
+        return
+    tmp = dest.with_name(dest.name + ".tmp")
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    with zipfile.ZipFile(zpath) as zf:
+        for m in zf.namelist():
+            if not (tmp / m).resolve().is_relative_to(tmp.resolve()):
+                raise RuntimeError(f"Đường dẫn lạ trong zip: {m}")
+        zf.extractall(tmp)
+    tmp.rename(dest)
+
+
 ORCHSET_URL = "https://zenodo.org/api/records/1289786/files/Orchset_dataset_0.zip/content"
 ORCHSET_MD5 = "cf6fe52d64624f61ee116c752fb318ca"
 
@@ -211,8 +227,7 @@ def prepare_orchset() -> list[dict]:
     d = dataset_dir("orchset")
     z = _download(ORCHSET_URL, d / "raw" / "Orchset_dataset_0.zip", ORCHSET_MD5)
     extract = d / "raw" / "extracted"
-    if not extract.exists():
-        _safe_extract(z, extract)
+    _safe_extract(z, extract)
     mels = sorted(extract.rglob("*.mel"))
     if not mels:
         raise RuntimeError(f"Không thấy file .mel trong {extract}")
@@ -244,22 +259,13 @@ LABROSA_SETS = {
 }
 
 
-def _safe_extract(zpath: Path, dest: Path) -> None:
-    with zipfile.ZipFile(zpath) as zf:
-        for m in zf.namelist():
-            if not str((dest / m).resolve()).startswith(str(dest.resolve())):
-                raise RuntimeError(f"Đường dẫn lạ trong zip: {m}")
-        zf.extractall(dest)
-
-
 def prepare_labrosa(dataset: str) -> list[dict]:
     """ADC2004 (20 đoạn) hoặc MIREX05 (13 đoạn): WAV mono 44.1 kHz + `<tên>REF.txt` (time hz)."""
     fname, md5, kind = LABROSA_SETS[dataset]
     d = dataset_dir(dataset)
     z = _download(LABROSA_URL + fname, d / "raw" / fname, md5)
     extract = d / "raw" / "extracted"
-    if not extract.exists():
-        _safe_extract(z, extract)
+    _safe_extract(z, extract)
     entries = []
     for refp in sorted(extract.rglob("*REF.txt")):
         name = refp.name[:-len("REF.txt")]
@@ -307,48 +313,62 @@ def _yt_download(url: str, out_stem: Path, cookies: str | None = None) -> tuple[
     return None, err
 
 
-def _to_wav(src: Path, dst: Path) -> None:
+def _to_wav(src: Path, dst: Path) -> str:
+    """Chuyển sang WAV 44.1 kHz stereo 16-bit. Trả về "" nếu thành công, ngược lại là thông báo lỗi của ffmpeg."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(".tmp.wav")
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ar", str(YT_SR), "-ac", str(YT_CHANNELS),
-                    "-c:a", "pcm_s16le", str(tmp)], check=True)
+    res = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ar", str(YT_SR), "-ac", str(YT_CHANNELS),
+                          "-c:a", "pcm_s16le", str(tmp)], capture_output=True, text=True, encoding="utf-8",
+                         errors="replace")
+    if res.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        return "ffmpeg: " + ((res.stderr.strip().splitlines() or ["?"])[-1])
     tmp.replace(dst)
+    return ""
 
 
-def estimate_offset(audio: Path, notes: np.ndarray, max_lag: float = 2.0) -> dict:
-    """Ước lượng độ lệch giữa nhãn nốt và audio bằng pitch salience (CPU, không model).
+_SAL_SR, _SAL_HOP, _SAL_LO, _SAL_BINS = 22050, 256, 36, 61   # salience: MIDI 36–96, khung 11.6 ms
 
-    Salience: CQT 1 bin/nửa cung (MIDI 36–96), log, trừ trung vị theo thời gian của từng bin (bỏ nốt kéo
-    dài của nhạc đệm), cộng điều hòa (bậc 1–4), chuẩn hóa z theo khung. Điểm của độ lệch `lag` là trung
-    bình salience tại cao độ nhãn ở khung `t + lag` trên mọi khung có nốt. Trả về lag tốt nhất (giây,
-    cộng vào thời gian nhãn), điểm tại lag đó, điểm tại 0, và `z` = (đỉnh − trung vị) / độ lệch chuẩn
-    của đường điểm (độ rõ của đỉnh).
-    """
+
+def pitch_salience(audio: Path) -> np.ndarray:
+    """Salience cao độ (_SAL_BINS × khung): CQT 1 bin/nửa cung từ MIDI 36, log, trừ trung vị theo thời gian của
+    từng bin (bỏ nốt kéo dài của nhạc đệm), cộng điều hòa (bậc 1–4), chuẩn hóa z theo khung."""
     import librosa
 
-    sr, hop = 22050, 256
-    y, _ = librosa.load(str(audio), sr=sr, mono=True)
-    lo = 36
-    n_bins = 61
-    C = np.abs(librosa.cqt(y, sr=sr, hop_length=hop, fmin=librosa.midi_to_hz(lo), n_bins=n_bins + 24,
-                           bins_per_octave=12))
+    y, _ = librosa.load(str(audio), sr=_SAL_SR, mono=True)
+    C = np.abs(librosa.cqt(y, sr=_SAL_SR, hop_length=_SAL_HOP, fmin=librosa.midi_to_hz(_SAL_LO),
+                           n_bins=_SAL_BINS + 24, bins_per_octave=12))
     L = np.log1p(100 * C / (C.max() + 1e-9))
     L = L - np.median(L, axis=1, keepdims=True)
-    S = np.zeros((n_bins, L.shape[1]))
+    S = np.zeros((_SAL_BINS, L.shape[1]))
     for h, w in ((0, 1.0), (12, 0.5), (19, 0.33), (24, 0.25)):
-        S += w * L[h:h + n_bins]
-    S = (S - S.mean(axis=0)) / (S.std(axis=0) + 1e-9)
-    n_frames = S.shape[1]
-    fps = sr / hop
+        S += w * L[h:h + _SAL_BINS]
+    return (S - S.mean(axis=0)) / (S.std(axis=0) + 1e-9)
 
+
+_NO_MATCH = {"lag": 0.0, "score": 0.0, "score0": 0.0, "margin": 0.0, "null": 0.0, "z": 0.0}
+
+
+def score_offsets(S: np.ndarray, notes: np.ndarray, max_lag: float = 2.0) -> dict:
+    """Điểm của độ lệch `lag` = trung bình salience tại cao độ nhãn ở khung `t + lag`, trên mọi khung có nốt.
+
+    Trả về lag tốt nhất (giây, cộng vào thời gian nhãn), điểm tại lag đó (`score`), điểm tại 0 (`score0`),
+    `margin` = đỉnh trừ điểm cao nhất ở các lag cách đỉnh > 0.25 s (độ nhọn của đỉnh), `null` = điểm khi xáo
+    trộn cao độ (mức ngẫu nhiên, khoảng 0) và `z` = (đỉnh − trung vị) / độ lệch chuẩn của đường điểm.
+    Không có nốt nào trong dải MIDI 36–96 thì trả về điểm 0 (bài bị loại).
+    """
+    n_bins, n_frames = S.shape
+    fps = _SAL_SR / _SAL_HOP
     frames, pitches = [], []
     for on, off, midi in notes:
-        p = int(round(midi)) - lo
+        p = int(round(midi)) - _SAL_LO
         if not 0 <= p < n_bins:
             continue
         a, b = int(round(on * fps)), int(round(off * fps))
         frames.append(np.arange(a, max(b, a + 1)))
         pitches.append(np.full(max(b, a + 1) - a, p))
+    if not frames:
+        return dict(_NO_MATCH)
     frames = np.concatenate(frames)
     pitches = np.concatenate(pitches)
     lags = np.arange(-int(max_lag * fps), int(max_lag * fps) + 1)
@@ -358,20 +378,26 @@ def estimate_offset(audio: Path, notes: np.ndarray, max_lag: float = 2.0) -> dic
         ok = (f >= 0) & (f < n_frames)
         if ok.sum() > 0.5 * len(f):
             scores[i] = S[pitches[ok], f[ok]].mean()
+    if np.isnan(scores).all():
+        return dict(_NO_MATCH)
     best = int(np.nanargmax(scores))
     valid = scores[~np.isnan(scores)]
     z = (scores[best] - np.median(valid)) / (valid.std() + 1e-9)
-    far = np.abs(lags - lags[best]) > 0.25 * fps
-    margin = scores[best] - np.nanmax(scores[far])
-    # Mức ngẫu nhiên: cùng các khung, cao độ nhãn xáo trộn giữa các nốt.
+    far = (np.abs(lags - lags[best]) > 0.25 * fps) & ~np.isnan(scores)
+    margin = scores[best] - scores[far].max() if far.any() else 0.0
     rng = np.random.default_rng(0)
     f = frames + lags[best]
     ok = (f >= 0) & (f < n_frames)
     null = float(np.mean([S[rng.permutation(n_bins)[pitches[ok]], f[ok]].mean() for _ in range(5)]))
-    zero = int(np.where(lags == 0)[0][0])
+    s0 = scores[lags == 0][0]
     return {"lag": round(float(lags[best] / fps), 3), "score": round(float(scores[best]), 3),
-            "score0": round(float(scores[zero]), 3), "margin": round(float(margin), 3),
+            "score0": round(float(0.0 if np.isnan(s0) else s0), 3), "margin": round(float(margin), 3),
             "null": round(null, 3), "z": round(float(z), 2)}
+
+
+def estimate_offset(audio: Path, notes: np.ndarray, max_lag: float = 2.0) -> dict:
+    """Ước lượng độ lệch giữa nhãn nốt và audio bằng pitch salience (CPU, không model)."""
+    return score_offsets(pitch_salience(audio), notes, max_lag)
 
 
 MIRST_MIN_SCORE = 0.8     # bài khớp: 1.4–1.9; nhãn của bài khác: khoảng 0
@@ -388,9 +414,10 @@ def mirst_decide(est: dict, min_score: float = MIRST_MIN_SCORE, min_margin: floa
 
 def _mirst_estimate(wav: Path, notes: np.ndarray) -> dict:
     """Tìm trong ±2 s; nếu không khớp thì tìm rộng ±10 s (bản YouTube có thể thêm đoạn mở đầu)."""
-    est = estimate_offset(wav, notes, 2.0)
+    S = pitch_salience(wav)
+    est = score_offsets(S, notes, 2.0)
     if not mirst_decide(est)[0]:
-        wide = estimate_offset(wav, notes, 10.0)
+        wide = score_offsets(S, notes, 10.0)
         if mirst_decide(wide)[0]:
             wide["wide"] = True
             return wide
@@ -407,6 +434,9 @@ def prepare_mir_st500(ids: list[str] | None = None, cookies: str | None = None, 
     report_p = d / "offsets.json"
     report = json.loads(report_p.read_text(encoding="utf-8")) if report_p.exists() else {}
 
+    bad = sorted(set(ids or []) - set(MIRST_TEST_IDS))
+    if bad:
+        raise ValueError(f"Chỉ dùng tập test 401–500, id không hợp lệ: {bad}")
     for tid in ids or MIRST_TEST_IDS:
         r = report.setdefault(tid, {"url": links[tid]})
         wav = d / "audio" / f"{tid}.wav"
@@ -420,8 +450,13 @@ def prepare_mir_st500(ids: list[str] | None = None, cookies: str | None = None, 
                 print(f"[mất] {tid}: {err}", flush=True)
                 report_p.write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
                 continue
-            _to_wav(src, wav)
-            src.unlink()
+            err = _to_wav(src, wav)
+            src.unlink(missing_ok=True)
+            if err:
+                r.update(status="missing", error=err)
+                print(f"[lỗi] {tid}: {err}", flush=True)
+                report_p.write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
+                continue
         r.pop("error", None)
         if not skip_offset and "est" not in r:
             r["est"] = _mirst_estimate(wav, notes)
@@ -433,33 +468,36 @@ def prepare_mir_st500(ids: list[str] | None = None, cookies: str | None = None, 
         print(f"{tid}: {r['status']} {r.get('est')}", flush=True)
         report_p.write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
 
+    return _mirst_write_manifest(report)
+
+
+def _mirst_write_manifest(report: dict) -> list[dict]:
+    d = dataset_dir("mir_st500")
     entries = []
     for tid in MIRST_TEST_IDS:
         r = report.get(tid, {})
-        if r.get("status") == "ok":
-            entries.append(make_entry(tid, "mir_st500", d / "audio" / f"{tid}.wav", "vocal",
-                                      ref_notes=d / "ref" / f"{tid}.csv", offset=r["offset"], url=r["url"]))
+        wav = d / "audio" / f"{tid}.wav"
+        if r.get("status") == "ok" and wav.exists():
+            entries.append(make_entry(tid, "mir_st500", wav, "vocal", ref_notes=d / "ref" / f"{tid}.csv",
+                                      offset=r["offset"], url=r["url"]))
     write_manifest(entries, manifest_path("mir_st500"))
     return entries
 
 
-def redecide_mir_st500(min_score: float, min_margin: float) -> None:
-    """Chọn lại bài giữ/loại theo ngưỡng mới mà không tính lại salience."""
+def redecide_mir_st500(min_score: float, min_margin: float) -> list[dict]:
+    """Chọn lại bài giữ/loại theo ngưỡng mới mà không tải hay tính lại salience.
+
+    Chỉ đổi bài đã có `est` và vẫn còn audio; bài mất hoặc chưa ước lượng giữ nguyên trạng thái.
+    """
     d = dataset_dir("mir_st500")
     report_p = d / "offsets.json"
     report = json.loads(report_p.read_text(encoding="utf-8"))
-    entries = []
-    for tid in MIRST_TEST_IDS:
-        r = report.get(tid, {})
-        if "est" not in r:
-            continue
-        keep, off = mirst_decide(r["est"], min_score, min_margin)
-        r.update(status="ok" if keep else "mismatch", offset=off)
-        if keep:
-            entries.append(make_entry(tid, "mir_st500", d / "audio" / f"{tid}.wav", "vocal",
-                                      ref_notes=d / "ref" / f"{tid}.csv", offset=off, url=r["url"]))
+    for tid, r in report.items():
+        if "est" in r and r.get("status") != "missing" and (d / "audio" / f"{tid}.wav").exists():
+            keep, off = mirst_decide(r["est"], min_score, min_margin)
+            r.update(status="ok" if keep else "mismatch", offset=off)
     report_p.write_text(json.dumps(report, indent=1, ensure_ascii=False), encoding="utf-8")
-    write_manifest(entries, manifest_path("mir_st500"))
+    return _mirst_write_manifest(report)
 
 
 # ---------------------------------------------------------------- tổng hợp
@@ -486,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):   # console Windows mặc định cp1252, không in được tiếng Việt
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
+    if a.dataset != "mir_st500" and (a.ids or a.redecide or a.skip_offset or a.cookies):
+        ap.error("--ids, --cookies, --skip-offset, --redecide chỉ dùng cho mir_st500")
     if a.dataset == "summary":
         summary()
         return 0

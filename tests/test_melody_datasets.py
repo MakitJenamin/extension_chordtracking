@@ -61,6 +61,40 @@ def test_mirst_decide():
     assert ds.mirst_decide({"lag": 0.3, "score": 1.2, "margin": 0.02})[0] is False
 
 
+def test_score_offsets_no_notes_in_range():
+    S = np.zeros((61, 500))
+    assert ds.mirst_decide(ds.score_offsets(S, np.zeros((0, 3))))[0] is False
+    assert ds.mirst_decide(ds.score_offsets(S, np.array([[0.1, 0.5, 20.0]])))[0] is False
+
+
+def test_safe_extract_rejects_sibling_prefix(tmp_path):
+    import zipfile
+
+    z = tmp_path / "a.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("../extracted.tmp_evil/x.txt", "x")
+    with pytest.raises(RuntimeError):
+        ds._safe_extract(z, tmp_path / "extracted")
+    assert not (tmp_path / "extracted").exists()
+
+
+def test_redecide_keeps_missing_and_unestimated(tmp_path, monkeypatch):
+    monkeypatch.setattr(ds, "MELODY_DIR", tmp_path)
+    d = tmp_path / "mir_st500"
+    for tid in ("401", "402"):
+        _wav((d / "audio").mkdir(parents=True, exist_ok=True) or d / "audio" / f"{tid}.wav")
+        ds.write_notes_csv(np.array([[0.1, 0.5, 60]]), d / "ref" / f"{tid}.csv")
+    good = {"lag": 0.3, "score": 1.5, "margin": 0.5}
+    report = {"401": {"url": "u1", "status": "ok", "offset": 0.0},                     # --skip-offset, không có est
+              "402": {"url": "u2", "status": "mismatch", "offset": 0.0, "est": good},
+              "403": {"url": "u3", "status": "missing", "est": good}}                 # mất audio
+    (d / "offsets.json").write_text(json.dumps(report), encoding="utf-8")
+    entries = ds.redecide_mir_st500(0.8, 0.15)
+    assert [(e["track_id"], e["offset"]) for e in entries] == [("401", 0.0), ("402", 0.3)]
+    back = json.loads((d / "offsets.json").read_text(encoding="utf-8"))
+    assert back["403"]["status"] == "missing"
+
+
 def test_estimate_offset_synthetic(tmp_path):
     # Giai điệu tổng hợp lệch 0.4 s so với nhãn: phải tìm lại được độ lệch.
     sr = 22050
