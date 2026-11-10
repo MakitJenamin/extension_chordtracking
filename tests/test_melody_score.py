@@ -183,8 +183,9 @@ def test_nn_gated_two_note_models(fake_data):
                           .read_text(encoding="utf-8").splitlines()[1]),
              "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}
     rows = S.score_track((entry, ["notem", "notem2"], None, [("notem", "notem2")]))
+    assert {r["model"] for r in rows if r["family"] == "nn_gated"} == {"notem>notem2"}
     nn = [r for r in rows if r["family"] == "nn_gated"]
-    # cổng theo notem2 không có (không có nhãn voice nhưng có nhãn nguồn -> cổng rỗng vẫn chấm)
+    # mọi cấu hình đều chấm (cổng theo notem2 rỗng vì notem2 không có giọng)
     assert len(nn) == len(S.nn_families()["nn_gated"])
     by = {r["params"]: r for r in nn}
     # cổng theo giọng của notem: giai điệu đúng
@@ -193,3 +194,22 @@ def test_nn_gated_two_note_models(fake_data):
     # cổng theo notem2 (không có giọng): toàn bộ là dòng của notem2, sai quãng tám
     bad = next(r for p, r in by.items() if "gate=b" in p and "pad=0.1" in p)
     assert bad["rpa"] < 0.1 and bad["rca"] > 0.9
+
+
+def test_nn_pairs_parsing_and_names():
+    assert S.parse_nn_pairs("a:b, c : d,") == [("a", "b"), ("c", "d")]
+    with pytest.raises(ValueError):
+        S.parse_nn_pairs("a:b:c")
+    assert S.model_parts("yourmt3>muscriptor_small") == ["yourmt3", "muscriptor_small"]
+    assert S.model_parts("rmvpe+yourmt3") == ["rmvpe", "yourmt3"]
+
+
+def test_nn_gated_scored_when_one_model_has_no_notes(fake_data):
+    # B không có nốt nào ở bài này: vẫn chấm mọi cấu hình (dòng B rỗng), để CV so trên cùng bộ bài
+    save_output(MelodyModelOutput("empty", notes=[]), cache_path("empty", "fake_f0", "t0"))
+    entry = {**json.loads((paths.EVAL_DIR / "melody" / "fake_f0" / "manifest.jsonl")
+                          .read_text(encoding="utf-8").splitlines()[0]),
+             "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}
+    rows = S.score_track((entry, ["notem", "empty"], None, [("notem", "empty"), ("empty", "notem")]))
+    nn = [r for r in rows if r["family"] == "nn_gated"]
+    assert len(nn) == 2 * len(S.NN_GRID)

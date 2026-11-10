@@ -50,6 +50,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import sys
 from dataclasses import replace
 from multiprocessing import Pool
@@ -152,6 +153,31 @@ def nn_families() -> dict[str, list[dict]]:
     return {"nn_gated": [dict(a=a, b=b, gate=g, pad=d) for a in ("source_viterbi", "viterbi")
                          for b in ("salience_nodur", "source_viterbi", "viterbi")
                          for g in ("a", "b") for d in NN_PAD]}
+
+
+NN_GRID = nn_families()["nn_gated"]
+NN_SEP = ">"      # tên model ghép hai model nốt: "A>B" (khác "f0+notes" của combo)
+
+
+def nn_name(a: str, b: str) -> str:
+    return f"{a}{NN_SEP}{b}"
+
+
+def model_parts(name: str) -> list[str]:
+    """Các model thành phần của một tên model (đơn, combo "f0+notes" hoặc ghép "A>B")."""
+    return re.split(r"[+>]", name)
+
+
+def parse_nn_pairs(text: str) -> list[tuple[str, str]]:
+    pairs = []
+    for item in text.split(","):
+        if not item.strip():
+            continue
+        parts = [p.strip() for p in item.split(":")]
+        if len(parts) != 2 or not all(parts):
+            raise ValueError(f"--nn-pairs: '{item}' phải có dạng A:B")
+        pairs.append((parts[0], parts[1]))
+    return pairs
 
 
 def params_of(cfg: dict) -> L.LineParams:
@@ -389,16 +415,19 @@ def score_track(task: tuple) -> list[dict]:
                          **{f"w_{k}": wts.get(k, 0.0) for k in ALL_METRICS}})
 
     note_lines: dict[str, dict[str, list[MelodyNote]]] = {}   # model -> họ -> dòng của cấu hình mặc định
-    all_lines: dict[str, dict[tuple[str, int], list[MelodyNote]]] = {}   # model -> (họ, cấu hình) -> dòng
+    # model -> (họ, cấu hình) -> dòng, chỉ giữ các cấu hình mà nn_gated dùng
+    nn_lines: dict[str, dict[tuple[str, int], list[MelodyNote]]] = {}
+    nn_needed = set(NN_KEYS.values())
     f0_tracks: dict[str, tuple[PitchTrack, bool]] = {}
     for m, o in outs.items():
         if o.notes:
-            note_lines[m], all_lines[m] = {}, {}
+            note_lines[m], nn_lines[m] = {}, {}
             for fam, cfgs in note_families().items():
                 for ci, cfg in enumerate(cfgs):
                     est = L.notes_to_line(o.notes, params_of(cfg))
                     emit(m, fam, ci, cfg, est)
-                    all_lines[m][(fam, ci)] = est
+                    if (fam, ci) in nn_needed:
+                        nn_lines[m][(fam, ci)] = est
                     if ci == 0:
                         note_lines[m][fam] = est
         if o.pitch_track is not None:
@@ -444,18 +473,21 @@ def score_track(task: tuple) -> list[dict]:
                     emit(name, "combo_gated", ci, c,
                          L.combine_gated(prim[c["vt"]], lines[c["sec"]], gates[mn][c["pad"]]))
     # Ghép hai model nốt: dòng của A ở đoạn có giọng (cổng theo nốt `voice` của A hoặc của B), dòng của B ở phần
-    # còn lại. Cổng của model không có nhãn nguồn nào thì bỏ; bài không có giọng thì cổng rỗng (= dòng của B).
+    # còn lại. Mọi cấu hình đều chấm trên mọi bài có cache của cả hai model (model không có nốt nào ở bài này thì
+    # dòng rỗng, bài không có giọng thì cổng rỗng = dòng của B), để CV so trên cùng một bộ bài.
+    voice_gates: dict[tuple[str, float], list] = {}
     for a, b in nn_pairs:
-        if a not in all_lines or b not in all_lines:
+        if a not in outs or b not in outs:
             continue
-        has_labels = {m: any(n.source is not None for n in outs[m].notes) for m in (a, b)}
-        nn_gates = {(g, d): L.voice_intervals(outs[a if g == "a" else b].notes, pad=d)
-                    for g in ("a", "b") for d in NN_PAD if has_labels[a if g == "a" else b]}
-        for ci, c in enumerate(nn_families()["nn_gated"]):
-            if (c["gate"], c["pad"]) in nn_gates:
-                emit(f"{a}+{b}", "nn_gated", ci, c,
-                     L.combine_gated(all_lines[a][NN_KEYS[c["a"]]], all_lines[b][NN_KEYS[c["b"]]],
-                                     nn_gates[(c["gate"], c["pad"])]))
+        for m in (a, b):
+            for d in NN_PAD:
+                if (m, d) not in voice_gates:
+                    voice_gates[(m, d)] = L.voice_intervals(outs[m].notes, pad=d)
+        for ci, c in enumerate(NN_GRID):
+            line_a = nn_lines.get(a, {}).get(NN_KEYS[c["a"]], [])
+            line_b = nn_lines.get(b, {}).get(NN_KEYS[c["b"]], [])
+            gate = voice_gates[(a if c["gate"] == "a" else b, c["pad"])]
+            emit(nn_name(a, b), "nn_gated", ci, c, L.combine_gated(line_a, line_b, gate))
     return rows
 
 
@@ -665,9 +697,10 @@ COL_NAMES = {"oa": "OA", "rpa": "RPA", "rca": "RCA", "vr": "VR", "vfa": "VFA", "
 
 
 def tables_md(summary: list[dict], primary: dict[str, str | None], selection: str, title: str,
-              compact: bool = False, top: int = 0) -> list[str]:
+              compact: bool = False, top: int = 0, objective: str = "primary") -> list[str]:
     """Bảng markdown mỗi bộ. `compact`: chỉ các cột chính (OA/RPA/RCA/VR/VFA, F1, số không cần đáp án).
-    `top` > 0: chỉ `top` dòng đầu mỗi bộ (sắp theo chỉ số mục tiêu)."""
+    Dòng sắp theo mục tiêu `objective` (xem `track_objective`; bộ không đáp án sắp theo % có nốt);
+    `top` > 0: chỉ `top` dòng đầu mỗi bộ."""
     out: list[str] = []
     for ds in sorted({s["dataset"] for s in summary}):
         rows = [s for s in summary if s["dataset"] == ds and s["selection"] == selection]
@@ -689,8 +722,11 @@ def tables_md(summary: list[dict], primary: dict[str, str | None], selection: st
         out.append(f"\n### {ds} ({n} bài, {mins:.1f} phút) — {title}\n")
         out.append("| model | bài | " + " | ".join(COL_NAMES[c] for c in cols) + " |")
         out.append("|---" * (len(cols) + 2) + "|")
-        key = p or "coverage"
-        ranked = sorted(rows, key=lambda s: -(s[key] if np.isfinite(s[key]) else -1))
+        def rank(s: dict) -> float:
+            v = track_objective(s, p, objective) if p else s["coverage"]
+            return -(v if np.isfinite(v) else -1)
+
+        ranked = sorted(rows, key=rank)
         for s in ranked[:top] if top > 0 else ranked:
             cells = []
             for c in cols:
@@ -756,7 +792,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--nn-pairs", default=",".join(f"{a}:{b}" for a, b in NN_PAIRS),
                     help="cặp ghép hai model nốt A:B (A ở đoạn có giọng, B ở phần còn lại), phân cách bằng dấu phẩy")
     args = ap.parse_args(argv)
-    nn_pairs = [tuple(p.split(":")) for p in args.nn_pairs.split(",") if ":" in p]
+    nn_pairs = parse_nn_pairs(args.nn_pairs)
 
     entries = read_manifests(args.datasets.split(",") if args.datasets else None)
     if not entries:
@@ -766,8 +802,9 @@ def main(argv: list[str] | None = None) -> int:
         rows = [r for r in read_per_track(args.out_dir / "per_track.csv") if r["dataset"] in entries]
         if args.models:
             keep = set(args.models.split(","))
-            rows = [r for r in rows if set(r["model"].split("+")) <= keep]
-        return report_from_rows(rows, entries, sorted({r["model"] for r in rows if "+" not in r["model"]}), args)
+            rows = [r for r in rows if set(model_parts(r["model"])) <= keep]
+        singles = sorted({r["model"] for r in rows if len(model_parts(r["model"])) == 1})
+        return report_from_rows(rows, entries, singles, args)
     only = args.models.split(",") if args.models else None
     # model ghi rõ trong --models thì không bị --exclude bỏ
     exclude = [x for x in args.exclude.split(",") if x and not (only and x in only)]
@@ -843,7 +880,7 @@ def report_from_rows(rows: list[dict], entries: dict[str, list[dict]], models: l
     chosen_r, choices_r = select_cv(rows, entries, args.folds, level="model", objective="rpa_vr")
     summary += summarize(chosen_r)
     nn_models = sorted({r["model"] for r in rows if r["family"] == "nn_gated"})
-    pairs = [(nm, part) for nm in nn_models for part in nm.split("+")]
+    pairs = [(nm, part) for nm in nn_models for part in model_parts(nm)]
     metrics = ["oa", "rpa", "vr", "note_f1"]
     tests_nn = compare_named(chosen_m, "cv_model", pairs, metrics, args.boot)
     tests_nn_r = compare_named(chosen_r, "cv_model_rpa_vr", pairs, metrics, args.boot)
@@ -858,7 +895,8 @@ def report_from_rows(rows: list[dict], entries: dict[str, list[dict]], models: l
              + tables_md(summary, primary, "cv_model", "top 5, cấu hình chung, mục tiêu OA / F1 onset",
                          compact=True, top=5)
              + tables_md(summary, primary, "cv_model_rpa_vr", "top 5, cấu hình chung, mục tiêu (RPA+VR)/2 "
-                                                             "(không phạt VFA)", compact=True, top=5)
+                                                             "(không phạt VFA; ⚠️ thưởng cả việc bật nốt mọi lúc, "
+                                                             "xem cột VFA)", compact=True, top=5, objective="rpa_vr")
              + named_tests_md(tests_nn, "Ghép hai model nốt so với từng thành phần (mục tiêu OA / F1 onset)")
              + named_tests_md(tests_nn_r, "Ghép hai model nốt so với từng thành phần (mục tiêu (RPA+VR)/2)")
              + choices_md({k: v for k, v in choices_m.items() if k.split("|")[0] in nn_models},
@@ -886,7 +924,7 @@ def report_from_rows(rows: list[dict], entries: dict[str, list[dict]], models: l
              ["\n## Theo model, cấu hình chung"] + head + \
              ["\n## Theo model, cấu hình riêng từng bộ"] + per_ds + ["\n## Theo họ chiến lược"] + detail
     (args.out_dir / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
-    print("\n".join(brief))
+    print("\n".join(brief + ["\n## Theo model, cấu hình chung"] + head))
     print(f"\nĐã ghi {args.out_dir} (report.md có thêm bảng theo từng họ chiến lược)", flush=True)
     return 0
 
