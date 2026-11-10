@@ -388,6 +388,15 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     giải mã gần như nhau. Mặc định fp32 batch 8. Nạp model ~8–11 s.
   - Let It Be nhận ra: trống 1702 nốt, acoustic piano 1607, **voice 290**, string ensemble, violin, cello, viola,
     guitar điện/acoustic, bass, choir... (có cả nhạc cụ ảo như violin/cello nhỏ lẻ, cần lọc khi chọn giai điệu).
+  - Chọn dòng giai điệu: `chordtrack/melody/line.py` (skyline / salience / ưu tiên nguồn / Viterbi trên khoảng sơ
+    cấp cho nốt đa âm; f0 → nốt có trễ, bù lệch dây, vibrato gộp một nốt; ghép f0 + nốt; căn phách tùy chọn).
+    Chấm: `python -m eval.melody.score` (CV 3 phần theo bài, mục tiêu OA hoặc F1 onset). Chạy hết 130 bài cache
+    hiện có mất 43 s trên CPU (6 tiến trình).
+  - Chạy thử đầu tiên (chỉ Basic Pitch có cache trên bộ có đáp án, 2026-11-10, điểm CV): OA ADC2004 52.7
+    (Viterbi), MIREX05 44.5 (Viterbi), Orchset 50.8 (salience). Viterbi hơn salience rõ ở hai bộ giọng hát
+    (+3.8 và +5.0 điểm OA, p 0.02 và 0.006) và giảm bước nhảy > 1 quãng tám từ 23–29 xuống khoảng 2 mỗi phút.
+    Ở Orchset (dàn nhạc) salience và skyline nhỉnh hơn Viterbi. Trên 5 bài Kajiura đã có cache, skyline của Basic Pitch có 74% nốt
+    thuộc hợp âm nhưng 80 bước nhảy quãng tám mỗi phút (bám bè đệm); RMVPE 56% và 12 bước nhảy mỗi phút.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
