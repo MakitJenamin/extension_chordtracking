@@ -260,9 +260,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("out", type=Path)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--dtype", default="fp32", choices=["fp32", "fp16", "bf16"])
+    ap.add_argument("--exit-with-parent", action="store_true",
+                    help="thoát ngay khi stdin đóng (tiến trình cha giữ pipe stdin mở trong lúc chờ)")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if args.exit_with_parent:
+        import os
+        import threading
+
+        def watch() -> None:
+            sys.stdin.buffer.read()   # chặn tới khi tiến trình cha đóng pipe hoặc chết
+            os._exit(3)
+
+        threading.Thread(target=watch, daemon=True).start()
     out = transcribe_locked(args.audio, batch_size=args.batch_size, dtype=args.dtype)
     mio.save_output(out, args.out)
     voice = sum(n.source == "voice" for n in out.notes)

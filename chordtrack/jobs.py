@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
+from chordtrack.melody.pipeline import STEPS as MELODY_STEPS
 from chordtrack.pipeline import TIMING_KEYS
 
 STEPS = tuple(k for k in TIMING_KEYS if k != "total")   # các bước pipeline báo qua `progress`
@@ -43,7 +44,6 @@ STEP_MESSAGES = {
 DEFAULT_STEP_SECONDS = {"fetch": 10.0, "separation": 3.0, "beats": 5.0, "chords": 15.0, "fusion": 2.0,
                         "analysis": 1.0}
 
-MELODY_STEPS = ("fetch", "melody_voice", "melody_fill", "melody_line")   # = chordtrack.melody.pipeline.STEPS
 MELODY_STEP_MESSAGES = {
     "fetch": "Đang lấy audio (dùng lại bản đã tải nếu có)",
     "melody_voice": "Đang dò giọng hát (YourMT3+)",
@@ -66,6 +66,11 @@ KINDS = {
     "analyze": Kind(STEPS, STEP_MESSAGES, DEFAULT_STEP_SECONDS, "Lỗi khi phân tích"),
     "melody": Kind(MELODY_STEPS, MELODY_STEP_MESSAGES, MELODY_DEFAULT_STEP_SECONDS, "Lỗi khi dò giai điệu"),
 }
+
+
+def kind_name(kind: str | None) -> str:
+    """Loại job hợp lệ (loại lạ, vd từ DB của bản mới hơn, coi như `analyze` khi hiển thị)."""
+    return kind if kind in KINDS else "analyze"
 HISTORY = 20            # số lần chạy gần nhất của mỗi bước dùng để lấy trung bình
 ACTIVE = ("queued", "running")
 
@@ -279,7 +284,7 @@ class JobStore:
 def job_status(store: JobStore, job: Job, now: float | None = None) -> dict[str, Any]:
     """JSON trả cho `GET /jobs/{id}`: trạng thái, tiến độ 0–1, bước, thông báo, ETA, lỗi."""
     now = time.time() if now is None else now
-    kind = job.kind if job.kind in KINDS else "analyze"
+    kind = kind_name(job.kind)
     spec = KINDS[kind]
     avg = store.step_averages(kind)
     total = sum(avg[s] for s in spec.steps) or 1.0
@@ -299,7 +304,7 @@ def job_status(store: JobStore, job: Job, now: float | None = None) -> dict[str,
         running = store.running()
         wait = 0.0
         if running is not None:
-            rk = running.kind if running.kind in KINDS else "analyze"
+            rk = kind_name(running.kind)
             wait = _running_remaining(running, store.step_averages(rk), now, KINDS[rk].steps)[0]
         eta = wait + sum(_kind_total(store, j.kind) for j in before) + total
         msg = "Đang chờ" + (f" ({ahead + (running is not None)} bài phía trước)" if ahead or running else "")
@@ -317,7 +322,7 @@ def _jobs_ahead(store: JobStore, job: Job) -> list[Job]:
 
 
 def _kind_total(store: JobStore, kind: str) -> float:
-    kind = kind if kind in KINDS else "analyze"
+    kind = kind_name(kind)
     avg = store.step_averages(kind)
     return sum(avg[s] for s in KINDS[kind].steps)
 
@@ -343,7 +348,12 @@ def friendly_error(exc: BaseException, step: str | None = None, kind: str = "ana
     text = f"{type(exc).__name__}: {exc}"
     low = text.lower()
     where = f" (bước {step})" if step else ""
-    prefix = KINDS.get(kind, KINDS["analyze"]).error_prefix
+    prefix = KINDS[kind_name(kind)].error_prefix
+    # Các dấu hiệu lỗi mạng chỉ là lỗi YouTube khi đang tải audio (job hợp âm tải trong bước fetch; bước model của
+    # job melody có thể hết giờ hoặc lỗi kết nối Hugging Face, không liên quan YouTube).
+    youtube_step = kind_name(kind) == "analyze" or step in (None, "fetch")
+    if type(exc).__name__ == "TimeoutExpired":
+        return f"{prefix}{where}: model chạy quá lâu nên bị dừng (có thể GPU đang bận). Thử lại sau."
     if type(exc).__name__ == "MuscriptorAuthError":
         return ("Chưa tải được weights MuScriptor small: repo trên Hugging Face cần đăng nhập và đồng ý license "
                 "CC BY-NC 4.0. Chạy `hf auth login`, bấm đồng ý ở https://huggingface.co/MuScriptor/muscriptor-small "
@@ -376,8 +386,8 @@ def friendly_error(exc: BaseException, step: str | None = None, kind: str = "ana
         return "Chờ khóa GPU quá lâu: tiến trình khác giữ GPU quá 30 phút. Thử lại sau."
     if "http error 429" in low or "too many requests" in low:
         return "YouTube đang giới hạn số lần tải (HTTP 429). Đợi một lúc rồi thử lại, hoặc đặt CHORDTRACK_YT_COOKIES."
-    if any(k in low for k in ("unable to download", "getaddrinfo", "failed to resolve", "connection",
-                              "timed out", "http error 5")):
+    if youtube_step and any(k in low for k in ("unable to download", "getaddrinfo", "failed to resolve", "connection",
+                                               "timed out", "http error 5")):
         return f"Không kết nối được YouTube{where}. Kiểm tra mạng rồi thử lại. Chi tiết: {_short(exc)}"
     return f"{prefix}{where}: {type(exc).__name__}: {_short(exc)}"
 
@@ -394,7 +404,7 @@ class JobWorker:
     def __init__(self, store: JobStore, analyze: AnalyzeFn, poll_interval: float = 2.0, *,
                  melody: AnalyzeFn | None = None):
         self.store = store
-        self.analyze = analyze
+        self.lock_conflict = False     # server khác đã chạy worker trên cùng DB
         self.runners: dict[str, AnalyzeFn | None] = {"analyze": analyze, "melody": melody}
         self.poll_interval = poll_interval
         self._wake = threading.Event()
@@ -413,6 +423,7 @@ class JobWorker:
                 lock.acquire(timeout=0)
             except Timeout:
                 log.error("Đã có server khác chạy worker trên %s; server này không xử lý job", self.store.path)
+                self.lock_conflict = True
                 return
             self._db_lock = lock
         n = self.store.recover()
@@ -467,7 +478,7 @@ class JobWorker:
             except Exception:  # báo tiến độ hỏng không được làm hỏng job
                 log.exception("Không ghi được tiến độ job %s", job.id)
 
-        prefix = KINDS.get(job.kind, KINDS["analyze"]).error_prefix
+        prefix = KINDS[kind_name(job.kind)].error_prefix
         runner = self.runners.get(job.kind)
         if runner is None:
             self.store.finish(job.id, error=f"{prefix}: server không hỗ trợ loại job {job.kind!r}")

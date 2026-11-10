@@ -350,3 +350,12 @@ def test_melody_stale_force_and_bad_requests(fake, tmp_path):
         assert r["status"] == "queued"
         wait_status(c, r["job_id"], "done")
     assert (VID2, True) in mel.calls
+
+
+def test_second_server_on_same_db_refuses_jobs(fake, tmp_path):
+    mel = FakeMelody()
+    with make_melody_client(fake, mel, tmp_path) as c1, make_melody_client(fake, mel, tmp_path) as c2:
+        assert c1.get("/health").json()["worker_alive"] is True
+        assert c2.get("/health").json()["worker_alive"] is False
+        assert c2.post("/melody", json={"source": VID}).status_code == 503
+        assert c2.post("/analyze", json={"source": VID}).status_code == 503

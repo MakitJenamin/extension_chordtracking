@@ -109,14 +109,25 @@ def default_stale_melody(song_id: str) -> dict | None:
     return melody_pipeline.stale_melody(song_id)
 
 
+_MELODY_READY: list = [0.0, False]   # (thời điểm kiểm tra, kết quả)
+MELODY_READY_TTL = 60.0             # giây; /health bị poll thường xuyên, chỉ kiểm tra file lại sau khoảng này
+
+
 def default_melody_ready() -> bool:
+    import time
+
     from chordtrack.melody import pipeline as melody_pipeline
 
+    now = time.monotonic()
+    if _MELODY_READY[0] and now - _MELODY_READY[0] < MELODY_READY_TTL:
+        return _MELODY_READY[1]
     try:
-        return all(melody_pipeline.melody_ready().values())
+        ok = all(melody_pipeline.melody_ready().values())
     except Exception:
         log.exception("Không kiểm tra được model dò giai điệu")
-        return False
+        ok = False
+    _MELODY_READY[:] = [now, ok]
+    return ok
 
 
 @functools.lru_cache(maxsize=1)
@@ -245,6 +256,10 @@ def create_app(
         video_id = audio_mod.parse_video_id(body.source)
         if video_id is None:
             raise HTTPException(400, f"Không nhận ra videoId hoặc URL YouTube: {body.source!r}")
+        if store_holder["worker"].lock_conflict:
+            # Job tạo ra sẽ không ai chạy (hoặc server kia chạy với mã của nó): báo rõ thay vì để "queued" mãi.
+            raise HTTPException(503, "Đã có một server chordtrack khác đang chạy trên cùng dữ liệu. Tắt bớt một server "
+                                     "rồi thử lại.")
         active = store().active(video_id, kind)
         if not body.force and (active is None or not active.force):
             # Đang chạy lại (force) thì không trả kết quả cũ như thể đã xong.

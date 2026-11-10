@@ -280,3 +280,14 @@ def test_second_worker_on_same_db_does_not_start(tmp_path):
     w2.stop()
     a.close()
     b.close()
+
+
+def test_friendly_error_melody_not_youtube():
+    import subprocess
+
+    t = subprocess.TimeoutExpired(["python"], 3600)
+    assert "quá lâu" in jobs.friendly_error(t, "melody_voice", "melody")
+    msg = jobs.friendly_error(RuntimeError("Connection reset by huggingface.co"), "melody_fill", "melody")
+    assert "YouTube" not in msg and msg.startswith("Lỗi khi dò giai điệu")
+    # bước fetch của job melody vẫn là lỗi tải YouTube
+    assert "YouTube" in jobs.friendly_error(RuntimeError("getaddrinfo failed"), "fetch", "melody")

@@ -547,7 +547,8 @@ def fix_octave_jumps(notes: list[MelodyNote], max_run: float = 0.6, min_jump: in
         if not (near(i) and abs(d) >= min_jump):
             i += 1
             continue
-        k = int(round(d / 12)) or (1 if d > 0 else -1)
+        sign = 1 if d > 0 else -1
+        k = sign * max(1, int(abs(d) / 12 + 0.5))   # làm tròn nửa lên, đối xứng hai chiều
         fixed = False
         for m in range(i, len(notes) - 1):
             if m > i and not near(m):

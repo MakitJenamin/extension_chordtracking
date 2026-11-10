@@ -141,8 +141,10 @@ def cached_melody(song_id: str) -> dict | None:
 
 
 def stale_melody(song_id: str) -> dict | None:
-    """`<Melody>` trong cache bất kể `code_revision` (để extension hiện tạm kết quả của mã cũ)."""
-    return read_json(result_path(song_id))
+    """`<Melody>` trong cache bất kể `code_revision` (để extension hiện tạm kết quả của mã cũ), miễn đúng phiên bản
+    định dạng."""
+    data = read_json(result_path(song_id))
+    return data if data is not None and data.get("version") == RESULT_VERSION else None
 
 
 def _raw_path(cache_dir: Path, model: str) -> Path:
@@ -183,14 +185,32 @@ def run_yourmt3(audio_path: Path, out_path: Path) -> MelodyModelOutput:
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     env["PYTHONPATH"] = os.pathsep.join([str(root)] + [p for p in [env.get("PYTHONPATH")] if p])
-    cmd = [sys.executable, "-m", "chordtrack.melody.yourmt3", str(audio_path), str(tmp)]
+    # --exit-with-parent: tiến trình con đọc stdin và tự thoát khi pipe đóng, tức khi server (tiến trình cha) tắt
+    # giữa chừng, để không còn tiến trình mồ côi giữ gpu_lock.
+    cmd = [sys.executable, "-m", "chordtrack.melody.yourmt3", str(audio_path), str(tmp), "--exit-with-parent"]
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    proc = subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=YOURMT3_TIMEOUT, creationflags=flags)
-    if proc.returncode != 0 or not tmp.exists():
-        tail = " ".join((proc.stderr or proc.stdout or "").strip().splitlines()[-6:])
-        raise RuntimeError(f"YourMT3+ lỗi (mã thoát {proc.returncode}): {tail[-800:]}")
-    log.info("YourMT3+: %s", (proc.stdout or "").strip())
+    import tempfile
+
+    with tempfile.TemporaryFile() as out_f, tempfile.TemporaryFile() as err_f:
+        proc = subprocess.Popen(cmd, cwd=str(root), env=env, stdin=subprocess.PIPE, stdout=out_f, stderr=err_f,
+                                creationflags=flags)
+        try:
+            returncode = proc.wait(timeout=YOURMT3_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise
+        finally:
+            if proc.stdin is not None:
+                proc.stdin.close()
+        out_f.seek(0)
+        err_f.seek(0)
+        stdout = out_f.read().decode("utf-8", "replace")
+        stderr = err_f.read().decode("utf-8", "replace")
+    if returncode != 0 or not tmp.exists():
+        tail = " ".join((stderr or stdout).strip().splitlines()[-6:])
+        raise RuntimeError(f"YourMT3+ lỗi (mã thoát {returncode}): {tail[-800:]}")
+    log.info("YourMT3+: %s", stdout.strip())
     out = load_output(tmp)
     tmp.unlink(missing_ok=True)
     return out
@@ -250,22 +270,24 @@ def analyze_melody(source: str, *, force: bool = False,
             return cached
     cache_dir = paths.CACHE_DIR / song_id
 
-    report("melody_voice", 0.0)
+    # Bước dùng lại đầu ra thô có sẵn chỉ báo xong (không báo bắt đầu), để thời gian gần 0 của nó không được ghi
+    # vào thống kê ước tính thời gian của job.
     t0 = time.perf_counter()
     raw_a = _raw_path(cache_dir, "yourmt3")
     voice = None if force else _load_raw(raw_a, "yourmt3")
     if voice is None:
+        report("melody_voice", 0.0)
         voice = run_yourmt3(mix, raw_a)
         _save_raw(voice, raw_a, "yourmt3")
     timing["melody_voice"] = time.perf_counter() - t0
     vram["yourmt3"] = _num(voice.extras.get("peak_vram_mib"))
     report("melody_voice", 1.0)
 
-    report("melody_fill", 0.0)
     t0 = time.perf_counter()
     raw_b = _raw_path(cache_dir, "muscriptor_small")
     fill = None if force else _load_raw(raw_b, "muscriptor_small")
     if fill is None:
+        report("melody_fill", 0.0)
         fill = run_muscriptor(mix)
         _save_raw(fill, raw_b, "muscriptor_small")
     timing["melody_fill"] = time.perf_counter() - t0

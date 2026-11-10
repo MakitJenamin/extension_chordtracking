@@ -142,14 +142,41 @@ def test_raw_cache_invalidated_when_wrapper_changes(fake_models, monkeypatch):
 def test_run_yourmt3_reports_child_error(tmp_path, monkeypatch):
     import subprocess
 
-    class Done:
-        returncode = 1
-        stdout = ""
-        stderr = "Traceback...\nFileNotFoundError: Thiếu checkpoint YourMT3: x.ckpt"
+    seen = {}
 
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Done())
+    class FakePopen:
+        def __init__(self, cmd, *, stdin, stdout, stderr, **kw):
+            seen["cmd"] = cmd
+            assert stdin == subprocess.PIPE          # pipe giữ mở để tiến trình con biết khi cha chết
+            stderr.write("Traceback...\nFileNotFoundError: Thiếu checkpoint YourMT3: x.ckpt".encode("utf-8"))
+            self.stdin = open(tmp_path / "stdin", "wb")
+
+        def wait(self, timeout=None):
+            return 1
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
     with pytest.raises(RuntimeError, match="Thiếu checkpoint YourMT3"):
         mp.run_yourmt3(tmp_path / "a.wav", tmp_path / "raw" / "yourmt3.npz")
+    assert seen["cmd"][1:3] == ["-m", "chordtrack.melody.yourmt3"] and "--exit-with-parent" in seen["cmd"]
+
+
+def test_cached_raw_steps_only_report_done(fake_models, monkeypatch):
+    """Bước dùng lại đầu ra thô chỉ báo xong, để thời gian ~0 không lọt vào thống kê ETA."""
+    mp.analyze_melody(VID)
+    monkeypatch.setattr(mp, "code_revision", lambda: "khac")
+    events = []
+    mp.analyze_melody(VID, progress=lambda s, f: events.append((s, f)))
+    assert ("melody_voice", 0.0) not in events and ("melody_fill", 0.0) not in events
+    assert ("melody_voice", 1.0) in events and ("melody_line", 0.0) in events
+
+
+def test_stale_melody_checks_version(fake_models):
+    mp.analyze_melody(VID)
+    from chordtrack.audio import read_json, write_json
+
+    data = read_json(mp.result_path(VID))
+    write_json(mp.result_path(VID), {**data, "version": 99})
+    assert mp.stale_melody(VID) is None and mp.cached_melody(VID) is None
 
 
 def test_melody_ready_keys():
