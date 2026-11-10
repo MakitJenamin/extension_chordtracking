@@ -139,21 +139,17 @@ def read_numeric_csv(path: Path, ncols: int) -> np.ndarray:
     return np.array(rows, dtype=np.float64).reshape(-1, ncols)
 
 
-def discover_models(datasets: list[str], only: list[str] | None) -> dict[str, dict]:
-    """{model: {"notes": bool, "f0": bool, "conf": bool}} theo file cache đầu tiên tìm được."""
+def discover_models(datasets: list[str], only: list[str] | None) -> list[str]:
+    """Các model có ít nhất một file cache ở một trong các bộ."""
     root = paths.CACHE_DIR / "melody"
-    out = {}
+    out: list[str] = []
     if not root.exists():
         return out
     for d in sorted(root.iterdir()):
         if not d.is_dir() or d.name.startswith("_") or (only and d.name not in only):
             continue
-        files = [f for ds in datasets for f in sorted((d / ds).glob("*.npz"))[:1]]
-        if not files:
-            continue
-        o = load_output(files[0])
-        out[d.name] = {"notes": bool(o.notes), "f0": o.pitch_track is not None,
-                       "conf": o.pitch_track is not None and o.pitch_track.confidence is not None}
+        if any(next((d / ds).glob("*.npz"), None) for ds in datasets):
+            out.append(d.name)
     return out
 
 
@@ -345,8 +341,10 @@ def score_track(task: tuple) -> list[dict]:
         if o.notes:
             for fam, cfgs in note_families().items():
                 for ci, cfg in enumerate(cfgs):
-                    emit(m, fam, ci, cfg, L.notes_to_line(o.notes, params_of(cfg)))
-            defaults_notes[m] = L.notes_to_line(o.notes, params_of(note_families()["viterbi"][0]))
+                    est = L.notes_to_line(o.notes, params_of(cfg))
+                    emit(m, fam, ci, cfg, est)
+                    if fam == "viterbi" and ci == 0:
+                        defaults_notes[m] = est
         if o.pitch_track is not None:
             pt = o.pitch_track
             fams = f0_families(pt.confidence is not None)
@@ -359,8 +357,10 @@ def score_track(task: tuple) -> list[dict]:
                 est = L.f0_to_line(pt, params_of(cfg))      # cho các chỉ số không cần đáp án
                 emit(m, "f0raw", ci, cfg, est, raw=(np.asarray(pt.times, dtype=np.float64), hz))
             for ci, cfg in enumerate(fams["f0notes"]):
-                emit(m, "f0notes", ci, cfg, L.f0_to_line(pt, params_of(cfg)))
-            defaults_f0[m] = L.f0_to_line(pt, params_of(fams["f0notes"][0]))
+                est = L.f0_to_line(pt, params_of(cfg))
+                emit(m, "f0notes", ci, cfg, est)
+                if ci == 0:
+                    defaults_f0[m] = est
     for mf, lf in defaults_f0.items():
         for mn, ln in defaults_notes.items():
             if mf != mn:
@@ -405,8 +405,6 @@ def select_cv(rows: list[dict], entries: dict[str, list[dict]], folds: int) -> t
     for key, by_cfg in groups.items():
         cfgs = sorted(by_cfg)
         full = max(cfgs, key=lambda c: (objective(by_cfg[c], lambda t: t in fold_of), -c))
-        if objective(by_cfg[full], lambda t: t in fold_of) == -math.inf:
-            full = cfgs[0]
         desc = {"full": full, "folds": []}
         for r in by_cfg[cfgs[0]]:
             chosen.append({**r, "selection": "default"})
@@ -436,7 +434,13 @@ def summarize(chosen: list[dict]) -> list[dict]:
             for (s, d, m, f, q), rs in sorted(groups.items())]
 
 
-def compare_top2(chosen: list[dict], summary: list[dict], n_boot: int, seed: int = 0) -> list[dict]:
+def dataset_primary(entries: dict[str, list[dict]]) -> dict[str, str | None]:
+    """Chỉ số mục tiêu của mỗi bộ (giống hàm mục tiêu của CV): OA nếu có ref_f0, F1 onset nếu chỉ có ref_notes."""
+    return {ds: next((m for m in map(_primary, es) if m), None) for ds, es in entries.items()}
+
+
+def compare_top2(chosen: list[dict], summary: list[dict], primary: dict[str, str | None], n_boot: int,
+                 seed: int = 0) -> list[dict]:
     """So cặp hai cấu hình (model, họ, căn phách) tốt nhất theo chỉ số mục tiêu (điểm CV) trên mỗi bộ."""
     from eval.ablation_kajiura import bootstrap_diff
 
@@ -444,7 +448,7 @@ def compare_top2(chosen: list[dict], summary: list[dict], n_boot: int, seed: int
     out = []
     for ds in sorted({s["dataset"] for s in summary}):
         rows = [s for s in summary if s["selection"] == "cv" and s["dataset"] == ds]
-        metric = next((m for m in ("oa", "note_f1") if rows and np.isfinite(rows[0].get(m, math.nan))), None)
+        metric = primary.get(ds)
         if metric is None or len(rows) < 2:
             continue
         top = sorted(rows, key=lambda s: -s[metric] if np.isfinite(s[metric]) else math.inf)[:2]
@@ -485,7 +489,7 @@ def _fmt(v, pct: bool = True) -> str:
     return f"{100 * v:.1f}" if pct else f"{v:.2f}"
 
 
-def print_tables(summary: list[dict], tests: list[dict]) -> None:
+def print_tables(summary: list[dict], tests: list[dict], primary: dict[str, str | None]) -> None:
     for ds in sorted({s["dataset"] for s in summary}):
         rows = [s for s in summary if s["dataset"] == ds and s["selection"] == "cv"]
         has_f0 = any(np.isfinite(s["oa"]) for s in rows)
@@ -496,7 +500,7 @@ def print_tables(summary: list[dict], tests: list[dict]) -> None:
         cols += ["coverage", "in_chord", "octave_jumps_pm", "median_dur"]
         print("| model / chiến lược | " + " | ".join(cols) + " |")
         print("|---" * (len(cols) + 1) + "|")
-        key = "oa" if has_f0 else "note_f1" if has_notes else "coverage"
+        key = primary.get(ds) or "coverage"
         for s in sorted(rows, key=lambda s: -(s[key] if np.isfinite(s[key]) else -1)):
             cells = []
             for c in cols:
@@ -536,7 +540,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Bộ: {', '.join(f'{d} ({len(e)} bài)' for d, e in entries.items())}; model: {', '.join(models)}",
           flush=True)
     beats_dir = None if args.no_beats else paths.CACHE_DIR / "melody" / "_beats"
-    tasks = [(e, list(models), beats_dir) for es in entries.values() for e in es]
+    tasks = [(e, models, beats_dir) for es in entries.values() for e in es]
     rows: list[dict] = []
     if args.jobs > 1:
         with Pool(args.jobs) as pool:
@@ -553,13 +557,14 @@ def main(argv: list[str] | None = None) -> int:
 
     chosen, choices = select_cv(rows, entries, args.folds)
     summary = summarize(chosen)
-    tests = compare_top2(chosen, summary, args.boot)
+    primary = dataset_primary(entries)
+    tests = compare_top2(chosen, summary, primary, args.boot)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.out_dir / "per_track.csv", rows)
     write_csv(args.out_dir / "summary.csv", summary)
     (args.out_dir / "cv_choices.json").write_text(json.dumps({"choices": choices, "tests": tests}, indent=1,
                                                              ensure_ascii=False), encoding="utf-8")
-    print_tables(summary, tests)
+    print_tables(summary, tests, primary)
     print(f"\nĐã ghi {args.out_dir}", flush=True)
     return 0
 

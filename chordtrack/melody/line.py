@@ -38,7 +38,7 @@ from chordtrack.types import BeatGrid, MelodyModelOutput, MelodyNote, PitchTrack
 
 VOICE, MELODIC, UNKNOWN, ACCOMP, EXCLUDED = 3, 2, 1, 0, -1
 
-_VOICE_WORDS = ("voice", "vocal", "sing", "choir", "chorus", "soprano", "alto", "tenor", "baritone", "aah", "ooh")
+_VOICE_WORDS = ("voice", "vocal", "sing", "choir", "soprano", "alto", "tenor", "baritone", "aah", "ooh")
 _EXCLUDED_WORDS = ("drum", "percussion", "timpani", "cymbal", "snare", "kick", "hihat", "hi-hat", "pad", "fx",
                    "effect", "noise")
 _MELODIC_WORDS = ("violin", "viola", "cello", "string", "flute", "piccolo", "oboe", "clarinet", "bassoon", "sax",
@@ -52,6 +52,8 @@ def _gm_class(program: int) -> int:
         return EXCLUDED
     if 32 <= program <= 39 or 88 <= program <= 103 or 112 <= program <= 127:
         return EXCLUDED          # bass, pad và hiệu ứng synth, bộ gõ, tiếng động
+    if program in (47, 55):
+        return EXCLUDED          # timpani, orchestra hit
     if 52 <= program <= 54:
         return VOICE             # choir aahs, voice oohs, synth voice
     if 40 <= program <= 87:
@@ -67,6 +69,8 @@ def source_class(source: str | None) -> int:
     m = re.fullmatch(r"(?:program[:_ ]?)?(\d+)", s)
     if m:
         return _gm_class(int(m.group(1)))
+    if "sax" in s:               # alto/tenor/soprano/baritone sax không phải giọng hát
+        return MELODIC
     if any(w in s for w in _VOICE_WORDS):
         return VOICE
     if "bass" in s and "bassoon" not in s:
@@ -180,15 +184,15 @@ def _elementary(notes: list[MelodyNote]) -> tuple[np.ndarray, list[np.ndarray]]:
     starts = np.array([n.start for n in notes])
     ends = np.array([n.end for n in notes])
     bounds = np.unique(np.concatenate([starts, ends]))
-    mids = (bounds[:-1] + bounds[1:]) / 2
-    # nốt i vang ở khoảng k nếu start_i <= mid_k < end_i
-    order = np.argsort(starts, kind="stable")
-    active: list[np.ndarray] = []
-    for m in mids:
-        k = np.searchsorted(starts[order], m, side="right")
-        cand = order[:k]
-        active.append(cand[ends[cand] > m])
-    return bounds, active
+    # Nốt i vang ở các khoảng k thuộc [chỉ số của start_i, chỉ số của end_i): tổng chi phí tuyến tính theo
+    # kích thước đầu ra, không quét lại mọi nốt ở mỗi khoảng.
+    si = np.searchsorted(bounds, starts)
+    ei = np.searchsorted(bounds, ends)
+    lists: list[list[int]] = [[] for _ in range(len(bounds) - 1)]
+    for i in np.argsort(starts, kind="stable"):
+        for k in range(si[i], ei[i]):
+            lists[k].append(int(i))
+    return bounds, [np.array(x, dtype=int) for x in lists]
 
 
 def notes_to_line(notes: list[MelodyNote], params: LineParams = DEFAULT_PARAMS) -> list[MelodyNote]:
@@ -325,7 +329,8 @@ def f0_to_line(track: PitchTrack, params: LineParams = DEFAULT_PARAMS) -> list[M
     if len(times) == 0:
         return []
     midi = hz_to_midi(track.f0_hz)
-    conf = None if track.confidence is None else np.asarray(track.confidence, dtype=np.float64)
+    # Luôn sao chép: phần lấp khoảng ghi vào conf, không được sửa mảng của người gọi.
+    conf = None if track.confidence is None else np.array(track.confidence, dtype=np.float64)
     voiced = np.isfinite(midi)
     if conf is not None and p.voicing_threshold > 0:
         voiced &= conf >= p.voicing_threshold
@@ -447,8 +452,12 @@ def quantize_to_beats(notes: list[MelodyNote], grid: BeatGrid, subdivisions: int
         return float(q) if abs(q - t) <= max_shift else t
 
     out = []
-    for n in notes:
+    prev_s = -math.inf
+    for n in sorted(notes, key=lambda x: x.start):
         s, e = snap(n.start), snap(n.end)
+        if s <= prev_s:          # hai nốt nhanh bị căn về cùng một điểm: giữ đầu gốc để không mất nốt
+            s = n.start
+        prev_s = s
         if e <= s:
             later = pts[pts > s + 1e-9]
             e = float(later[0]) if len(later) else max(n.end, s + 1e-3)

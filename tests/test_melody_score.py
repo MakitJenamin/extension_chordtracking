@@ -116,3 +116,8 @@ def test_offset_shifts_reference(tmp_path):
     assert ref["f0"][1][np.searchsorted(ref["f0"][0], 2.0)] == pytest.approx(L.midi_to_hz(60))
     v, _ = S.note_metrics(ref["notes"], [N(1.5, 2.5, 60)])
     assert v["note_f1"] == pytest.approx(1.0)
+
+
+def test_dataset_primary_uses_note_f1_for_note_datasets():
+    entries = {"st": [{"ref_notes": "a.csv", "ref_f0": None}], "f0": [{"ref_f0": "b.csv"}], "free": [{}]}
+    assert S.dataset_primary(entries) == {"st": "note_f1", "f0": "oa", "free": None}

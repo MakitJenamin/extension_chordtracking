@@ -138,3 +138,29 @@ def test_quantize_to_beats():
     out = L.quantize_to_beats(notes, grid, subdivisions=4, max_shift=0.05)
     assert [(round(n.start, 3), round(n.end, 3)) for n in out] == [(0.125, 0.5), (0.5, 0.625), (1.3, 1.7)]
     assert _no_overlap(out)
+
+
+def test_review_regressions():
+    assert L.source_class("Tenor Sax") == L.MELODIC
+    assert L.source_class("47") == L.EXCLUDED                  # GM timpani
+    # hai nốt nhanh cùng căn về một điểm: không được mất nốt
+    grid = BeatGrid(np.arange(0, 4, 0.5), np.arange(0, 4, 2.0), 120.0)
+    out = L.quantize_to_beats([N(0.0, 0.06, 60), N(0.06, 0.2, 62)], grid, subdivisions=4, max_shift=0.08)
+    assert [n.pitch for n in out] == [60, 62] and _no_overlap(out)
+    # f0_to_line không sửa confidence của người gọi
+    t = np.arange(0, 1, 0.01)
+    conf = np.ones(len(t))
+    conf[50:52] = 0.1
+    before = conf.copy()
+    L.f0_to_line(PitchTrack(t, np.full(len(t), 440.0), conf), L.LineParams(voicing_threshold=0.5))
+    assert np.array_equal(conf, before)
+
+
+def test_elementary_matches_bruteforce():
+    rng = np.random.default_rng(1)
+    notes = [N(float(s), float(s + d), int(p)) for s, d, p in
+             zip(rng.uniform(0, 10, 60), rng.uniform(0.05, 2, 60), rng.integers(50, 80, 60))]
+    bounds, active = L._elementary(notes)
+    for k, a in enumerate(active):
+        m = (bounds[k] + bounds[k + 1]) / 2
+        assert sorted(a.tolist()) == [i for i, n in enumerate(notes) if n.start <= m < n.end]
