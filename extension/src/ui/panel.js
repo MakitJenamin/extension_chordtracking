@@ -221,10 +221,12 @@
           "Giai điệu"),
         h("span", { class: "ct-mel-model", title: `Dòng nốt đang hiện dò bằng: ${m.melody.model || "?"}`,
           text: T().melodyModelName(m.melody.model) }),
-        btn(["↻"], m.stale ? "Giai điệu dò bằng mã cũ: dò lại"
-          : `Dò lại giai điệu (bỏ kết quả đã lưu, mất ${fast ? "khoảng 1 phút" : "vài phút"})`,
-          run(true), "ct-btn ct-icon ct-mel-redo")];
-        if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để dò lại", text: "bản cũ" }));
+        // Bản cũ: gửi không `force`, server dựng lại từ đầu ra thô của model đã lưu (thường khoảng 1 giây), chỉ
+        // chạy lại model nếu đầu ra thô không còn dùng được. Bản mới: ↻ là dò lại thật (`force`, chạy lại model).
+        btn(["↻"], m.stale ? "Giai điệu dò bằng mã cũ: cập nhật (dùng lại kết quả model đã lưu nếu được, thường vài giây)"
+          : `Dò lại giai điệu (bỏ kết quả đã lưu, chạy lại model, mất ${fast ? "khoảng 1 phút" : "vài phút"})`,
+          run(!m.stale), "ct-btn ct-icon ct-mel-redo")];
+        if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để cập nhật", text: "bản cũ" }));
       } else {
         kids = [btn(["♪ Dò giai điệu"],
           `Dò dòng nốt giai điệu bằng AI trên máy (${T().MELODY_MODELS[variant].label}; chạy riêng, mất ${fast ? "khoảng 1 phút" : "vài phút"}). Kết quả hiện dưới dải hợp âm`, run(false))];
