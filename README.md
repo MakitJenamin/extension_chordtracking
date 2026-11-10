@@ -91,7 +91,20 @@ cd extension_chordtracking
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # 10–20 phút lần đầu
 ```
 
-Script tự cài Python, PyTorch, model, ffmpeg, Deno. Tùy chọn: `-Cpu`, `-Full`, `-NoTools`.
+Script tự cài Python, PyTorch, model, ffmpeg, Deno. Tùy chọn: `-Cpu`, `-Full`, `-Melody`, `-NoTools`.
+
+**🎵 Dò giai điệu (tùy chọn, `-Melody`):** thêm YourMT3+ và MuScriptor small (khoảng 1 GB, mỗi bài 2–3 phút trên GPU).
+Weights MuScriptor theo license **CC BY-NC 4.0 (chỉ dùng phi thương mại)** và để ở repo gated trên Hugging Face, nên
+cần tài khoản Hugging Face. Sau khi chạy `setup.ps1` như trên:
+
+```powershell
+.venv\Scripts\hf.exe auth login        # dán access token (quyền read) tạo ở huggingface.co/settings/tokens
+# mở https://huggingface.co/MuScriptor/muscriptor-small, đăng nhập và bấm đồng ý điều khoản
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Melody
+```
+
+Đã cài rồi thì chỉ cần `.venv\Scripts\python.exe scripts\fetch_models.py --melody`. `GET /health` trả `"melody": true`
+khi đủ model.
 
 > [!WARNING]
 > Script tải mã và weights của bên thứ ba ([THIRD_PARTY.md](THIRD_PARTY.md)). Weights đã ghim commit và kiểm SHA-256, đừng thay bằng file lạ.
@@ -131,6 +144,8 @@ Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ 
 | `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
 | `GET /songs` | Danh sách bài đã phân tích |
+| `POST /melody` | Dò giai điệu, giống `/analyze` (job `kind: "melody"`); hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
+| `GET /melody/{song_id}` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType application/json -Body '{"source": "QDYfEBY9NM4"}'
@@ -140,7 +155,8 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType applic
 
 ## 📜 License
 
-Mã dự án: [MIT](LICENSE). Model hợp âm và bắt nhịp thuộc tác giả gốc, xem [THIRD_PARTY.md](THIRD_PARTY.md).
+Mã dự án: [MIT](LICENSE). Model hợp âm, bắt nhịp và dò giai điệu thuộc tác giả gốc, xem [THIRD_PARTY.md](THIRD_PARTY.md).
+⚠️ Weights MuScriptor (dò giai điệu) theo CC BY-NC 4.0: chỉ dùng phi thương mại.
 ⚠️ ChordFormer không có license, THIRD_PARTY.md hướng dẫn cách tắt.
 
 <div align="center"><sub>Kế hoạch, quyết định và số đo chất lượng: <a href="PLAN.md">PLAN.md</a></sub></div>

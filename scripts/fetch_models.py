@@ -3,6 +3,15 @@
     python scripts/fetch_models.py            # model pipeline cần: ChordMini, Chord-CNN-LSTM, ChordFormer, beat_this
     python scripts/fetch_models.py --extra    # thêm consonance-ACE (chỉ dùng cho script đánh giá)
     python scripts/fetch_models.py --check    # chỉ kiểm tra, không tải
+    python scripts/fetch_models.py --melody   # thêm model dò giai điệu: YourMT3+ và MuScriptor small
+
+Dò giai điệu (`--melody`, xem README):
+- YourMT3+: mã của Hugging Face Space `mimbres/YourMT3` (Apache-2.0) clone vào `third_party_src/YourMT3` (bỏ qua file
+  LFS), checkpoint `YPTF.MoE+Multi (noPS)` tải riêng về `data/models/yourmt3/` và kiểm SHA-256; transformers 4.45.1
+  cùng các gói đi kèm cài riêng vào `third_party_src/YourMT3_pydeps` (không đụng venv, xem
+  `requirements/melody_yourmt3.txt`).
+- MuScriptor small: weights CC BY-NC 4.0, repo gated. Phải `hf auth login` (hoặc đặt HF_TOKEN) và bấm đồng ý license
+  ở https://huggingface.co/MuScriptor/muscriptor-small trước.
 
 Mọi weights đều nằm trong repo gốc của tác giả trên GitHub, nên chỉ cần `git clone` rồi checkout đúng commit.
 Sau khi tải, từng file weights được kiểm tra SHA-256.
@@ -117,6 +126,66 @@ def fetch(repo: Repo, dest: Path) -> None:
         git("reset", "--quiet", cwd=dest)   # bỏ khỏi index, giữ file trong thư mục
 
 
+YOURMT3_SPACE = "mimbres/YourMT3"
+YOURMT3_COMMIT = "5e66c1ea173a8186e0d20432b841d3180cc015b5"
+YOURMT3_CKPT_IN_SPACE = ("amt/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/"
+                         "checkpoints/last.ckpt")
+YOURMT3_PYDEPS = ["transformers==4.45.1", "huggingface_hub==0.36.2", "tokenizers==0.20.3", "regex==2026.11.9"]
+
+
+def fetch_melody(check: bool) -> list[str]:
+    """Cài model dò giai điệu. Trả về danh sách lỗi (rỗng là đủ)."""
+    import os
+
+    from chordtrack.melody import muscriptor, yourmt3
+
+    errors: list[str] = []
+    print("== YourMT3+ (Apache-2.0, Hugging Face Space mimbres/YourMT3)", flush=True)
+    src = yourmt3.SRC_DIR
+    if not check:
+        if not src.exists():
+            env = dict(os.environ, GIT_LFS_SKIP_SMUDGE="1")   # checkpoint tải riêng bên dưới, không kéo mọi file LFS
+            subprocess.run(["git", "clone", "--no-checkout", f"https://huggingface.co/spaces/{YOURMT3_SPACE}",
+                            str(src)], check=True, env=env)
+            subprocess.run(["git", "checkout", "--quiet", YOURMT3_COMMIT], cwd=src, check=True, env=env)
+        ckpt = yourmt3.CHECKPOINT
+        if not ckpt.exists() or sha256(ckpt) != yourmt3.CHECKPOINT_SHA256:
+            from huggingface_hub import hf_hub_download
+
+            ckpt.parent.mkdir(parents=True, exist_ok=True)
+            got = hf_hub_download(YOURMT3_SPACE, YOURMT3_CKPT_IN_SPACE, repo_type="space", revision=YOURMT3_COMMIT)
+            shutil.copyfile(got, ckpt)
+        if not (yourmt3.PYDEPS_DIR / "transformers").is_dir():
+            subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "--no-deps", "--target",
+                            str(yourmt3.PYDEPS_DIR), *YOURMT3_PYDEPS], check=True)
+    if not (src / "model_helper.py").exists():
+        errors.append(f"thiếu mã YourMT3 ở {src}")
+    if not yourmt3.CHECKPOINT.exists():
+        errors.append(f"thiếu checkpoint {yourmt3.CHECKPOINT}")
+    elif sha256(yourmt3.CHECKPOINT) != yourmt3.CHECKPOINT_SHA256:
+        errors.append(f"sai SHA-256: {yourmt3.CHECKPOINT}")
+    if not (yourmt3.PYDEPS_DIR / "transformers").is_dir():
+        errors.append(f"thiếu {yourmt3.PYDEPS_DIR}")
+    print(f"   YourMT3+: {'OK' if not errors else '; '.join(errors)}", flush=True)
+
+    print("== MuScriptor small (weights CC BY-NC 4.0, repo gated trên Hugging Face)", flush=True)
+    n = len(errors)
+    w = muscriptor.weights_dir("small")
+    if not check and not all((w / f).exists() for f in ("model.safetensors", "config.json")):
+        try:
+            muscriptor.ensure_weights("small")
+        except muscriptor.MuscriptorAuthError as e:
+            errors.append(str(e))
+    if len(errors) == n and not all((w / f).exists() for f in ("model.safetensors", "config.json")):
+        errors.append(f"thiếu weights ở {w}")
+    try:
+        import muscriptor as _pkg  # noqa: F401
+    except ImportError:
+        errors.append("chưa cài gói muscriptor: pip install --no-deps -r requirements/melody_muscriptor.txt")
+    print(f"   MuScriptor small: {'OK' if len(errors) == n else '; '.join(errors[n:])}", flush=True)
+    return errors
+
+
 def fetch_beat_this() -> None:
     from chordtrack.beats import _checkpoint_path
 
@@ -128,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--extra", action="store_true", help="tải thêm consonance-ACE (chỉ dùng cho đánh giá)")
     ap.add_argument("--check", action="store_true", help="chỉ kiểm tra, không tải")
     ap.add_argument("--no-beat-this", action="store_true", help="không tải checkpoint beat_this")
+    ap.add_argument("--melody", action="store_true",
+                    help="tải thêm model dò giai điệu (YourMT3+, MuScriptor small: cần hf auth login, xem README)")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -152,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
             failed.append(repo.name)
     if not args.check and not args.no_beat_this and not failed:
         fetch_beat_this()
+    if args.melody and fetch_melody(args.check):
+        failed.append("dò giai điệu")
     if failed:
         print(f"Lỗi: {', '.join(failed)}", file=sys.stderr)
         return 1

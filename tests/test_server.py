@@ -247,3 +247,106 @@ def test_no_stale_done_while_force_job_active(fake, tmp_path):
         fake.gate.set()
         wait_status(c, f["job_id"], "done")
         assert "old" not in c.post("/analyze", json={"source": VID}).json()["result"]
+
+
+
+# --------------------------------------------------------------------------- dò giai điệu
+
+
+class FakeMelody:
+    """`analyze_melody` giả: báo tiến độ qua các bước melody, có thể chặn ở `melody_fill`."""
+
+    def __init__(self):
+        self.results: dict[str, dict] = {}
+        self.stale: dict[str, dict] = {}
+        self.calls: list[tuple[str, bool]] = []
+        self.gate = threading.Event()
+        self.gate.set()
+        self.in_fill = threading.Event()
+        self.ready = True
+
+    def cached(self, song_id):
+        return self.results.get(song_id)
+
+    def stale_of(self, song_id):
+        return self.results.get(song_id) or self.stale.get(song_id)
+
+    def run(self, source, *, force=False, progress=None):
+        assert source.startswith("https://www.youtube.com/watch?v=")
+        vid = audio.parse_video_id(source)
+        self.calls.append((vid, force))
+        for step in jobs.MELODY_STEPS:
+            progress(step, 0.0)
+            if step == "melody_fill":
+                self.in_fill.set()
+                assert self.gate.wait(10)
+            progress(step, 1.0)
+        res = {"song_id": vid, "model": "yourmt3>muscriptor_small", "code_revision": "x", "duration": 10.0,
+               "notes": [{"start": 1.0, "end": 1.5, "pitch": 60, "confidence": 0.8, "uncertain": False,
+                          "source": "voice"}]}
+        self.results[vid] = res
+        return res
+
+
+def make_melody_client(fake, mel, tmp_path, **kw):
+    app = server.create_app(db_path=tmp_path / "jobs.sqlite", analyze=fake.analyze, cached_result=fake.cached,
+                            melody=mel.run, cached_melody=mel.cached, stale_melody=mel.stale_of,
+                            melody_ready=lambda: mel.ready, poll_interval=0.05, **kw)
+    return TestClient(app, base_url="http://127.0.0.1")
+
+
+def test_health_melody_flag(fake, tmp_path):
+    mel = FakeMelody()
+    with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
+        assert c.get("/health").json()["melody"] is True
+        mel.ready = False
+        assert c.get("/health").json()["melody"] is False
+
+
+def test_melody_job_progress_and_result(fake, tmp_path):
+    mel = FakeMelody()
+    mel.gate.clear()
+    with make_melody_client(fake, mel, tmp_path) as c:
+        assert c.get(f"/melody/{VID}").status_code == 404
+        r = c.post("/melody", json={"source": f"https://www.youtube.com/watch?v={VID}"}).json()
+        assert r["status"] == "queued" and r["song_id"] == VID
+        assert mel.in_fill.wait(5)
+        st = c.get(f"/jobs/{r['job_id']}").json()
+        assert st["kind"] == "melody" and st["status"] == "running" and st["step"] == "melody_fill"
+        assert st["message"] == jobs.MELODY_STEP_MESSAGES["melody_fill"]
+        assert 0.0 < st["progress"] < 1.0 and st["eta_seconds"] > 0
+        # Gửi trùng thì gộp; job hợp âm cùng bài là việc khác, xếp hàng sau.
+        assert c.post("/melody", json={"source": VID}).json()["job_id"] == r["job_id"]
+        a = c.post("/analyze", json={"source": VID}).json()
+        assert a["status"] == "queued" and a["job_id"] != r["job_id"]
+        assert c.get(f"/jobs/{a['job_id']}").json()["kind"] == "analyze"
+        mel.gate.set()
+        st = wait_status(c, r["job_id"], "done")
+        assert st["progress"] == 1.0
+        wait_status(c, a["job_id"], "done")
+        got = c.get(f"/melody/{VID}")
+        assert got.status_code == 200 and got.json()["notes"][0]["pitch"] == 60
+        assert "x-chordtrack-stale" not in got.headers
+        done = c.post("/melody", json={"source": VID}).json()
+        assert done["status"] == "done" and done["melody"]["song_id"] == VID and "result" not in done
+    assert mel.calls == [(VID, False)] and fake.calls == [(VID, False)]
+
+
+def test_melody_stale_force_and_bad_requests(fake, tmp_path):
+    mel = FakeMelody()
+    mel.stale[VID] = {"song_id": VID, "code_revision": "cu", "notes": []}
+    with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
+        r = c.get(f"/melody/{VID}")
+        assert r.status_code == 200 and r.headers["x-chordtrack-stale"] == "1"
+        assert c.get("/melody/a.b").status_code == 400
+        assert c.post("/melody", json={"source": "https://example.com/x"}).status_code == 400
+        assert c.post("/melody", content=f'{{"source": "{VID}"}}',
+                      headers={"Content-Type": "text/plain"}).status_code == 422
+        # Kết quả cũ không tính là xong: tạo job.
+        assert c.post("/melody", json={"source": VID}).json()["status"] == "queued"
+    mel.results[VID2] = {"song_id": VID2, "notes": []}
+    with make_melody_client(fake, mel, tmp_path) as c:
+        r = c.post("/melody", json={"source": VID2, "force": True}).json()
+        assert r["status"] == "queued"
+        wait_status(c, r["job_id"], "done")
+    assert (VID2, True) in mel.calls

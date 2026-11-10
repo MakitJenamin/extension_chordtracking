@@ -15,7 +15,8 @@ Thêm model mới (vd muscriptor_*) chỉ cần có cache rồi chạy lại l�
   (`combine_lines`: lấp khoảng trống của dòng f0) và `combo_gated` (`combine_gated`: dòng f0 ở chỗ model nốt có
   nhãn giọng hát, dòng model nốt ở phần còn lại). Các cặp model nốt A:B trong `--nn-pairs` (mặc định YourMT3+ và
   MuScriptor small, cả hai chiều) chấm họ `nn_gated`: dòng của A ở đoạn có giọng (cổng theo nốt `voice` của A hoặc
-  của B), dòng của B ở phần còn lại.
+  của B), dòng của B ở phần còn lại; họ `nn_gated_oct` là `nn_gated` thêm bước sửa nhảy quãng tám
+  (`line.fix_octave_jumps`, lưới `OCT_GRID`).
 - Lưới phách (tùy chọn) `CACHE_DIR/melody/_beats/<dataset>/<track_id>.npz` với mảng `beats`, `downbeats`.
   Có thì chấm thêm bản căn phách của mọi cấu hình (cột `quant` = 1).
 
@@ -156,6 +157,10 @@ def nn_families() -> dict[str, list[dict]]:
 
 
 NN_GRID = nn_families()["nn_gated"]
+# Hậu xử lý nhảy quãng tám (`line.fix_octave_jumps`) trên dòng ghép: họ `nn_gated_oct` = mọi cấu hình của `nn_gated`
+# × các tham số dưới đây. Cấu hình chung (CV mức model) chọn giữa hai họ, nên bước này chỉ được giữ nếu có lợi.
+OCT_GRID = [dict(max_run=0.3, min_jump=10), dict(max_run=0.6, min_jump=10), dict(max_run=1.2, min_jump=10),
+            dict(max_run=0.6, min_jump=12)]
 NN_SEP = ">"      # tên model ghép hai model nốt: "A>B" (khác "f0+notes" của combo)
 
 
@@ -489,7 +494,10 @@ def score_track(task: tuple) -> list[dict]:
             line_a = nn_lines.get(a, {}).get(NN_KEYS[c["a"]], [])
             line_b = nn_lines.get(b, {}).get(NN_KEYS[c["b"]], [])
             gate = voice_gates[(a if c["gate"] == "a" else b, c["pad"])]
-            emit(nn_name(a, b), "nn_gated", ci, c, L.combine_gated(line_a, line_b, gate))
+            line = L.combine_gated(line_a, line_b, gate)
+            emit(nn_name(a, b), "nn_gated", ci, c, line)
+            for oi, o in enumerate(OCT_GRID):
+                emit(nn_name(a, b), "nn_gated_oct", ci * len(OCT_GRID) + oi, {**c, **o}, L.fix_octave_jumps(line, **o))
     return rows
 
 

@@ -9,8 +9,11 @@ Chỉ lắng nghe 127.0.0.1, không mở ra mạng ngoài. Endpoint:
 - `GET  /jobs/{job_id}`       tiến độ job (xem `jobs.job_status`)
 - `GET  /result/{song_id}`    JSON kết quả hoặc 404
 - `GET  /songs`               danh sách bài đã phân tích (cho popup của extension)
+- `POST /melody`              dò giai điệu, cùng cách dùng với `/analyze` (hợp đồng: `docs/melody_api.md`)
+- `GET  /melody/{song_id}`    `<Melody>` hoặc 404
 
-Hàng đợi job lưu ở `data/cache/jobs.sqlite`, một worker thread duy nhất (xem `chordtrack/jobs.py`).
+Hàng đợi job lưu ở `data/cache/jobs.sqlite`, một worker thread duy nhất cho cả job hợp âm (`kind` = `analyze`) và
+job dò giai điệu (`kind` = `melody`), vì GPU chỉ có 8 GB (xem `chordtrack/jobs.py`).
 """
 from __future__ import annotations
 
@@ -88,6 +91,34 @@ def default_analyze(source: str, *, force: bool = False, progress=None) -> dict:
     return pipeline.analyze(source, force=force, progress=progress)
 
 
+def default_melody(source: str, *, force: bool = False, progress=None) -> dict:
+    from chordtrack.melody import pipeline as melody_pipeline
+
+    return melody_pipeline.analyze_melody(source, force=force, progress=progress)
+
+
+def default_cached_melody(song_id: str) -> dict | None:
+    from chordtrack.melody import pipeline as melody_pipeline
+
+    return melody_pipeline.cached_melody(song_id)
+
+
+def default_stale_melody(song_id: str) -> dict | None:
+    from chordtrack.melody import pipeline as melody_pipeline
+
+    return melody_pipeline.stale_melody(song_id)
+
+
+def default_melody_ready() -> bool:
+    from chordtrack.melody import pipeline as melody_pipeline
+
+    try:
+        return all(melody_pipeline.melody_ready().values())
+    except Exception:
+        log.exception("Không kiểm tra được model dò giai điệu")
+        return False
+
+
 @functools.lru_cache(maxsize=1)
 def gpu_name() -> str | None:
     try:
@@ -156,14 +187,18 @@ def create_app(
     cached_result: Callable[[str], dict | None] = default_cached_result,
     start_worker: bool = True,
     poll_interval: float = 2.0,
+    melody: Callable[..., dict] = default_melody,
+    cached_melody: Callable[[str], dict | None] = default_cached_melody,
+    stale_melody: Callable[[str], dict | None] = default_stale_melody,
+    melody_ready: Callable[[], bool] = default_melody_ready,
 ) -> FastAPI:
-    """Tạo app. Test truyền `analyze`/`cached_result` giả và `db_path` tạm."""
+    """Tạo app. Test truyền `analyze`/`cached_result`/`melody`/`cached_melody`... giả và `db_path` tạm."""
     store_holder: dict[str, Any] = {}
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         store = jobs.JobStore(db_path or (paths.CACHE_DIR / "jobs.sqlite"))
-        worker = jobs.JobWorker(store, analyze, poll_interval=poll_interval)
+        worker = jobs.JobWorker(store, analyze, poll_interval=poll_interval, melody=melody)
         store_holder.update(store=store, worker=worker)
         if start_worker:
             worker.start()
@@ -202,25 +237,45 @@ def create_app(
             "deno": jobs.deno_path() is not None,
             "ffmpeg": shutil.which("ffmpeg") is not None,
             "cookies": _cookies_ok(),
+            "melody": bool(melody_ready()),
         }
 
-    @app.post("/analyze")
-    def analyze_endpoint(body: AnalyzeRequest) -> dict:
+    def submit(body: AnalyzeRequest, kind: str, cached: Callable[[str], dict | None], key: str) -> dict:
         # FastAPI chỉ đọc body khi Content-Type là JSON (khác thì 422), nên trình duyệt luôn gửi preflight CORS.
         video_id = audio_mod.parse_video_id(body.source)
         if video_id is None:
             raise HTTPException(400, f"Không nhận ra videoId hoặc URL YouTube: {body.source!r}")
-        active = store().active(video_id)
+        active = store().active(video_id, kind)
         if not body.force and (active is None or not active.force):
-            # Đang phân tích lại (force) thì không trả kết quả cũ như thể đã xong.
-            result = cached_result(video_id)
+            # Đang chạy lại (force) thì không trả kết quả cũ như thể đã xong.
+            result = cached(video_id)
             if result is not None:
-                return {"status": "done", "song_id": video_id, "result": result}
+                return {"status": "done", "song_id": video_id, key: result}
         # Truyền URL chuẩn, không truyền videoId trần: pipeline coi chuỗi trùng tên file trong cwd là file local.
-        job, created = store().submit(video_id, youtube_url(video_id), force=body.force)
+        job, created = store().submit(video_id, youtube_url(video_id), force=body.force, kind=kind)
         if created:
             store_holder["worker"].notify()
         return {"status": job.status, "job_id": job.id, "song_id": job.song_id}
+
+    @app.post("/analyze")
+    def analyze_endpoint(body: AnalyzeRequest) -> dict:
+        return submit(body, "analyze", cached_result, "result")
+
+    @app.post("/melody")
+    def melody_endpoint(body: AnalyzeRequest) -> dict:
+        return submit(body, "melody", cached_melody, "melody")
+
+    @app.get("/melody/{song_id}")
+    def melody_result_endpoint(song_id: str):
+        if not SONG_ID_RE.match(song_id):
+            raise HTTPException(400, "song_id không hợp lệ")
+        result = cached_melody(song_id)
+        if result is not None:
+            return result
+        stale = stale_melody(song_id)
+        if stale is None:
+            raise HTTPException(404, "Chưa dò giai điệu bài này")
+        return UTF8JSONResponse(stale, headers={"X-Chordtrack-Stale": "1"})
 
     @app.get("/jobs/{job_id}")
     def job_endpoint(job_id: str) -> dict:

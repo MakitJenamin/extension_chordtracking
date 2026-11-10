@@ -173,3 +173,110 @@ def test_step_times_pruned(store, monkeypatch):
         store.finish(job.id)
     n = store._db.execute("SELECT COUNT(*) FROM step_times WHERE step = 'fetch'").fetchone()[0]
     assert n == 3
+
+
+def test_old_db_gets_kind_column(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "jobs.sqlite"
+    db = sqlite3.connect(path)
+    db.executescript("""
+        CREATE TABLE jobs (id TEXT PRIMARY KEY, song_id TEXT NOT NULL, source TEXT NOT NULL,
+            force INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, step TEXT, step_started_at REAL,
+            steps_done TEXT NOT NULL DEFAULT '', error TEXT, created_at REAL NOT NULL, started_at REAL,
+            finished_at REAL);
+        CREATE INDEX jobs_song_status ON jobs (song_id, status);
+        INSERT INTO jobs (id, song_id, source, status, created_at) VALUES ('old', 'abcdefghijk', 'x', 'queued', 1);
+    """)
+    db.close()
+    s = jobs.JobStore(path)
+    assert s.get("old").kind == "analyze"
+    job, created = s.submit("abcdefghijk", "x", kind="melody")
+    assert created and job.kind == "melody" and s.active("abcdefghijk").id == "old"
+    assert s.active("abcdefghijk", "melody").id == job.id
+    s.close()
+
+
+def test_melody_kind_times_and_status(store):
+    with pytest.raises(ValueError):
+        store.submit("abcdefghijk", "x", kind="khac")
+    m, _ = store.submit("abcdefghijk", "x", kind="melody")
+    a, _ = store.submit("abcdefghijk", "x")
+    melody_total = sum(jobs.MELODY_DEFAULT_STEP_SECONDS.values())
+    analyze_total = sum(jobs.DEFAULT_STEP_SECONDS.values())
+    st = jobs.job_status(store, m)
+    assert st["kind"] == "melody" and st["eta_seconds"] == pytest.approx(melody_total)
+    assert jobs.job_status(store, a)["eta_seconds"] == pytest.approx(melody_total + analyze_total)
+    store.claim_next()
+    for step in jobs.MELODY_STEPS:
+        store.step_started(m.id, step)
+        store.step_finished(m.id, step)
+    store.finish(m.id)
+    avg = store.step_averages("melody")
+    assert set(avg) == set(jobs.MELODY_STEPS) and avg["melody_voice"] < 1.0
+    # thời gian bước "fetch" của job melody không làm lệch ước tính của job hợp âm
+    assert store.step_averages("analyze") == jobs.DEFAULT_STEP_SECONDS
+
+
+def test_worker_routes_by_kind(store):
+    seen = []
+    done = threading.Event()
+
+    def analyze(source, *, force=False, progress=None):
+        seen.append(("analyze", source))
+        return {}
+
+    def melody(source, *, force=False, progress=None):
+        seen.append(("melody", source))
+        done.set()
+        return {}
+
+    store.submit("aaaaaaaaaaa", "a")
+    m, _ = store.submit("aaaaaaaaaaa", "a", kind="melody")
+    w = jobs.JobWorker(store, analyze, poll_interval=0.05, melody=melody)
+    w.start()
+    try:
+        assert done.wait(5)
+        deadline = time.time() + 5
+        while store.get(m.id).status != "done" and time.time() < deadline:
+            time.sleep(0.02)
+    finally:
+        w.stop()
+    assert seen == [("analyze", "a"), ("melody", "a")] and store.get(m.id).status == "done"
+
+
+def test_worker_without_melody_runner(store):
+    m, _ = store.submit("aaaaaaaaaaa", "a", kind="melody")
+    w = jobs.JobWorker(store, lambda *a, **k: {})
+    w.run_job(store.claim_next())
+    j = store.get(m.id)
+    assert j.status == "error" and "dò giai điệu" in j.error
+
+
+def test_friendly_error_melody():
+    class MuscriptorAuthError(RuntimeError):
+        pass
+
+    assert "hf auth login" in jobs.friendly_error(MuscriptorAuthError("401"), "melody_fill", "melody")
+    err = RuntimeError("YourMT3+ lỗi (mã thoát 1): FileNotFoundError: Thiếu checkpoint YourMT3: x")
+    assert "fetch_models.py --melody" in jobs.friendly_error(err, "melody_voice", "melody")
+    assert jobs.friendly_error(RuntimeError("lạ"), "melody_line", "melody").startswith(
+        "Lỗi khi dò giai điệu (bước melody_line)")
+
+
+def test_second_worker_on_same_db_does_not_start(tmp_path):
+    a = jobs.JobStore(tmp_path / "jobs.sqlite")
+    b = jobs.JobStore(tmp_path / "jobs.sqlite")
+    w1 = jobs.JobWorker(a, lambda *x, **k: {}, poll_interval=0.05)
+    w2 = jobs.JobWorker(b, lambda *x, **k: {}, poll_interval=0.05)
+    w1.start()
+    try:
+        w2.start()
+        assert w1.alive and not w2.alive
+    finally:
+        w1.stop()
+    w2.start()   # worker đầu đã dừng: khóa được nhả
+    assert w2.alive
+    w2.stop()
+    a.close()
+    b.close()

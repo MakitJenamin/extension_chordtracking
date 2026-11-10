@@ -218,3 +218,59 @@ def transcribe(audio_path: Path, *, device: str | None = None, batch_size: int =
         "audio_duration_s": np.array(duration),
     }
     return MelodyModelOutput(MODEL_NAME, notes, None, extras)
+
+
+def transcribe_locked(audio_path: Path, *, batch_size: int = 8, dtype: str = "fp32") -> MelodyModelOutput:
+    """Nạp model trên CPU (ngoài khóa), chạy `transcribe` trong `gpu_lock()` rồi trả model về CPU.
+
+    `extras` có thêm `load_s` (nạp model), `elapsed_s` (suy luận), `peak_vram_mib` (VRAM reserved đỉnh)."""
+    import time
+
+    import torch
+
+    from chordtrack import gpu
+
+    t0 = time.perf_counter()
+    _load_model("cpu")
+    load_s = time.perf_counter() - t0
+    device = gpu.device()
+    with gpu.gpu_lock():
+        try:
+            cuda = device == "cuda"
+            if cuda:
+                torch.cuda.reset_peak_memory_stats()
+            t1 = time.perf_counter()
+            out = transcribe(audio_path, device=device, batch_size=batch_size, dtype=dtype)
+            elapsed = time.perf_counter() - t1
+            peak = torch.cuda.max_memory_reserved() / 2**20 if cuda else 0.0
+        finally:
+            offload()
+    out.extras.update(load_s=np.array(load_s), elapsed_s=np.array(elapsed), peak_vram_mib=np.array(peak))
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`python -m chordtrack.melody.yourmt3 <audio> <out.npz>`: chép nốt một bài, lưu bằng `chordtrack.melody.io`.
+
+    Dùng cho server: YourMT3 cần transformers cũ nên phải chạy ở tiến trình riêng (xem docstring module)."""
+    from chordtrack.melody import io as mio
+
+    ap = argparse.ArgumentParser(prog="python -m chordtrack.melody.yourmt3", description=main.__doc__.splitlines()[0])
+    ap.add_argument("audio", type=Path)
+    ap.add_argument("out", type=Path)
+    ap.add_argument("--batch-size", type=int, default=8)
+    ap.add_argument("--dtype", default="fp32", choices=["fp32", "fp16", "bf16"])
+    args = ap.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    out = transcribe_locked(args.audio, batch_size=args.batch_size, dtype=args.dtype)
+    mio.save_output(out, args.out)
+    voice = sum(n.source == "voice" for n in out.notes)
+    print(f"{len(out.notes)} nốt ({voice} voice), nạp {float(out.extras['load_s']):.1f} s, "
+          f"suy luận {float(out.extras['elapsed_s']):.1f} s, VRAM {float(out.extras['peak_vram_mib']):.0f} MiB",
+          flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
