@@ -368,6 +368,12 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   ⚠️ Máy này vẫn bị YouTube đòi cookie khi tải bài mới; người dùng khác có thể gặp, README hướng dẫn `-Cookies`.
   ⚠️ Windows PowerShell 5.1: không dùng `$ErrorActionPreference = "Stop"` trong script gọi chương trình ngoài (stderr
   bị coi là lỗi); kiểm tra `$LASTEXITCODE`.
+- [ ] **Dò giai điệu chính (đang làm thử, 2026-11-10).** Người dùng chốt: lấy giai điệu nổi nhất bất kể nguồn (giọng hay
+  nhạc cụ), job riêng bấm mới chạy, chạy trên bản mix (không tách giọng). Hiển thị tên nốt không ghi quãng tám, kèm mũi
+  tên lên/xuống so với nốt trước, nốt không chắc hiện mờ. So sánh MuScriptor (100M/300M/1.3B, weights CC BY-NC, người
+  dùng đã chấp nhận), YourMT3+, RMVPE, Basic Pitch bằng `mir_eval` trên bộ có đáp án (MIR-ST500, ADC2004, MIREX05,
+  Orchset), Kajiura chỉ chấm số không cần đáp án. Khung chung: `MelodyNote`, `PitchTrack`, `MelodyModelOutput` trong
+  `types.py`, cache ở `chordtrack/melody/io.py`, hợp đồng ở `eval/melody/README.md`.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
