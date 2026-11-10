@@ -5,9 +5,10 @@
  *   POST /analyze; có kết quả thì trả ngay, chưa có thì poll GET /jobs/{id} mỗi ~1 s
  *   (onProgress(job) mỗi lần), xong thì GET /result/{song_id}.
  *   Lỗi ném ra là CT.api.ApiError với `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "aborted".
- * CT.api.getMelody(id) -> {melody, stale} | {melody: null, status}   GET /melody/{id} (không tạo job)
- * CT.api.loadMelody(videoId, {onProgress, signal, force}) -> <Melody>
- *   POST /melody, theo dõi GET /jobs/{id}, xong thì GET /melody/{song_id} (docs/melody_api.md).
+ * CT.api.getMelody(id, model) -> {melody, stale} | {melody: null, status}   GET /melody/{id}?model= (không tạo job)
+ * CT.api.loadMelody(videoId, {onProgress, signal, force, model}) -> <Melody>
+ *   POST /melody, theo dõi GET /jobs/{id}, xong thì GET /melody/{song_id}?model= (docs/melody_api.md).
+ *   `model`: "combo" (ghép, mặc định) | "yourmt3" (chỉ YourMT3+).
  *   Lỗi có message tiếng Việt; thêm code "unsupported" khi server chưa có /melody.
  */
 (() => {
@@ -119,32 +120,52 @@
   /** <Melody> hợp lệ tối thiểu: có mảng notes. */
   const isMelody = (d) => !!d && typeof d === "object" && Array.isArray(d.notes);
 
-  /** GET /melody/{id}: kết quả đã có, không tạo job. Trả {melody, stale} hoặc null (404, server tắt…). */
-  async function getMelody(songId) {
-    const r = await request(`/melody/${encodeURIComponent(songId)}`);
-    if (r.ok && isMelody(r.data)) return { melody: r.data, stale: !!r.stale };
+  const melodyPath = (songId, model) => `/melody/${encodeURIComponent(songId)}?model=${encodeURIComponent(model)}`;
+  const unsupportedModel = () => new ApiError("unsupported",
+    "Server chưa hỗ trợ chọn model dò giai điệu. Cập nhật mã server (git pull) rồi khởi động lại.");
+
+  /** GET /melody/{id}?model=: kết quả đã có của biến thể `model`, không tạo job. Trả {melody, stale} hoặc
+   * {melody: null, status} (404, server tắt…). Server cũ bỏ qua ?model= và trả bản ghép: coi như chưa có. */
+  async function getMelody(songId, model = "combo") {
+    const r = await request(melodyPath(songId, model));
+    if (r.ok && isMelody(r.data)) {
+      if (CT.theory.melodyModelOk(model, r.data)) return { melody: r.data, stale: !!r.stale };
+      return { melody: null, status: 404, error: "server chưa hỗ trợ biến thể này" };
+    }
     return { melody: null, status: r.status, error: r.error };
   }
 
-  /** POST /melody rồi theo dõi job, xong thì GET /melody/{song_id}. Ném ApiError (message tiếng Việt). */
-  async function loadMelody(videoId, { onProgress, signal, force = false } = {}) {
+  /** POST /melody (biến thể `model`) rồi theo dõi job, xong thì GET /melody/{song_id}?model=. Ném ApiError
+   * (message tiếng Việt). */
+  async function loadMelody(videoId, { onProgress, signal, force = false, model = "combo" } = {}) {
     const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
+    const ok = (m) => { if (!CT.theory.melodyModelOk(model, m)) throw unsupportedModel(); return m; };
     try {
-      const res = await request("/melody", { method: "POST", body: { source: videoId, force } });
+      if (model !== "combo") {
+        // Server cũ bỏ qua `model` và chạy cả job ghép (vài phút) rồi mới lộ ra sai biến thể: hỏi /health trước.
+        const hr = await request("/health");
+        check();
+        if (hr.ok && hr.data && typeof hr.data === "object") {
+          const mm = hr.data.melody_models;
+          if (!mm || typeof mm !== "object" || !(model in mm)) throw unsupportedModel();
+          if (mm[model] === false) throw new ApiError("job_error", "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`)");
+        }
+      }
+      const res = await request("/melody", { method: "POST", body: { source: videoId, force, model } });
       check();
       if (!res.ok) throw Object.assign(toError(res), { post: true });
       const first = res.data || {};
-      if (first.status === "done" && isMelody(first.melody)) return first.melody;
+      if (first.status === "done" && isMelody(first.melody)) return ok(first.melody);
       if (!first.job_id) throw new ApiError("http", "phản hồi /melody không có job_id");
       const job = await waitJob(first, { onProgress, signal, fail: (m) => {
         const e = jobError(m);
         return e.code === "youtube_blocked" ? e : new ApiError("job_error", m || "lỗi không rõ");
       } });
-      const rr = await request(`/melody/${encodeURIComponent(job.song_id || first.song_id || videoId)}`);
+      const rr = await request(melodyPath(job.song_id || first.song_id || videoId, model));
       check();
       if (!rr.ok) throw new ApiError("http", rr.status === 404 ? "job đã xong nhưng server không có kết quả giai điệu" : (rr.error || `HTTP ${rr.status}`), { status: rr.status });
       if (!isMelody(rr.data)) throw new ApiError("http", "kết quả giai điệu không đọc được");
-      return rr.data;
+      return ok(rr.data);
     } catch (e) {
       if (e && e.code === "aborted") throw e;
       if (e && e.code === "extension_reloaded") throw e;

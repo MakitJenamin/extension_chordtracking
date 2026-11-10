@@ -4,27 +4,54 @@ Người dùng đã chốt (2026-11-11): dùng cách ghép **YourMT3+ → MuScri
 xem `data/eval/results/melody/report.md` và PLAN.md mục 11). Dò giai điệu là **job riêng, bấm mới chạy**, không chạy
 cùng phân tích hợp âm.
 
+Thêm (2026-11-11): tùy chọn **chỉ YourMT3+** (`"model": "yourmt3"`), bỏ bước MuScriptor small nên nhanh hơn khoảng
+3-4 lần. Theo `report.md`, YourMT3+ một mình hơn cách ghép ở F1 nốt giọng hát (MIR-ST500 53.1 so với 49.0) nhưng kém
+khoảng 10 điểm OA ở đoạn dàn nhạc / nhạc không lời (ORCHSET 43.0 so với 53.2). Mặc định vẫn là ghép.
+
+## Biến thể (`model`)
+
+| `model` (request) | `<Melody>.model` | File cache | `kind` của job | Các bước |
+|---|---|---|---|---|
+| `"combo"` (mặc định) | `"yourmt3>muscriptor_small"` | `melody.json` | `"melody"` | `fetch`, `melody_voice`, `melody_fill`, `melody_line` |
+| `"yourmt3"` | `"yourmt3"` | `melody_yourmt3.json` | `"melody_yourmt3"` | `fetch`, `melody_voice`, `melody_line` |
+
+- Mỗi biến thể có cache và job riêng: job theo (song_id, biến thể), nên hai biến thể không chặn nhau; gửi trùng cùng
+  biến thể thì trả lại job đang chờ/chạy đó. Hai job vẫn chạy lần lượt trên cùng một worker (GPU 8 GB).
+- Hai biến thể dùng chung đầu ra thô của YourMT3+ (`melody_raw/yourmt3.npz`): bài đã dò bằng biến thể này thì
+  biến thể kia không chạy lại YourMT3+ (bản YourMT3+ khi đó mất khoảng 1 giây). `force` chạy lại các model của
+  biến thể được gửi (biến thể `"yourmt3"` chỉ chạy lại YourMT3+). Khi YourMT3+ chạy lại, kết quả đã lưu của biến
+  thể kia (dựng từ đầu ra thô cũ) bị đánh dấu cũ (`code_revision` = `"raw-changed"`): `GET` vẫn trả kèm
+  `X-Chordtrack-Stale: 1`, `POST` không `force` thì dựng lại từ đầu ra thô mới (khoảng 1 giây với bản YourMT3+).
+- `code_revision` tính riêng theo biến thể (bản YourMT3+ không phụ thuộc mã MuScriptor).
+- Extension hỏi `GET /health` trước khi gửi `model` khác `"combo"`: không có `melody_models` (server cũ, sẽ bỏ qua
+  `model` và chạy cả job ghép) thì báo cần cập nhật server, không gửi job.
+- Bản YourMT3+ dùng cấu hình tốt nhất của YourMT3+ một mình theo CV (`source_viterbi`, `chorus_as_voice=False`),
+  vẫn qua bước sửa nhảy quãng tám (không làm giảm điểm eval).
+- `model` lạ: 422.
+
 ## Endpoint
 
 ### `POST /melody`
 
-Body JSON: `{"source": "<videoId hoặc URL YouTube>", "force": false}`. Giống `POST /analyze`:
+Body JSON: `{"source": "<videoId hoặc URL YouTube>", "force": false, "model": "combo"}` (`model` tùy chọn, mặc
+định `"combo"`; body không có `model` là cách ghép như trước). Giống `POST /analyze`:
 
 - Đã có kết quả (đúng `code_revision`) và không `force`: `{"status": "done", "song_id": "...", "melody": <Melody>}`.
 - Ngược lại tạo (hoặc trả lại) job: `{"status": "queued" | "running", "job_id": "...", "song_id": "..."}`.
 
 Theo dõi job bằng `GET /jobs/{job_id}` như cũ (cùng dạng `status`, `step`, `progress`, `eta_seconds`, `message`,
-`error`). Job melody có `"kind": "melody"`, job hợp âm có `"kind": "analyze"`. Các bước của job melody:
-`fetch` (dùng lại audio đã tải nếu có), `melody_voice` (YourMT3+), `melody_fill` (MuScriptor small), `melody_line`
-(ghép và tạo dòng nốt).
+`error`). Job hợp âm có `"kind": "analyze"`; job dò giai điệu có `"kind": "melody"` (ghép) hoặc `"melody_yourmt3"`
+(chỉ YourMT3+), kèm `"model": "combo" | "yourmt3"`. Các bước: `fetch` (dùng lại audio đã tải nếu có),
+`melody_voice` (YourMT3+), `melody_fill` (MuScriptor small, chỉ biến thể ghép), `melody_line` (ghép / tạo dòng nốt).
 
-### `GET /melody/{song_id}`
+### `GET /melody/{song_id}?model=combo|yourmt3`
 
-Trả `<Melody>`, 404 nếu chưa có. Kết quả mã cũ trả kèm header `X-Chordtrack-Stale: 1` như `/result`.
+Trả `<Melody>` của biến thể `model` (mặc định `combo`), 404 nếu biến thể đó chưa có. Kết quả mã cũ trả kèm header `X-Chordtrack-Stale: 1` như `/result`.
 
 ### `GET /health`
 
-Thêm trường `"melody": true | false` (đã cài đủ model dò giai điệu chưa).
+Thêm trường `"melody": true | false` (đã cài đủ model cho biến thể ghép chưa) và
+`"melody_models": {"combo": bool, "yourmt3": bool}` (từng biến thể; `yourmt3` chỉ cần YourMT3+).
 
 ## `<Melody>`
 
@@ -53,3 +80,6 @@ Thêm trường `"melody": true | false` (đã cài đủ model dò giai điệu
 - Nốt `uncertain` hiện **mờ**.
 - Dịch giọng (`transpose` và chế độ hiển thị của hợp âm) áp dụng cho cả nốt giai điệu: tên nốt tính từ `pitch + transpose`.
 - Có nút **"Dò giai điệu"**: bấm mới gửi `POST /melody`, hiện tiến độ job; đã có kết quả thì tự tải bằng `GET /melody/{id}`.
+- Ô chọn biến thể cạnh nút: "Ghép" / "Chỉ YourMT3+" (nhớ lựa chọn, `CT.settings.melodyModel`). Nút dò và lần tự tải
+  dùng biến thể đang chọn; đổi lựa chọn thì tải biến thể đó nếu đã có, chưa có thì hiện trạng thái chưa dò (không tự
+  chạy job). Tên biến thể đang hiển thị hiện nhỏ cạnh công tắc "Giai điệu".

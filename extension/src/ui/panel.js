@@ -157,8 +157,15 @@
       const check = (key, text, tip) => h("label", { title: tip },
         h("input", { type: "checkbox", role: "switch", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), text);
       this.melBox = h("span", { class: "ct-melbox" });
+      // Chọn biến thể dò giai điệu (CT.settings.melodyModel). Dựng một lần, không nằm trong melBox (melBox dựng lại
+      // mỗi lần job báo tiến độ, sẽ đóng dropdown đang mở).
+      const MM = T().MELODY_MODELS;
+      this.melSel = h("select", { class: "ct-mel-model-sel", "aria-label": "Model dò giai điệu",
+        title: Object.values(MM).map((v) => `${v.label}: ${v.tip}`).join("\n\n"),
+        onchange: (e) => CT.setSettings({ melodyModel: e.target.value }) },
+        ...Object.entries(MM).map(([k, v]) => h("option", { value: k, title: v.tip }, v.label)));
       this.opts = h("div", { class: "ct-controls" },
-        this.seg, this.stepper, this.melBox, h("span", { class: "ct-grow" }),
+        this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox), h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
@@ -187,6 +194,8 @@
       const box = this.melBox;
       if (!box) return;
       const m = this.mel || { status: "unknown" };
+      const variant = T().melodyVariant(m.model || CT.settings.melodyModel);
+      const fast = variant === "yourmt3";
       const run = (force) => () => CT.app && CT.app.detectMelody(force);
       const btn = (kids, tip, onclick, cls = "ct-btn") => h("button", { type: "button", class: cls, title: tip, onclick }, ...kids);
       let kids;
@@ -210,12 +219,15 @@
         kids = [h("label", { class: "ct-mel-sw", title: `Hiện/ẩn dòng nốt giai điệu dưới dải hợp âm (${sc("KeyG")})` },
           h("input", { type: "checkbox", role: "switch", checked: on, onchange: (e) => CT.setSettings({ showMelody: e.target.checked }) }),
           "Giai điệu"),
-        btn(["↻"], m.stale ? "Giai điệu dò bằng mã cũ: dò lại" : "Dò lại giai điệu (bỏ kết quả đã lưu, mất vài phút)",
+        h("span", { class: "ct-mel-model", title: `Dòng nốt đang hiện dò bằng: ${m.melody.model || "?"}`,
+          text: T().melodyModelName(m.melody.model) }),
+        btn(["↻"], m.stale ? "Giai điệu dò bằng mã cũ: dò lại"
+          : `Dò lại giai điệu (bỏ kết quả đã lưu, mất ${fast ? "khoảng 1 phút" : "vài phút"})`,
           run(true), "ct-btn ct-icon ct-mel-redo")];
         if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để dò lại", text: "bản cũ" }));
       } else {
         kids = [btn(["♪ Dò giai điệu"],
-          "Dò dòng nốt giai điệu bằng AI trên máy (chạy riêng, mất vài phút). Kết quả hiện dưới dải hợp âm", run(false))];
+          `Dò dòng nốt giai điệu bằng AI trên máy (${T().MELODY_MODELS[variant].label}; chạy riêng, mất ${fast ? "khoảng 1 phút" : "vài phút"}). Kết quả hiện dưới dải hợp âm`, run(false))];
       }
       box.replaceChildren(...kids);
     },
@@ -265,6 +277,7 @@
       if (this.state !== "hidden") this.show(this.state);
       this.last = {};
       if (this.melOn !== (s.showMelody !== false)) { this.melOn = s.showMelody !== false; this.renderMelody(); }
+      this.melSel.value = T().melodyVariant(s.melodyModel);
       // Chỉ đổi chữ trên dải khi cài đặt ảnh hưởng tới nhãn (không phải mỗi lần đổi âm lượng).
       const sig = labelSig(s);
       if (this.song && sig !== this.labelSig) {

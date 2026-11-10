@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -119,7 +120,7 @@ def test_analyze_melody_contract_and_cache(fake_models, monkeypatch):
     assert events == [] and mp.cached_melody(VID)["notes"] == notes
 
     # Mã ghép đổi (code_revision khác): chạy lại nhưng dùng lại đầu ra thô của hai model.
-    monkeypatch.setattr(mp, "code_revision", lambda: "khac")
+    monkeypatch.setattr(mp, "code_revision", lambda variant="combo": "khac")
     assert mp.cached_melody(VID) is None and mp.stale_melody(VID) is not None
     assert mp.analyze_melody(VID)["code_revision"] == "khac"
     assert fake_models == {"yourmt3": 1, "muscriptor": 1}
@@ -179,7 +180,7 @@ def test_child_exits_with_parent_and_imports_work(tmp_path):
 def test_cached_raw_steps_only_report_done(fake_models, monkeypatch):
     """Bước dùng lại đầu ra thô chỉ báo xong, để thời gian ~0 không lọt vào thống kê ETA."""
     mp.analyze_melody(VID)
-    monkeypatch.setattr(mp, "code_revision", lambda: "khac")
+    monkeypatch.setattr(mp, "code_revision", lambda variant="combo": "khac")
     events = []
     mp.analyze_melody(VID, progress=lambda s, f: events.append((s, f)))
     assert ("melody_voice", 0.0) not in events and ("melody_fill", 0.0) not in events
@@ -200,6 +201,83 @@ def test_melody_ready_keys():
     assert set(r) == {"yourmt3_code", "yourmt3_pydeps", "yourmt3_checkpoint", "muscriptor_package",
                       "muscriptor_weights"}
     assert all(isinstance(v, bool) for v in r.values())
+    v = mp.variant_ready({**{k: True for k in r}, "muscriptor_weights": False})
+    assert v == {"combo": False, "yourmt3": True}
+    assert mp.variant_ready({**{k: True for k in r}, "yourmt3_checkpoint": False}) == {"combo": False,
+                                                                                       "yourmt3": False}
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_build_line_yourmt3_matches_eval_choice(seed):
+    """Biến thể "yourmt3" = cấu hình CV của YourMT3+ một mình (`yourmt3|0`: source_viterbi, chỉ số 1 của lưới)."""
+    from eval.melody import score as S
+
+    voice, _ = _random_outputs(seed)
+    cfg = S.note_families()["source_viterbi"][1]
+    assert S.cfg_text(cfg) == "jump_penalty=0.5 cut_penalty=0.15 chorus_as_voice=False"
+    expect = L.notes_to_line(voice.notes, S.params_of(cfg))
+    if mp.OCTAVE_FIX:
+        expect = L.fix_octave_jumps(expect, **mp.OCTAVE_FIX)
+    got = mp.build_line_yourmt3(voice)
+    assert got == expect and len(got) > 10
+
+
+def test_yourmt3_variant_reuses_raw_and_has_own_cache(fake_models):
+    """Biến thể "yourmt3": bước riêng, file riêng, dùng lại đầu ra thô YourMT3+ của lần chạy ghép."""
+    with pytest.raises(ValueError):
+        mp.analyze_melody(VID, variant="khac")
+    events = []
+    res = mp.analyze_melody(VID, variant="yourmt3", progress=lambda s, f: events.append((s, f)))
+    assert events == [(s, f) for s in ("fetch", "melody_voice", "melody_line") for f in (0.0, 1.0)]
+    assert res["model"] == "yourmt3" and res["peak_vram_mb"] == {"yourmt3": 2600.0}
+    assert "melody_fill" not in res["timing"]
+    assert fake_models == {"yourmt3": 1, "muscriptor": 0}
+    assert mp.result_path(VID, "yourmt3").name == "melody_yourmt3.json" and mp.result_path(VID, "yourmt3").exists()
+    assert mp.cached_melody(VID) is None and mp.stale_melody(VID) is None      # bản ghép chưa có
+    assert mp.cached_melody(VID, "yourmt3")["notes"] == res["notes"]
+
+    # Ghép sau đó: dùng lại đầu ra thô YourMT3+, chỉ chạy MuScriptor; hai file không đè nhau.
+    combo = mp.analyze_melody(VID)
+    assert fake_models == {"yourmt3": 1, "muscriptor": 1}
+    assert combo["model"] == "yourmt3>muscriptor_small" and mp.cached_melody(VID, "yourmt3")["model"] == "yourmt3"
+
+    # Có đầu ra thô (vd từ lần chạy ghép) thì bản YourMT3+ không chạy lại model.
+    mp.result_path(VID, "yourmt3").unlink()
+    events.clear()
+    again = mp.analyze_melody(VID, variant="yourmt3", progress=lambda s, f: events.append((s, f)))
+    assert again["notes"] == res["notes"] and fake_models == {"yourmt3": 1, "muscriptor": 1}
+    assert ("melody_voice", 0.0) not in events and ("melody_voice", 1.0) in events
+
+    # force: chỉ chạy lại YourMT3+; bản ghép dựng từ đầu ra thô cũ thành "cũ" (vẫn đọc được qua stale).
+    mp.analyze_melody(VID, variant="yourmt3", force=True)
+    assert fake_models == {"yourmt3": 2, "muscriptor": 1}
+    assert mp.cached_melody(VID) is None and mp.stale_melody(VID)["code_revision"] == mp.RAW_CHANGED
+    assert mp.cached_melody(VID, "yourmt3") is not None
+    combo2 = mp.analyze_melody(VID)                          # dò lại bản ghép: dùng đầu ra thô mới, không chạy model
+    assert fake_models == {"yourmt3": 2, "muscriptor": 1} and mp.cached_melody(VID) == combo2
+    assert mp.cached_melody(VID, "yourmt3") is not None
+
+
+def test_code_revision_per_variant(monkeypatch):
+    """Bản YourMT3+ không phụ thuộc mã MuScriptor; mọi biến thể có loại job, Literal của server khớp VARIANTS."""
+    import typing
+
+    from chordtrack import jobs, server
+    from chordtrack.melody import muscriptor
+
+    mp.code_revision.cache_clear()
+    try:
+        y3, combo = mp.code_revision("yourmt3"), mp.code_revision("combo")
+        assert y3 != combo
+        real = mp._file_hash
+        monkeypatch.setattr(mp, "_file_hash", lambda *f: real(*f) + ("x" if Path(muscriptor.__file__) in f else ""))
+        mp.code_revision.cache_clear()
+        assert mp.code_revision("yourmt3") == y3 and mp.code_revision("combo") != combo
+    finally:
+        mp.code_revision.cache_clear()
+    assert set(typing.get_args(server.MelodyModel)) == set(mp.VARIANTS)
+    assert set(jobs.MELODY_KIND_OF) == set(mp.VARIANTS) and all(k in jobs.KINDS for k in jobs.MELODY_KIND_OF.values())
+    assert all(jobs.KINDS[jobs.MELODY_KIND_OF[v]].steps == s.steps for v, s in mp.VARIANTS.items())
 
 
 @pytest.mark.gpu

@@ -94,6 +94,9 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # 10–20 phút l�
 Script tự cài Python, PyTorch, model, ffmpeg, Deno. Tùy chọn: `-Cpu`, `-Full`, `-Melody`, `-NoTools`.
 
 **🎵 Dò giai điệu (tùy chọn, `-Melody`):** thêm YourMT3+ và MuScriptor small (khoảng 1 GB, mỗi bài 2–3 phút trên GPU).
+Trong panel chọn được **"Ghép"** (mặc định: YourMT3+ ở đoạn hát, MuScriptor small ở phần còn lại, tốt hơn với nhạc
+không lời) hoặc **"Chỉ YourMT3+"** (khoảng 40 giây cho bài 4 phút, bắt giọng hát tốt bằng hoặc hơn, kém ở đoạn dàn
+nhạc). Bài đã dò bằng một cách thì cách kia không phải chạy lại YourMT3+.
 Weights MuScriptor theo license **CC BY-NC 4.0 (chỉ dùng phi thương mại)** và để ở repo gated trên Hugging Face, nên
 cần tài khoản Hugging Face. Sau khi chạy `setup.ps1` như trên:
 
@@ -144,8 +147,8 @@ Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ 
 | `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
 | `GET /songs` | Danh sách bài đã phân tích |
-| `POST /melody` | Dò giai điệu, giống `/analyze` (job `kind: "melody"`); hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
-| `GET /melody/{song_id}` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
+| `POST /melody` | Dò giai điệu, giống `/analyze`; `"model": "combo"` (mặc định, job `kind: "melody"`) hoặc `"yourmt3"` (job `melody_yourmt3`); hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
+| `GET /melody/{song_id}?model=combo\|yourmt3` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType application/json -Body '{"source": "QDYfEBY9NM4"}'

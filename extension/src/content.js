@@ -14,7 +14,9 @@
  * Server tắt: khi đang hiện thì tự thử lại mỗi 5 giây cho tới khi kết nối được (chỉ khi tab đang hiện).
  *
  * Giai điệu (docs/melody_api.md): job riêng, chỉ chạy khi người dùng bấm "Dò giai điệu" (CT.app.detectMelody).
- *   Khi hợp âm của bài đã hiện, GET /melody/{id} một lần: đã dò rồi thì hiện luôn. Phát sự kiện "melody".
+ *   Khi hợp âm của bài đã hiện, GET /melody/{id}?model= một lần: đã dò rồi thì hiện luôn. Phát sự kiện "melody".
+ *   Biến thể theo CT.settings.melodyModel ("combo" | "yourmt3"), mỗi biến thể một trạng thái; đổi biến thể thì
+ *   hỏi GET cho biến thể mới (nếu chưa hỏi), không tự chạy job.
  */
 (() => {
   const RETRY_MS = 5000;
@@ -40,31 +42,40 @@
   function stopRetry() { clearTimeout(retryTimer); retryTimer = 0; }
 
   /* ----- giai điệu ----- */
+  // Mỗi biến thể (CT.settings.melodyModel: "combo" | "yourmt3") một trạng thái riêng: job của biến thể này vẫn
+  // chạy và được theo dõi khi người dùng chuyển sang biến thể kia; chỉ biến thể đang chọn được phát ra.
   const newMel = () => ({ status: "unknown", melody: null, stale: false, job: null, error: null, ctrl: null });
+  const newMels = () => Object.fromEntries(Object.keys(CT.theory.MELODY_MODELS).map((v) => [v, newMel()]));
+  const melVariant = () => CT.theory.melodyVariant(CT.settings.melodyModel);
 
   function emitMelody(c) {
     if (c !== cur) return;
-    const m = c.mel;
+    const model = melVariant();
+    const m = c.mels[model];
     // Đang dò lại hoặc dò lại lỗi: vẫn hiện dòng nốt cũ (nếu có) cho tới khi có kết quả mới.
     CT.state.melody = m.melody;
-    CT.bus.emit("melody", { videoId: c.id, status: m.status, melody: CT.state.melody, stale: m.stale, job: m.job, error: m.error });
+    CT.bus.emit("melody", { videoId: c.id, model, status: m.status, melody: CT.state.melody, stale: m.stale, job: m.job, error: m.error });
   }
 
-  /** GET /melody/{id}: chỉ đọc kết quả đã có. Server tắt thì để "unknown" để lần hợp âm hiện sau hỏi lại. */
+  /** GET /melody/{id}?model=: chỉ đọc kết quả đã có của biến thể đang chọn. Server tắt thì để "unknown" để lần
+   * hợp âm hiện sau (hoặc lần đổi biến thể sau) hỏi lại. */
   async function probeMelody(c) {
-    if (c.mel.status !== "unknown" || c.mel.probing) return;
-    c.mel.probing = true;
+    const model = melVariant();
+    const m = c.mels[model];
+    if (m.status !== "unknown" || m.probing) return;
+    m.probing = true;
     let r;
-    try { r = await CT.api.getMelody(c.id); } finally { c.mel.probing = false; }
-    if (cur !== c || c.mel.status !== "unknown") return;    // người dùng đã bấm dò trong lúc chờ
-    if (r.melody) Object.assign(c.mel, { status: "ready", melody: r.melody, stale: r.stale });
+    try { r = await CT.api.getMelody(c.id, model); } finally { m.probing = false; }
+    if (cur !== c || m.status !== "unknown") return;    // người dùng đã bấm dò trong lúc chờ
+    if (r.melody) Object.assign(m, { status: "ready", melody: r.melody, stale: r.stale });
     else if (r.status === 0) return;
-    else c.mel.status = "none";                              // 404 (chưa dò) hoặc server chưa có /melody
+    else m.status = "none";                              // 404 (chưa dò) hoặc server chưa có /melody
     emitMelody(c);
   }
 
   async function detectMelody(c, force = false) {
-    const m = c.mel;
+    const model = melVariant();
+    const m = c.mels[model];
     if (m.status === "loading" && !force) return;
     m.ctrl?.abort();
     const my = (m.ctrl = new AbortController());
@@ -72,7 +83,7 @@
       job: { status: "queued", progress: 0, step: null, message: "Đang gửi yêu cầu dò giai điệu", eta_seconds: null } });
     emitMelody(c);
     try {
-      const melody = await CT.api.loadMelody(c.id, { force, signal: my.signal, onProgress: (job) => {
+      const melody = await CT.api.loadMelody(c.id, { force, model, signal: my.signal, onProgress: (job) => {
         if (m.ctrl !== my) return;
         m.job = job;
         emitMelody(c);
@@ -81,7 +92,7 @@
       Object.assign(m, { ctrl: null, status: "ready", melody, stale: false, job: null });
       emitMelody(c);
       // Lần dò đầu (không phải ↻ dò lại) mà dòng nốt đang tắt: bật để thấy kết quả vừa bấm dò.
-      if (!force && CT.settings.showMelody === false) CT.setSettings({ showMelody: true });
+      if (!force && melVariant() === model && CT.settings.showMelody === false) CT.setSettings({ showMelody: true });
       return;
     } catch (e) {
       if (m.ctrl !== my || e.code === "aborted") return;
@@ -213,7 +224,7 @@
     const c = cur;
     if (!c) return;
     c.ctrl?.abort();      // chỉ ngừng theo dõi; job trên server vẫn chạy và lưu cache
-    c.mel.ctrl?.abort();
+    for (const m of Object.values(c.mels)) m.ctrl?.abort();
     clearTimeout(c.probeTimer);
     stopRetry();
     cur = null;
@@ -240,7 +251,7 @@
       return;
     }
     const c = (cur = { id, visible: false, status: "off", cached: null, result: null, job: null, error: null, ctrl: null, userHid: false,
-      mel: newMel() });
+      mels: newMels() });
     CT.ui.ctlButton.mount();
     notify();
     if (active.has(id)) show(c);
@@ -268,11 +279,21 @@
   async function start() {
     await CT.loadSettings();
     let lastAuto = !!CT.settings.autoShowCached;
+    let lastModel = melVariant();
     CT.bus.on("settings", (s) => {
       check();
       const auto = !!s.autoShowCached;
       if (auto && !lastAuto && cur) maybeAutoShow(cur);
       lastAuto = auto;
+      // Đổi biến thể giai điệu: hiện biến thể mới (đã có thì tải bằng GET, chưa có thì "chưa dò"; không tự chạy job).
+      const model = melVariant();
+      if (model !== lastModel) {
+        lastModel = model;
+        if (cur) {
+          emitMelody(cur);
+          if (cur.visible && cur.status === "ready") probeMelody(cur);
+        }
+      }
     });
     window.addEventListener("yt-navigate-finish", check);
     window.addEventListener("popstate", check);

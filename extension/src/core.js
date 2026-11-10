@@ -31,7 +31,8 @@
  *   CT.app      reload(force), toggle(), check() (src/content.js)
  *
  * GIAI ĐIỆU (docs/melody_api.md):
- *   "melody" {videoId, status, melody, stale, job, error}   trạng thái dòng giai điệu của video hiện tại
+ *   "melody" {videoId, model, status, melody, stale, job, error}   trạng thái dòng giai điệu của video hiện tại,
+ *                    biến thể `model` đang chọn (CT.settings.melodyModel: "combo" | "yourmt3", nhớ lựa chọn)
  *            status: "unknown" (chưa hỏi server) | "none" (chưa dò) | "loading" (job đang chạy, có job)
  *                    | "ready" (có melody) | "error" (có error {code, message})
  *   CT.state.melody                  <Melody> đang hiện (hoặc null)
@@ -62,6 +63,7 @@
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
+    melodyModel: "combo",     // biến thể dò giai điệu: "combo" (ghép YourMT3+ + MuScriptor) | "yourmt3" (chỉ YourMT3+)
     settingsRev: 2,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",

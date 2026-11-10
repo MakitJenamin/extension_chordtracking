@@ -265,42 +265,45 @@ class FakeMelody:
         self.in_fill = threading.Event()
         self.ready = True
 
-    def cached(self, song_id):
-        return self.results.get(song_id)
+    def cached(self, song_id, variant="combo"):
+        return self.results.get((song_id, variant))
 
-    def stale_of(self, song_id):
-        return self.results.get(song_id) or self.stale.get(song_id)
+    def stale_of(self, song_id, variant="combo"):
+        return self.results.get((song_id, variant)) or self.stale.get((song_id, variant))
 
-    def run(self, source, *, force=False, progress=None):
+    def run(self, source, *, force=False, progress=None, variant="combo"):
         assert source.startswith("https://www.youtube.com/watch?v=")
         vid = audio.parse_video_id(source)
-        self.calls.append((vid, force))
-        for step in jobs.MELODY_STEPS:
+        self.calls.append((vid, force) if variant == "combo" else (vid, force, variant))
+        for step in jobs.KINDS[jobs.MELODY_KIND_OF[variant]].steps:
             progress(step, 0.0)
             if step == "melody_fill":
                 self.in_fill.set()
                 assert self.gate.wait(10)
             progress(step, 1.0)
-        res = {"song_id": vid, "model": "yourmt3>muscriptor_small", "code_revision": "x", "duration": 10.0,
-               "notes": [{"start": 1.0, "end": 1.5, "pitch": 60, "confidence": 0.8, "uncertain": False,
-                          "source": "voice"}]}
-        self.results[vid] = res
+        model = "yourmt3>muscriptor_small" if variant == "combo" else "yourmt3"
+        res = {"song_id": vid, "model": model, "code_revision": "x", "duration": 10.0,
+               "notes": [{"start": 1.0, "end": 1.5, "pitch": 60 if variant == "combo" else 62, "confidence": 0.8,
+                          "uncertain": False, "source": "voice"}]}
+        self.results[(vid, variant)] = res
         return res
 
 
 def make_melody_client(fake, mel, tmp_path, **kw):
     app = server.create_app(db_path=tmp_path / "jobs.sqlite", analyze=fake.analyze, cached_result=fake.cached,
                             melody=mel.run, cached_melody=mel.cached, stale_melody=mel.stale_of,
-                            melody_ready=lambda: mel.ready, poll_interval=0.05, **kw)
+                            melody_ready=lambda: {"combo": mel.ready, "yourmt3": True}, poll_interval=0.05, **kw)
     return TestClient(app, base_url="http://127.0.0.1")
 
 
 def test_health_melody_flag(fake, tmp_path):
     mel = FakeMelody()
     with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
-        assert c.get("/health").json()["melody"] is True
+        h = c.get("/health").json()
+        assert h["melody"] is True and h["melody_models"] == {"combo": True, "yourmt3": True}
         mel.ready = False
-        assert c.get("/health").json()["melody"] is False
+        h = c.get("/health").json()
+        assert h["melody"] is False and h["melody_models"] == {"combo": False, "yourmt3": True}
 
 
 def test_melody_job_progress_and_result(fake, tmp_path):
@@ -334,7 +337,7 @@ def test_melody_job_progress_and_result(fake, tmp_path):
 
 def test_melody_stale_force_and_bad_requests(fake, tmp_path):
     mel = FakeMelody()
-    mel.stale[VID] = {"song_id": VID, "code_revision": "cu", "notes": []}
+    mel.stale[(VID, "combo")] = {"song_id": VID, "code_revision": "cu", "notes": []}
     with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
         r = c.get(f"/melody/{VID}")
         assert r.status_code == 200 and r.headers["x-chordtrack-stale"] == "1"
@@ -344,12 +347,46 @@ def test_melody_stale_force_and_bad_requests(fake, tmp_path):
                       headers={"Content-Type": "text/plain"}).status_code == 422
         # Kết quả cũ không tính là xong: tạo job.
         assert c.post("/melody", json={"source": VID}).json()["status"] == "queued"
-    mel.results[VID2] = {"song_id": VID2, "notes": []}
+    mel.results[(VID2, "combo")] = {"song_id": VID2, "notes": []}
     with make_melody_client(fake, mel, tmp_path) as c:
         r = c.post("/melody", json={"source": VID2, "force": True}).json()
         assert r["status"] == "queued"
         wait_status(c, r["job_id"], "done")
     assert (VID2, True) in mel.calls
+
+
+def test_melody_yourmt3_variant(fake, tmp_path):
+    """`model: "yourmt3"`: job riêng (không chặn job ghép cùng bài), cache riêng, GET theo `?model=`."""
+    mel = FakeMelody()
+    mel.gate.clear()
+    with make_melody_client(fake, mel, tmp_path) as c:
+        assert c.get(f"/melody/{VID}?model=yourmt3").status_code == 404
+        assert c.get(f"/melody/{VID}?model=khac").status_code == 422
+        assert c.post("/melody", json={"source": VID, "model": "khac"}).status_code == 422
+        combo = c.post("/melody", json={"source": VID}).json()          # không có model = ghép
+        assert mel.in_fill.wait(5)
+        y3 = c.post("/melody", json={"source": VID, "model": "yourmt3"}).json()
+        assert y3["status"] == "queued" and y3["job_id"] != combo["job_id"]
+        assert c.post("/melody", json={"source": VID, "model": "yourmt3"}).json()["job_id"] == y3["job_id"]
+        assert c.post("/melody", json={"source": VID, "model": "combo"}).json()["job_id"] == combo["job_id"]
+        st = c.get(f"/jobs/{y3['job_id']}").json()
+        assert st["kind"] == "melody_yourmt3" and st["model"] == "yourmt3" and st["status"] == "queued"
+        mel.gate.set()
+        wait_status(c, y3["job_id"], "done")
+        wait_status(c, combo["job_id"], "done")
+        a = c.get(f"/melody/{VID}?model=yourmt3").json()
+        b = c.get(f"/melody/{VID}").json()
+        assert a["model"] == "yourmt3" and a["notes"][0]["pitch"] == 62
+        assert b["model"] == "yourmt3>muscriptor_small" and c.get(f"/melody/{VID}?model=combo").json() == b
+        done = c.post("/melody", json={"source": VID, "model": "yourmt3"}).json()
+        assert done["status"] == "done" and done["melody"]["model"] == "yourmt3"
+        # Chỉ có bản YourMT3+: biến thể ghép vẫn chưa có.
+        assert c.get(f"/melody/{VID2}?model=yourmt3").status_code == 404
+        r = c.post("/melody", json={"source": VID2, "model": "yourmt3", "force": True}).json()
+        wait_status(c, r["job_id"], "done")
+        assert c.get(f"/melody/{VID2}").status_code == 404
+        assert c.get(f"/melody/{VID2}?model=yourmt3").status_code == 200
+    assert mel.calls == [(VID, False), (VID, False, "yourmt3"), (VID2, True, "yourmt3")]
 
 
 def test_second_server_on_same_db_refuses_jobs(fake, tmp_path):

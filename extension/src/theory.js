@@ -391,11 +391,38 @@
     return "bare";
   }
 
+  /* Biến thể dò giai điệu (`model` của POST /melody, docs/melody_api.md). `model`: giá trị <Melody>.model. */
+  const MELODY_MODELS = {
+    combo: { model: "yourmt3>muscriptor_small", short: "Ghép", label: "Ghép (chính xác hơn với nhạc không lời)",
+      tip: "YourMT3+ ở đoạn có giọng hát, MuScriptor small ở phần còn lại. Chậm hơn (khoảng 2–3 phút cho bài 4 phút) nhưng bắt giai điệu nhạc cụ tốt hơn" },
+    yourmt3: { model: "yourmt3", short: "YourMT3+", label: "Chỉ YourMT3+ (nhanh hơn)",
+      tip: "Chỉ dùng YourMT3+: nhanh hơn khoảng 3–4 lần (dưới 1 phút cho bài 4 phút), bắt giọng hát tốt bằng hoặc hơn, kém hơn ở đoạn nhạc không lời" },
+  };
+  const MELODY_DEFAULT = "combo";
+
+  /** Biến thể hợp lệ từ cài đặt (giá trị lạ hoặc thiếu: mặc định "combo"). */
+  function melodyVariant(v) { return Object.prototype.hasOwnProperty.call(MELODY_MODELS, v) ? v : MELODY_DEFAULT; }
+
+  /** <Melody> có đúng là của biến thể `variant` không. Server cũ bỏ qua `?model=` và trả bản ghép, nên bản
+   * "yourmt3" phải có đúng model; bản ghép nhận cả kết quả cũ không có trường model. */
+  function melodyModelOk(variant, melody) {
+    const want = MELODY_MODELS[melodyVariant(variant)].model;
+    const got = melody && melody.model;
+    return got === want || (melodyVariant(variant) === MELODY_DEFAULT && !got);
+  }
+
+  /** Tên ngắn của biến thể đang hiển thị, từ <Melody>.model ("Ghép", "YourMT3+"; model lạ: giữ nguyên). */
+  function melodyModelName(model) {
+    for (const v of Object.values(MELODY_MODELS)) if (v.model === model) return v.short;
+    return model ? String(model) : MELODY_MODELS[MELODY_DEFAULT].short;
+  }
+
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
     DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit,
+    MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyModelName,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
   else window.CT.theory = theory;
