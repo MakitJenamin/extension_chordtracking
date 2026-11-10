@@ -308,7 +308,7 @@ def _yt_download(url: str, out_stem: Path, cookies: str | None = None) -> tuple[
         err = (res.stderr.strip().splitlines() or ["?"])[-1]
         if cookies:
             err = err.replace(cookies, "<cookies>")
-        if "Video unavailable" in err or "Private video" in err or "removed" in err:
+        if any(k in err for k in ("Video unavailable", "video is unavailable", "Private video", "removed")):
             break
     return None, err
 

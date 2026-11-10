@@ -397,6 +397,14 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     (+3.8 và +5.0 điểm OA, p 0.02 và 0.006) và giảm bước nhảy > 1 quãng tám từ 23–29 xuống khoảng 2 mỗi phút.
     Ở Orchset (dàn nhạc) salience và skyline nhỉnh hơn Viterbi. Trên 5 bài Kajiura đã có cache, skyline của Basic Pitch có 74% nốt
     thuộc hợp âm nhưng 80 bước nhảy quãng tám mỗi phút (bám bè đệm); RMVPE 56% và 12 bước nhảy mỗi phút.
+  - Dữ liệu đánh giá (2026-11-10, `python -m eval.melody.datasets <bộ>`): MIR-ST500 test 82/100 bài (18 video
+    mất), 337 phút; Orchset 64 đoạn (23,6 phút, CC BY-NC-SA); ADC2004 20 đoạn, MIREX05 13 đoạn (bản LabROSA công
+    khai; bộ test 25 bài MIREX05 không công bố); Kajiura 32 bài (150 phút, không đáp án); sanity "Let It Be".
+    MedleyDB bỏ (Zenodo "restricted").
+  - ⚠️ YouTube đòi cookie, nhưng yt-dlp `--extractor-args youtube:player_client=web_embedded` tải được không cần
+    cookie (cookie từ Chrome/Edge lỗi DPAPI do app-bound encryption).
+  - ⚠️ MIR-ST500: bài 500 lệch +0,859 s so với nhãn (đã ghi `offset` trong manifest), 81 bài còn lại lệch < 0,1 s.
+    Kiểm tra bằng salience CQT so với nhãn nốt, pyin xác nhận. Chi tiết ở `eval/melody/README.md`.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

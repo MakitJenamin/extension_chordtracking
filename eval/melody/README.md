@@ -45,12 +45,12 @@ Trường thêm trong manifest: `sr`, `channels`, `duration` (đọc từ WAV); 
 
 | bộ | lệnh | nguồn | bài | audio | đáp án | melody_type |
 |---|---|---|---|---|---|---|
-| `kajiura` | `kajiura` | audio có sẵn ở `data/eval/kajiura/audio` | 32 | WAV gốc (48 kHz stereo) | không; `chord_ref` = `data/eval/kajiura/ref/<tên>.lab` | mixed |
+| `kajiura` | `kajiura` | audio có sẵn ở `data/eval/kajiura/audio` | 32 (150 phút) | WAV gốc (48 kHz stereo) | không; `chord_ref` = `data/eval/kajiura/ref/<tên>.lab` | mixed |
 | `sanity` | `sanity` | `data/audio/QDYfEBY9NM4.wav` ("Let It Be") | 1 | 48 kHz stereo | không | vocal |
-| `mir_st500` | `mir_st500 [--cookies FILE]` | nhãn: github.com/york135/singing_transcription_ICASSP2021, audio YouTube | test 401–500, trừ video mất / lệch | 44.1 kHz stereo 16-bit (ffmpeg) | `ref_notes` | vocal |
-| `orchset` | `orchset` | Zenodo 1289786 (CC BY-NC-SA 4.0) | 64 | bản mono 44.1 kHz | `ref_f0`, bước 10 ms | instrumental |
-| `adc2004` | `adc2004` | labrosa.ee.columbia.edu/projects/melody | 20 | mono 44.1 kHz | `ref_f0`, bước 5.8 ms | vocal: daisy, opera, pop (12); instrumental: jazz, midi (8) |
-| `mirex05` | `mirex05` | như trên, `mirex05TrainFiles.zip` | 13 | mono 44.1 kHz | `ref_f0`, bước 10 ms | vocal: train01–09; instrumental: train10–13 |
+| `mir_st500` | `mir_st500 [--cookies FILE]` | nhãn: github.com/york135/singing_transcription_ICASSP2021, audio YouTube | 82 (test 401–500; 18 video mất, 2026-11-10), 337 phút | 44.1 kHz stereo 16-bit (ffmpeg) | `ref_notes` | vocal |
+| `orchset` | `orchset` | Zenodo 1289786 (CC BY-NC-SA 4.0) | 64 (23,6 phút) | bản mono 44.1 kHz | `ref_f0`, bước 10 ms | instrumental |
+| `adc2004` | `adc2004` | labrosa.ee.columbia.edu/projects/melody | 20 (6,1 phút) | mono 44.1 kHz | `ref_f0`, bước 5.8 ms | vocal: daisy, opera, pop (12); instrumental: jazz, midi (8) |
+| `mirex05` | `mirex05` | như trên, `mirex05TrainFiles.zip` | 13 (6,5 phút) | mono 44.1 kHz | `ref_f0`, bước 10 ms | vocal: train01–09; instrumental: train10–13 |
 
 - **MIR-ST500**: YouTube đòi xác minh "not a bot" trên máy này; script thử `player_client=web_embedded` trước
   (tải được không cần cookie), rồi mặc định, rồi `mweb`. Nếu vẫn bị chặn: `--cookies` hoặc `CHORDTRACK_YT_COOKIES`.
@@ -64,3 +64,7 @@ Trường thêm trong manifest: `sr`, `channels`, `duration` (đọc từ WAV); 
 - **MIREX05**: bộ test 25 bài của MIREX không công bố; bản công khai là 13 bài LabROSA, cũng là bản các bài báo
   (MSNet, FTANet, TONet) dùng. ADC2004 và MIREX05 thường chấm riêng phần vocal (12 và 9 bài).
 - **MedleyDB**: bỏ, Zenodo để "restricted" (phải xin phép).
+- **Kết quả kiểm tra lệch MIR-ST500 (2026-11-10)**: cả 82 bài tải được đều khớp nhãn (score 0,97–2,2, trung vị
+  1,75; margin 0,23–0,9). Độ lệch: 69 bài trong 0–0,02 s (1–2 khung, coi như 0), 411 +0,058 s, 474 −0,081 s,
+  **500 +0,859 s** (score tại 0 chỉ 0,51). Kiểm tra chéo bằng `librosa.pyin` + `mir_eval` trên 90 s: bài 500 có
+  Raw Chroma Accuracy 0,18 ở offset 0, 0,39 ở offset 0,859; bài 401 cao nhất ở offset 0.
