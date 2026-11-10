@@ -403,6 +403,18 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     (+3.8 và +5.0 điểm OA, p 0.02 và 0.006) và giảm bước nhảy > 1 quãng tám từ 23–29 xuống khoảng 2 mỗi phút.
     Ở Orchset (dàn nhạc) salience và skyline nhỉnh hơn Viterbi. Trên 5 bài Kajiura đã có cache, skyline của Basic Pitch có 74% nốt
     thuộc hợp âm nhưng 80 bước nhảy quãng tám mỗi phút (bám bè đệm); RMVPE 56% và 12 bước nhảy mỗi phút.
+  - **RMVPE** (`chordtrack/melody/rmvpe.py`, PR #58): kiến trúc viết lại theo mã RVC (MIT), weights `rmvpe.pt` của HF
+    `lj1995/VoiceConversionWebUI` (model card **MIT**), `data/models/rmvpe/`. Không thêm gói pip. f0 khung 10 ms,
+    ngưỡng voicing 0.03 (RVC), `extras["salience_max"]` và `f0_raw_hz` để tự chọn ngưỡng. Mel tính trên CPU, model chạy
+    theo đoạn ~20 s nên **VRAM đỉnh ~500 MB không đổi theo độ dài** (chạy cả bài 243 s một lượt: 1,8 GB). Thời gian model
+    1,5–2,9 s/bài 4–6 phút (Let It Be 2,1 s; Kajiura 380 s: 2,9 s), cả lệnh kể cả đọc audio ~4 s. Sin 440 Hz → 439,7 Hz;
+    Let It Be từ 13 s ra G3 A3 E3 G3 C4 D4 E4 E4 D4 C4 ("When I find myself in times of trouble"), 81% khung có giọng.
+  - **Basic Pitch** (`chordtrack/melody/basic_pitch.py`, PR #58, Apache-2.0): `pip install --no-deps basic-pitch==0.4.0`
+    (cài thường kéo tensorflow 2.15 và hạ resampy 0.4.3 → 0.4.2), chạy `nmp.onnx` đi kèm bằng onnxruntime **CPU**, không
+    cần GPU. 4–7 s cho bài 4 phút, 15 s cho bài 6 phút (máy đang chạy việc khác); Let It Be 2049 nốt đa âm.
+  - Cache (2026-11-10): Basic Pitch đủ cả 6 bộ (sanity 1, orchset 64, adc2004 20, mirex05 13, kajiura 32,
+    mir_st500 82); RMVPE đủ cả 6 bộ (MIR-ST500: model trung vị 1,5 s/bài, VRAM đỉnh 497 MB). Kajiura của RMVPE chạy
+    bằng bản tính mel trên GPU trước khi sửa (kết quả chỉ lệch sai số dấu phẩy động).
   - Dữ liệu đánh giá (2026-11-10, `python -m eval.melody.datasets <bộ>`): MIR-ST500 test 82/100 bài (18 video
     mất), 337 phút; Orchset 64 đoạn (23,6 phút, CC BY-NC-SA); ADC2004 20 đoạn, MIREX05 13 đoạn (bản LabROSA công
     khai; bộ test 25 bài MIREX05 không công bố); Kajiura 32 bài (150 phút, không đáp án); sanity "Let It Be".
