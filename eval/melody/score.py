@@ -479,6 +479,8 @@ def score_track(task: tuple) -> list[dict]:
     for a, b in nn_pairs:
         if a not in outs or b not in outs:
             continue
+        if any(outs[m].pitch_track is not None and not outs[m].notes for m in (a, b)):
+            continue          # model chỉ có đường f0 (RMVPE) không phải model nốt: dùng combo / combo_gated
         for m in (a, b):
             for d in NN_PAD:
                 if (m, d) not in voice_gates:
@@ -756,8 +758,9 @@ def balanced_rank_md(summary: list[dict], primary: dict[str, str | None], select
     for s in summary:
         if s["selection"] == selection and s["quant"] == 0 and s["dataset"] in labelled:
             tab.setdefault(s["model"], {})[s["dataset"]] = s
-    ranked = sorted(((float(np.mean([d[ds][primary[ds]] for ds in labelled])), m, d) for m, d in tab.items()
-                     if len(d) == len(labelled)), key=lambda x: -x[0])
+    means = ((float(np.mean([d[ds][primary[ds]] for ds in labelled])), m, d) for m, d in tab.items()
+             if len(d) == len(labelled))
+    ranked = sorted((x for x in means if np.isfinite(x[0])), key=lambda x: -x[0])
     if not ranked:
         return []
     out = [f"\n### {title}\n", "| model | trung bình | " + " | ".join(

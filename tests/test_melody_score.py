@@ -213,3 +213,11 @@ def test_nn_gated_scored_when_one_model_has_no_notes(fake_data):
     rows = S.score_track((entry, ["notem", "empty"], None, [("notem", "empty"), ("empty", "notem")]))
     nn = [r for r in rows if r["family"] == "nn_gated"]
     assert len(nn) == 2 * len(S.NN_GRID)
+
+
+def test_nn_pair_with_f0_only_model_is_skipped(fake_data):
+    entry = {**json.loads((paths.EVAL_DIR / "melody" / "fake_f0" / "manifest.jsonl")
+                          .read_text(encoding="utf-8").splitlines()[0]),
+             "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}
+    rows = S.score_track((entry, ["notem", "f0m"], None, [("notem", "f0m"), ("f0m", "notem")]))
+    assert not [r for r in rows if r["family"] == "nn_gated"]
