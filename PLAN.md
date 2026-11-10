@@ -431,6 +431,36 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     CPU, đổi fp16 rồi mới chuyển lên GPU: large còn 3,4 GB. Đo trên Let It Be (243 s, RTX 3060 Ti, trong gpu_lock):
     small 83 s / 0,6 GB, medium 85 s / 1,7 GB, large fp16 179 s / 3,4 GB. Small gần như không nhanh hơn medium vì
     sinh từng token (giới hạn bởi Python, không phải GPU). Coordinator chốt bỏ medium, chỉ cache small và large.
+  - **Chấm đầy đủ RMVPE, YourMT3+, Basic Pitch (2026-11-10, 212 bài, `python -m eval.melody.score --jobs 8`)**, CPU
+    khoảng 6 phút. Bảng đầy đủ ở `data/eval/results/melody/report.md`. Chọn họ chiến lược + tham số bằng CV 3 phần
+    theo bài, mục tiêu cân bằng theo bộ (OA ở bộ f0, F1 onset ở MIR-ST500). Điểm % (OA hoặc F1 onset), một cấu
+    hình chung cho mọi bộ / cấu hình riêng từng bộ:
+
+    | model | ADC2004 OA | MIREX05 OA | Orchset OA | MIR-ST500 F1 onset / on+off |
+    |---|---|---|---|---|
+    | RMVPE | 62.9 / 64.7 | **68.3** / **69.6** | 15.2 / 16.1 | 29.0 / 33.3, on+off 16.3 |
+    | YourMT3+ | 44.6 / 44.5 | 41.4 / 41.1 | 43.0 / 45.6 | **53.1** / 53.1, on+off 38.8 |
+    | Basic Pitch | 56.1 / 51.5 | 43.8 / 44.3 | **47.5** / **50.8** | 18.3 / 18.0 |
+    | RMVPE + YourMT3+ | 52.0 / 65.7 | 53.4 / 58.3 | 37.0 / 43.8 | 26.7 / 27.1 |
+    | RMVPE + Basic Pitch | **68.9** / **68.4** | 60.3 / 62.1 | 26.7 / 31.5 | 26.0 / 26.5 |
+
+  - Không model nào thắng mọi loại nhạc. RMVPE (dò f0 giọng hát) tốt nhất ở giọng hát mức khung nhưng gần như
+    không bắt được giai điệu dàn nhạc (Orchset 15%), và tách nốt kém (F1 onset 29–33). YourMT3+ chép nốt tốt nhất
+    (F1 onset hơn RMVPE +24 điểm, thắng 82/82 bài, p < 0.001), nhưng ⚠️ MIR-ST500 nằm trong dữ liệu huấn luyện của
+    YourMT3+ nên số này lạc quan. Ở bộ f0 thì YourMT3+ thua cả Basic Pitch. Orchset: Basic Pitch hơn YourMT3+
+    +5.3 điểm (cấu hình riêng, p 0.002).
+  - Chiến lược tốt nhất cho YourMT3+ là **ưu tiên giọng hát + Viterbi** (`source_viterbi`, CV chọn ở cả 3 phần).
+    Basic Pitch không có nhãn nguồn: Viterbi với w_pitch 1.0. RMVPE: dò lại ngưỡng voicing trên `f0_raw_hz` /
+    `salience_max`. Ngưỡng chung 0.2 (mặc định của model là 0.03). Chọn riêng từng bộ: MIR-ST500 và MIREX05 0.3,
+    Orchset 0.05, ADC2004 0.03.
+  - Ghép RMVPE + model nốt chỉ có lợi ở ADC2004 (RMVPE + Basic Pitch 68.9 so với RMVPE 62.9, p 0.46, chưa chắc).
+    Ở MIREX05 thì thua RMVPE một mình (−8.0, p 0.03). Ở MIR-ST500 thì kém xa YourMT3+ một mình (F1 27 so với 53),
+    vì các nốt tách từ f0 của RMVPE kéo F1 xuống. Với RMVPE + YourMT3+, CV chọn ghép theo cổng giọng (RMVPE ở chỗ
+    YourMT3+ có nốt `voice`) ở MIR-ST500 và Orchset, và chọn ghép lấp khoảng trống ở ADC2004 và MIREX05.
+  - Kajiura (không đáp án, cấu hình chung): YourMT3+ có nốt 86% thời gian, 66% nốt thuộc hợp âm, 1.7 bước nhảy
+    > 1 quãng tám mỗi phút. Basic Pitch 64% thời gian, 75% trong hợp âm (bám bè hòa âm nhiều hơn). RMVPE 58%, 56%.
+  - Thêm MuScriptor: khi cache xong chỉ cần chạy lại `python -m eval.melody.score --jobs 8` (tự tìm model trong
+    cache, mặc định bỏ `muscriptor_medium`). Chỉ đổi cách chọn hay in bảng thì dùng `--reuse`, không phải chấm lại.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
