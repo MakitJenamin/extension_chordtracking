@@ -523,3 +523,44 @@ def combine_gated(primary: list[MelodyNote], secondary: list[MelodyNote], gate: 
                   min_dur: float = 0.06) -> list[MelodyNote]:
     """`primary` trong các khoảng `gate` (vd RMVPE ở chỗ model nốt thấy giọng hát), `secondary` ở phần còn lại."""
     return make_monophonic(clip_to(primary, gate, True, min_dur) + clip_to(secondary, gate, False, min_dur), min_dur)
+
+
+def fix_octave_jumps(notes: list[MelodyNote], max_run: float = 0.6, min_jump: int = 10,
+                     max_gap: float = 1.0) -> list[MelodyNote]:
+    """Kéo về quãng tám lân cận các đoạn nốt ngắn bị nhảy quãng tám vô lý.
+
+    Trong một câu (các nốt cách nhau dưới `max_gap` giây), một đoạn nốt liên tiếp dài không quá `max_run` giây
+    (từ đầu nốt đầu tới cuối nốt cuối) mà đi vào bằng một bước nhảy ít nhất `min_jump` bán cung và đi ra bằng một
+    bước nhảy ít nhất `min_jump` bán cung theo chiều ngược lại thì được dịch cả đoạn đi bội số 12 bán cung (theo
+    bước nhảy vào) để nối liền với hai bên. Đoạn ở cuối câu (không có bước nhảy quay lại) giữ nguyên. Thường gặp ở
+    chỗ ghép hai model hoặc khi model nhảy sang bè khác trong chốc lát."""
+    if len(notes) < 3 or max_run <= 0:
+        return list(notes)
+    p = [int(n.pitch) for n in notes]
+
+    def near(i: int) -> bool:          # nốt i-1 và nốt i cùng câu
+        return notes[i].start - notes[i - 1].end < max_gap
+
+    i = 1
+    while i < len(notes) - 1:
+        d = p[i] - p[i - 1]
+        if not (near(i) and abs(d) >= min_jump):
+            i += 1
+            continue
+        sign = 1 if d > 0 else -1
+        k = sign * max(1, int(abs(d) / 12 + 0.5))   # làm tròn nửa lên, đối xứng hai chiều
+        fixed = False
+        for m in range(i, len(notes) - 1):
+            if m > i and not near(m):
+                break
+            if notes[m].end - notes[i].start > max_run + 1e-9:
+                break
+            back = p[m + 1] - p[m]
+            if near(m + 1) and abs(back) >= min_jump and back * d < 0:
+                for t in range(i, m + 1):
+                    p[t] -= 12 * k
+                i, fixed = m + 1, True
+                break
+        if not fixed:
+            i += 1
+    return [n if n.pitch == q else replace(n, pitch=q) for n, q in zip(notes, p)]

@@ -19,12 +19,16 @@
   Cài PyTorch bản CPU kể cả khi có GPU NVIDIA.
 .PARAMETER Full
   Cài thêm thư viện tách nguồn (--separation) và đánh giá, tải thêm consonance-ACE.
+.PARAMETER Melody
+  Cài thêm dò giai điệu (YourMT3+ và MuScriptor small, khoảng 1 GB). MuScriptor small cần tài khoản Hugging Face:
+  chạy `hf auth login` và bấm đồng ý license CC BY-NC 4.0 ở https://huggingface.co/MuScriptor/muscriptor-small trước.
 .PARAMETER NoTools
   Không tự cài ffmpeg, Deno bằng winget (chỉ báo thiếu).
 #>
 param(
     [switch]$Cpu,
     [switch]$Full,
+    [switch]$Melody,
     [switch]$NoTools
 )
 
@@ -99,6 +103,11 @@ $reqs = @("-r", "requirements\runtime.txt")
 if ($Full) { $reqs += @("-r", "requirements\separation.txt", "-r", "requirements\eval.txt") }
 Run $Python (@("-m", "pip", "install", "--quiet") + $reqs + @("-c", "requirements\constraints.txt"))
 Run $Python @("-m", "pip", "install", "--quiet", "--no-deps", "-e", ".")
+if ($Melody) {
+    Run $Python @("-m", "pip", "install", "--quiet", "-r", "requirements\melody_yourmt3.txt", "-c", "requirements\constraints.txt")
+    # --no-deps: muscriptor khai báo numpy>=2 nhưng chạy được với numpy 1.26 (không được lên numpy 2)
+    Run $Python @("-m", "pip", "install", "--quiet", "--no-deps", "-r", "requirements\melody_muscriptor.txt", "-c", "requirements\constraints.txt")
+}
 
 # 5. Model ------------------------------------------------------------------------------------------
 Step "Model hợp âm và bắt nhịp"
@@ -107,6 +116,7 @@ if (-not (Have "git")) {
 }
 $fetch = @("scripts\fetch_models.py")
 if ($Full) { $fetch += "--extra" }
+if ($Melody) { $fetch += "--melody" }
 Run $Python $fetch
 
 # 6. ffmpeg, Deno -----------------------------------------------------------------------------------

@@ -85,7 +85,7 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 
 | Phần | Mục đích |
 |---|---|
-| FastAPI: `POST /analyze`, `GET /result/{videoId}` | Cổng duy nhất cho extension gọi vào |
+| FastAPI: `POST /analyze`, `GET /result/{videoId}`, `POST /melody`, `GET /melody/{videoId}` | Cổng duy nhất cho extension gọi vào |
 | Hàng đợi job và trạng thái tiến độ | Mỗi bài mất khoảng 1 phút nên không xử lý trực tiếp trong request. Local: SQLite. Cloud: Redis kèm RQ hoặc Celery |
 | Cache theo `videoId` | Mỗi bài chỉ phân tích một lần. Local: SQLite. Cloud: Postgres |
 
@@ -104,6 +104,28 @@ Có thể tham khảo app **ChordMiniApp** (MIT): nó dùng `yt-dlp` cùng các 
 - Model hợp âm và beat_this nạp một lần mỗi tiến trình. Model giữ trên CPU, chỉ chuyển lên GPU trong
   `gpu_lock()` rồi trả về CPU, nên server không chiếm VRAM lúc rảnh. Riêng tách nguồn (audio-separator,
   HTDemucs) vẫn nạp lại mỗi bài.
+
+**Dò giai điệu trong backend (2026-11-11):** `chordtrack/melody/pipeline.py` (`analyze_melody`), hợp đồng ở
+`docs/melody_api.md` (không đổi). `POST /melody`, `GET /melody/{song_id}` (header `X-Chordtrack-Stale: 1` nếu do mã cũ
+tạo), `/health` có `"melody"`, job có `kind` (`analyze` / `melody`, cột mới trong `jobs.sqlite`, DB cũ tự thêm cột).
+Vẫn **một worker** cho cả hai loại; mỗi loại có bước, câu thông báo và thời gian mặc định riêng
+(`jobs.KINDS`), thống kê thời gian tách theo loại.
+
+- Bước: `fetch` (dùng lại `data/cache/<id>/mix.wav` nếu có, không gọi mạng), `melody_voice` (YourMT3+),
+  `melody_fill` (MuScriptor small), `melody_line` (ghép). Kết quả `data/cache/<id>/melody.json` (kèm
+  `code_revision`); đầu ra thô của hai model ở `melody_raw/<model>.npz` kèm hash mã wrapper, nên chỉ đổi cách ghép
+  thì chạy lại mất dưới 1 giây. `force` chạy lại cả hai model.
+- **YourMT3+ chạy ở tiến trình con** `python -m chordtrack.melody.yourmt3 <wav> <out.npz>` (transformers 4.45.1 riêng
+  không nạp chung được với huggingface_hub 2.x). Tiến trình con tự lấy `gpu_lock()` (tiến trình cha không được giữ
+  khóa khi gọi, nếu không sẽ chờ nhau mãi) và thoát khi xong, nên không giữ VRAM. Tốn thêm khoảng 15–20 s khởi động
+  và nạp model mỗi bài. MuScriptor chạy trong tiến trình server, model giữ trên CPU, lên GPU trong `gpu_lock()`.
+- Đo thật qua server (RTX 3060 Ti, GPU có agent khác chạy xen): "Let It Be" 243 s: tổng **159 s** (YourMT3+ 44 s
+  gồm khởi động, MuScriptor 115 s, ghép 0,2 s), VRAM đỉnh YourMT3+ 2,6 GB (reserved), MuScriptor 0,64 GB
+  (allocated), 537 nốt. Madoka (`kvrJ2pOv3ww`, Kajiura, 285 s): tổng 294 s (86 s + 208 s), VRAM 3,0 / 0,65 GB,
+  812 nốt. MuScriptor chậm hơn số đo riêng (83 s) vì GPU dùng chung.
+- ⚠️ Mỗi file `jobs.sqlite` chỉ một worker (khóa `jobs.sqlite.worker.lock`). Server bản cũ (trước khóa, chưa có
+  `kind`) chạy song song trên cùng `data/cache` sẽ `recover()` job đang chạy của server mới rồi chạy nó như job hợp
+  âm (đã gặp khi thử: job melody bị đánh dấu `done` mà không có `melody.json`). Không chạy hai server cùng lúc.
 
 ## 7. Extension (Chrome Manifest V3)
 
@@ -377,7 +399,7 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   ⚠️ Máy này vẫn bị YouTube đòi cookie khi tải bài mới; người dùng khác có thể gặp, README hướng dẫn `-Cookies`.
   ⚠️ Windows PowerShell 5.1: không dùng `$ErrorActionPreference = "Stop"` trong script gọi chương trình ngoài (stderr
   bị coi là lỗi); kiểm tra `$LASTEXITCODE`.
-- [ ] **Dò giai điệu chính (đang làm thử, 2026-11-10).** Người dùng chốt: lấy giai điệu nổi nhất bất kể nguồn (giọng hay
+- [x] **Dò giai điệu chính (2026-11-10, tích hợp backend 2026-11-11).** Người dùng chốt: lấy giai điệu nổi nhất bất kể nguồn (giọng hay
   nhạc cụ), job riêng bấm mới chạy, chạy trên bản mix (không tách giọng). Hiển thị tên nốt không ghi quãng tám, kèm mũi
   tên lên/xuống so với nốt trước, nốt không chắc hiện mờ. So sánh MuScriptor (100M/300M/1.3B, weights CC BY-NC, người
   dùng đã chấp nhận), YourMT3+, RMVPE, Basic Pitch bằng `mir_eval` trên bộ có đáp án (MIR-ST500, ADC2004, MIREX05,
@@ -507,6 +529,22 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     cho cùng thứ hạng đầu (`yourmt3>muscriptor_small` 46.4, YourMT3+ 44.5). Nhưng biến thể này thưởng cả việc bật
     nốt mọi lúc: RMVPE khi đó chọn ngưỡng thấp, VFA ở MIREX05 tăng từ 14% lên 73%. Vì vậy nên dùng nó để so sánh,
     không dùng làm mục tiêu chính.
+  - **Đã tích hợp vào backend (2026-11-11)**, xem mục 6. Cấu hình CV chép thành hằng số trong
+    `chordtrack/melody/pipeline.py`; test kiểm tra `build_line` ra đúng dòng mà `score.py` chấm.
+  - **Sửa nhảy quãng tám** (`line.fix_octave_jumps`): trong một câu, đoạn nốt dài ≤ `max_run` giây đi vào bằng bước
+    nhảy ≥ `min_jump` bán cung và đi ra bằng bước nhảy ngược chiều thì dịch cả đoạn về quãng tám lân cận. Chấm bằng
+    họ `nn_gated_oct` trong `score.py` (lưới 4 cấu hình × mọi cấu hình `nn_gated`; kết quả ở
+    `data/eval/results/melody_octfix/`). CV mức model chọn `max_run=0.6, min_jump=12` ở 2/3 phần và trên cả bộ.
+    Cấu hình đã chọn, trước → sau: trung bình cân bằng 47.51 → 47.55, Orchset OA 53.16 → 53.33, ADC2004 / MIREX05 /
+    MIR-ST500 không đổi (±0.01); **Kajiura 3.82 → 1.42 bước nhảy > 1 quãng tám mỗi phút** (YourMT3+ một mình
+    1.65), % nốt trong hợp âm không đổi (68.3). `max_run=1.2` giảm còn 1.06/phút nhưng Orchset −0.4. Đã bật trong
+    sản phẩm. Bài Madoka vẫn 3.8/phút (nhiều bước nhảy ở chỗ chuyển giữa giọng và dàn dây, đoạn dài hơn 0,6 s).
+  - **Ngưỡng `uncertain` = 0.6.** Confidence của dòng ghép ít thông tin: YourMT3+ không có confidence (lấy 0.8),
+    nhân hệ số phần nốt được giữ, nên khoảng 85% nốt có 0.8 trở lên. Nốt dưới 0.6 thường là đoạn cắt của nốt dài bị
+    chen ngang: MIR-ST500 mờ 9.4% nốt, nốt mờ đúng cao độ 7.3% so với 53.1% ở nốt rõ; ADC2004 mờ 4.6% (17% / 49%);
+    MIREX05 5.4% (9% / 42%); Kajiura 4.6%. Đã thử tín hiệu "hai model đồng ý cao độ": ở nốt giọng tách được (MIR-ST500
+    đúng 90.6% khi đồng ý, 77.3% khi không; ADC2004 72.7% / 46.7%), nhưng 26–43% nốt không đồng ý, mờ chừng đó thì
+    nhiều quá. Còn mở: dựng confidence tốt hơn (đồng ý giữa hai model, độ nổi so với nốt cạnh tranh).
 - [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
   - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
     đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.
