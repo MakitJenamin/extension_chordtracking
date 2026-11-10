@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import numpy as np
 import pytest
@@ -113,9 +114,10 @@ def test_score_end_to_end(fake_data, capsys):
     assert cvm[("fake_f0", "notem", "0")]["family"] == "*"
     assert float(cvm[("fake_f0", "notem", "0")]["oa"]) > 0.9
     assert int(cvm[("fake_free", "notem", "0")]["n_tracks"]) == 1
-    assert "So cặp hai model tốt nhất" in printed
+    assert "Tóm tắt: top cấu hình mỗi bộ" in printed
     report = (out_dir / "report.md").read_text(encoding="utf-8")
     assert "## Theo model" in report and "## Theo họ chiến lược" in report
+    assert "So cặp hai model tốt nhất" in report and "(RPA+VR)/2" in report
     assert (out_dir / "per_track.csv").stat().st_size > 0
 
 
@@ -162,3 +164,60 @@ def test_common_subset_only_when_coverage_differs():
     out = S.common_subset(chosen, "cv_model")
     assert {(r["dataset"], r["model"], r["track_id"]) for r in out} == {("a", "x", "1"), ("a", "y", "1")}
     assert all(r["selection"] == "cv_model_common" for r in out)
+
+
+def test_track_objective_rpa_vr():
+    r = {"oa": 0.4, "rpa": 0.8, "vr": 0.6, "note_f1": 0.5}
+    assert S.track_objective(r, "oa", "primary") == 0.4
+    assert S.track_objective(r, "note_f1", "primary") == 0.5
+    assert S.track_objective(r, "oa", "rpa_vr") == pytest.approx(0.7)
+    assert np.isnan(S.track_objective({**r, "vr": math.nan}, "oa", "rpa_vr"))
+
+
+def test_nn_gated_two_note_models(fake_data):
+    # notem2: nhạc cụ quãng tám trên ở mọi chỗ, không có giọng; ghép: notem (có voice) ở đoạn giọng, notem2 còn lại
+    for i in range(4):
+        notes = [N(k * 0.5, k * 0.5 + 0.45, int(72 + 2 * (k % 5) + i), 0.9, "violin") for k in range(8)]
+        save_output(MelodyModelOutput("notem2", notes=notes), cache_path("notem2", "fake_f0", f"t{i}"))
+    entry = {**json.loads((paths.EVAL_DIR / "melody" / "fake_f0" / "manifest.jsonl")
+                          .read_text(encoding="utf-8").splitlines()[1]),
+             "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}
+    rows = S.score_track((entry, ["notem", "notem2"], None, [("notem", "notem2")]))
+    assert {r["model"] for r in rows if r["family"] == "nn_gated"} == {"notem>notem2"}
+    nn = [r for r in rows if r["family"] == "nn_gated"]
+    # mọi cấu hình đều chấm (cổng theo notem2 rỗng vì notem2 không có giọng)
+    assert len(nn) == len(S.nn_families()["nn_gated"])
+    by = {r["params"]: r for r in nn}
+    # cổng theo giọng của notem: giai điệu đúng
+    good = next(r for p, r in by.items() if "gate=a" in p and "pad=0.1" in p)
+    assert good["oa"] > 0.9
+    # cổng theo notem2 (không có giọng): toàn bộ là dòng của notem2, sai quãng tám
+    bad = next(r for p, r in by.items() if "gate=b" in p and "pad=0.1" in p)
+    assert bad["rpa"] < 0.1 and bad["rca"] > 0.9
+
+
+def test_nn_pairs_parsing_and_names():
+    assert S.parse_nn_pairs("a:b, c : d,") == [("a", "b"), ("c", "d")]
+    with pytest.raises(ValueError):
+        S.parse_nn_pairs("a:b:c")
+    assert S.model_parts("yourmt3>muscriptor_small") == ["yourmt3", "muscriptor_small"]
+    assert S.model_parts("rmvpe+yourmt3") == ["rmvpe", "yourmt3"]
+
+
+def test_nn_gated_scored_when_one_model_has_no_notes(fake_data):
+    # B không có nốt nào ở bài này: vẫn chấm mọi cấu hình (dòng B rỗng), để CV so trên cùng bộ bài
+    save_output(MelodyModelOutput("empty", notes=[]), cache_path("empty", "fake_f0", "t0"))
+    entry = {**json.loads((paths.EVAL_DIR / "melody" / "fake_f0" / "manifest.jsonl")
+                          .read_text(encoding="utf-8").splitlines()[0]),
+             "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}
+    rows = S.score_track((entry, ["notem", "empty"], None, [("notem", "empty"), ("empty", "notem")]))
+    nn = [r for r in rows if r["family"] == "nn_gated"]
+    assert len(nn) == 2 * len(S.NN_GRID)
+
+
+def test_nn_pair_with_f0_only_model_is_skipped(fake_data):
+    entry = {**json.loads((paths.EVAL_DIR / "melody" / "fake_f0" / "manifest.jsonl")
+                          .read_text(encoding="utf-8").splitlines()[0]),
+             "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}
+    rows = S.score_track((entry, ["notem", "f0m"], None, [("notem", "f0m"), ("f0m", "notem")]))
+    assert not [r for r in rows if r["family"] == "nn_gated"]
