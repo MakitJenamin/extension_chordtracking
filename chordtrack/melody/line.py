@@ -69,7 +69,9 @@ def source_class(source: str | None, chorus_as_voice: bool = True) -> int:
     s = str(source).strip().lower()
     m = re.fullmatch(r"(?:program[:_ ]?)?(\d+)", s)
     if m:
-        return _gm_class(int(m.group(1)))
+        c = _gm_class(int(m.group(1)))
+        # GM 52-54 là choir aahs / voice oohs / synth voice: bè hát, không phải giọng chính
+        return MELODIC if c == VOICE and not chorus_as_voice else c
     if "sax" in s:               # alto/tenor/soprano/baritone sax không phải giọng hát
         return MELODIC
     if any(w in s for w in _VOICE_WORDS):

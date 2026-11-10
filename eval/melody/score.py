@@ -30,7 +30,8 @@ thời lượng.
 Bài của mọi bộ có đáp án gộp lại, chia `--folds` phần (bài thứ i của mỗi bộ, theo `track_id`, vào phần
 i mod k). Mỗi phần: với mỗi (model, họ, căn phách) chọn cấu hình tốt nhất trên các phần còn lại, chấm phần giữ
 lại. Dòng `cv` là điểm các phần giữ lại ghép lại. Dòng `full` chọn trên cả bộ (lạc quan, và là cấu hình dùng cho
-bộ không đáp án). Dòng `default` là cấu hình đầu tiên của lưới (= `LineParams` mặc định của họ đó).
+bộ không đáp án). Dòng `default` là cấu hình đầu tiên của lưới (= `LineParams` mặc định của họ đó; riêng model
+có f0 thô thì là ngưỡng 0.03 trên bản thô, tương đương ngưỡng model tự cắt).
 Mức model (`cv_model`, `full_model`): cùng cách trên nhưng mỗi (model, căn phách) chọn trong mọi cấu hình của mọi
 họ (trừ `f0raw`), nên cả họ chiến lược lẫn tham số đều được chọn bằng CV. Đây là bảng chính.
 
@@ -370,13 +371,13 @@ def score_track(task: tuple) -> list[dict]:
             has_raw = pt is not o.pitch_track
             f0_tracks[m] = (pt, has_raw)
             fams = f0_families(has_raw, pt.confidence is not None)
-            default_by_vt: dict[float, list[MelodyNote]] = {}
+            default_by_vt: dict[float, list[MelodyNote]] = {}   # dòng của tham số tách nốt mặc định, theo ngưỡng
+            d0 = fams["f0notes"][0]
             for ci, cfg in enumerate(fams["f0notes"]):
                 est = L.f0_to_line(pt, params_of(cfg))
                 emit(m, "f0notes", ci, cfg, est)
-                p = params_of(cfg)
-                if replace(p, voicing_threshold=0.0) == replace(params_of(fams["f0notes"][0]), voicing_threshold=0.0):
-                    default_by_vt[p.voicing_threshold] = est
+                if all(cfg[k] == d0[k] for k in cfg if k not in ("_base", "voicing_threshold")):
+                    default_by_vt[cfg["voicing_threshold"]] = est
             # f0 thô chỉ khác dòng nốt ở chỉ số mức khung: bài không đáp án thì bỏ.
             for ci, cfg in enumerate(fams["f0raw"] if ref.get("f0") is not None else []):
                 vt = cfg.get("voicing_threshold", 0.0)
@@ -386,27 +387,27 @@ def score_track(task: tuple) -> list[dict]:
                 # các chỉ số không cần đáp án lấy từ dòng nốt mặc định cùng ngưỡng
                 emit(m, "f0raw", ci, cfg, default_by_vt[vt], raw=(np.asarray(pt.times, dtype=np.float64), hz))
     base_f0 = params_of(f0_families(True, True)["f0notes"][0])
+    cfams = combo_families()
+    # Cổng giọng theo model nốt. Model không gắn nhãn nguồn nào (Basic Pitch) thì bỏ họ combo_gated. Model có
+    # nhãn nhưng bài này không có giọng thì cổng rỗng (= dòng của model nốt), để mọi cấu hình chấm cùng một bộ bài.
+    gates = {mn: {d: L.voice_intervals(outs[mn].notes, pad=d) for d in COMBO_PAD} for mn in note_lines
+             if any(n.source is not None for n in outs[mn].notes)}
     for mf, (pt, has_raw) in f0_tracks.items():
         if has_raw:
             prim = {v: L.f0_to_line(pt, replace(base_f0, voicing_threshold=v)) for v in COMBO_VT}
-        else:                     # không có f0 thô: không dò ngưỡng, mọi `vt` dùng chung một dòng
-            one = L.f0_to_line(pt, replace(base_f0, voicing_threshold=0.0))
-            prim = {v: one for v in COMBO_VT}
+        else:                     # không có f0 thô: không dò ngưỡng, chỉ một giá trị `vt`
+            prim = {COMBO_VT[0]: L.f0_to_line(pt, replace(base_f0, voicing_threshold=0.0))}
         for mn, lines in note_lines.items():
             if mf == mn:
                 continue
             name = f"{mf}+{mn}"
-            fams = combo_families()
-            for ci, c in enumerate(fams["combo"]):
+            for ci, c in enumerate(cfams["combo"]):
                 if c["vt"] in prim:
                     emit(name, "combo", ci, c, L.combine_lines(prim[c["vt"]], lines[c["sec"]], min_gap=c["min_gap"]))
-            gates = {d: L.voice_intervals(outs[mn].notes, pad=d) for d in COMBO_PAD}
-            if not any(gates.values()):
-                continue          # model nốt không có nhãn giọng hát: bản có cổng chỉ là dòng của model nốt
-            for ci, c in enumerate(fams["combo_gated"]):
+            for ci, c in enumerate(cfams["combo_gated"] if mn in gates else []):
                 if c["vt"] in prim:
                     emit(name, "combo_gated", ci, c,
-                         L.combine_gated(prim[c["vt"]], lines[c["sec"]], gates[c["pad"]]))
+                         L.combine_gated(prim[c["vt"]], lines[c["sec"]], gates[mn][c["pad"]]))
     return rows
 
 
@@ -461,12 +462,13 @@ def select_cv(rows: list[dict], entries: dict[str, list[dict]], folds: int,
     def tag(r: dict, sel: str) -> dict:
         out = {**r, "selection": sel + sfx}
         if level == "model":
-            out["chosen"] = f"{r['family']}#{r['cfg']}"
-            out["family"] = "*"
+            out["family"] = "*"     # họ và cấu hình được chọn ghi trong `choices`
         return out
 
     for key, by_cfg in groups.items():
-        cfgs = sorted(by_cfg)       # thứ tự lưới: hòa điểm thì lấy cấu hình đứng trước
+        # Thứ tự xuất hiện trong lưới (họ theo thứ tự khai báo, cấu hình mặc định đứng đầu mỗi họ):
+        # hòa điểm thì lấy cấu hình đứng trước.
+        cfgs = sorted(by_cfg, key=lambda c: c[-1]) if level == "family" else list(by_cfg)
         order = {c: i for i, c in enumerate(cfgs)}
         pick = lambda keep: max(cfgs, key=lambda c: (objective(by_cfg[c], keep), -order[c]))  # noqa: E731
         full = pick(lambda t: t in fold_of)
@@ -631,8 +633,10 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print("Không tìm thấy manifest nào trong", paths.EVAL_DIR / "melody", file=sys.stderr)
         return 1
-    models = discover_models(list(entries), args.models.split(",") if args.models else None,
-                             [x for x in args.exclude.split(",") if x])
+    only = args.models.split(",") if args.models else None
+    # model ghi rõ trong --models thì không bị --exclude bỏ
+    exclude = [x for x in args.exclude.split(",") if x and not (only and x in only)]
+    models = discover_models(list(entries), only, exclude)
     if not models:
         print("Không có cache model nào trong", paths.CACHE_DIR / "melody", file=sys.stderr)
         return 1
@@ -656,7 +660,6 @@ def main(argv: list[str] | None = None) -> int:
 
     chosen_f, choices_f = select_cv(rows, entries, args.folds, level="family")
     chosen_m, choices_m = select_cv(rows, entries, args.folds, level="model")
-    chosen_m = [{k: v for k, v in r.items() if k != "chosen"} for r in chosen_m]
     summary = summarize(chosen_f + chosen_m)
     primary = dataset_primary(entries)
     tests_m = compare_top2(chosen_m, summary, primary, args.boot, selection="cv_model")
