@@ -37,7 +37,8 @@ họ (trừ `f0raw`), nên cả họ chiến lược lẫn tham số đều đư
 
 Ra `out-dir`: `per_track.csv` (mọi bài, mọi cấu hình), `summary.csv`, `cv_choices.json`, `report.md` (bảng theo
 model và theo từng họ), và in bảng theo model kèm so cặp hai model tốt nhất mỗi bộ (bootstrap 95% chênh lệch
-trung bình theo bài, p Wilcoxon).
+trung bình theo bài, p Wilcoxon). Bộ nào có model chỉ cache một phần bài thì in thêm bảng phụ trên
+các bài mọi model đều có (`cv_model_common`).
 """
 from __future__ import annotations
 
@@ -699,24 +700,47 @@ def read_per_track(path: Path) -> list[dict]:
     return rows
 
 
+def common_subset(chosen: list[dict], selection: str) -> list[dict]:
+    """Ở bộ nào có model không phủ đủ bài (vd MuScriptor large chỉ cache một phần), lấy các bài mọi model đều có
+    và gắn nhãn `<selection>_common` để so công bằng trên cùng tập bài. Bộ mà mọi model phủ như nhau thì bỏ."""
+    tracks: dict[str, dict[str, set]] = {}
+    for r in chosen:
+        if r["selection"] == selection:
+            tracks.setdefault(r["dataset"], {}).setdefault(r["model"], set()).add(r["track_id"])
+    keep: dict[str, set] = {}
+    for ds, by_model in tracks.items():
+        common = set.intersection(*by_model.values())
+        if common and len(common) < max(len(v) for v in by_model.values()):
+            keep[ds] = common
+    return [{**r, "selection": selection + "_common"} for r in chosen
+            if r["selection"] == selection and r["track_id"] in keep.get(r["dataset"], ())]
+
+
 def report_from_rows(rows: list[dict], entries: dict[str, list[dict]], models: list[str], args) -> int:
     chosen_f, choices_f = select_cv(rows, entries, args.folds, level="family")
     chosen_m, choices_m = select_cv(rows, entries, args.folds, level="model")
     chosen_d, choices_d = select_cv(rows, entries, args.folds, level="model_ds")
-    summary = summarize(chosen_f + chosen_m + chosen_d)
+    chosen_c = common_subset(chosen_m, "cv_model")
+    summary = summarize(chosen_f + chosen_m + chosen_d + chosen_c)
     primary = dataset_primary(entries)
     tests_m = compare_top2(chosen_m, summary, primary, args.boot, selection="cv_model")
+    tests_c = compare_top2(chosen_c, summary, primary, args.boot, selection="cv_model_common")
     tests_d = compare_top2(chosen_d, summary, primary, args.boot, selection="cv_model_ds")
     tests_f = compare_top2(chosen_f, summary, primary, args.boot, selection="cv")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.out_dir / "summary.csv", summary)
     (args.out_dir / "cv_choices.json").write_text(json.dumps(
         {"model": choices_m, "model_per_dataset": choices_d, "family": choices_f, "tests_model": tests_m,
+         "tests_model_common": tests_c,
          "tests_model_per_dataset": tests_d, "tests_family": tests_f}, indent=1, ensure_ascii=False),
         encoding="utf-8")
     head = (tables_md(summary, primary, "cv_model", "mỗi model ở MỘT cấu hình chung cho mọi bộ (họ + tham số chọn "
                                                     "bằng CV theo bài, mục tiêu cân bằng theo bộ)", compact=True)
             + tests_md(tests_m, "So cặp hai model tốt nhất (cấu hình chung)") + choices_md(choices_m))
+    if chosen_c:       # bảng phụ: chỉ các bài mọi model đều có cache
+        head += (tables_md(summary, primary, "cv_model_common", "BẢNG PHỤ: chỉ các bài mọi model đều có cache, "
+                                                                "cấu hình chung như trên", compact=True)
+                 + tests_md(tests_c, "So cặp hai model tốt nhất trên tập con chung"))
     per_ds = (tables_md(summary, primary, "cv_model_ds", "mỗi model, cấu hình chọn riêng trong bộ này bằng CV theo "
                                                          "bài (trần theo loại nhạc)", compact=True)
               + tests_md(tests_d, "So cặp hai model tốt nhất (cấu hình riêng từng bộ)")

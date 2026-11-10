@@ -152,3 +152,13 @@ def test_offset_shifts_reference(tmp_path):
 def test_dataset_primary_uses_note_f1_for_note_datasets():
     entries = {"st": [{"ref_notes": "a.csv", "ref_f0": None}], "f0": [{"ref_f0": "b.csv"}], "free": [{}]}
     assert S.dataset_primary(entries) == {"st": "note_f1", "f0": "oa", "free": None}
+
+
+def test_common_subset_only_when_coverage_differs():
+    def row(ds, m, t):
+        return {"selection": "cv_model", "dataset": ds, "model": m, "track_id": t}
+    chosen = [row("a", "x", "1"), row("a", "x", "2"), row("a", "y", "1"),      # y thiếu bài 2
+              row("b", "x", "1"), row("b", "y", "1")]                            # phủ như nhau: bỏ
+    out = S.common_subset(chosen, "cv_model")
+    assert {(r["dataset"], r["model"], r["track_id"]) for r in out} == {("a", "x", "1"), ("a", "y", "1")}
+    assert all(r["selection"] == "cv_model_common" for r in out)
