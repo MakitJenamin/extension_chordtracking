@@ -20,6 +20,8 @@ Cách chạy (cố định, để các lần cache so được với nhau):
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -142,8 +144,13 @@ class _ProbRecorder:
 
     def __init__(self, lm):
         self.last: float | None = None
+        self._lm = lm
         self._orig = lm._compute_logits
         lm._compute_logits = self._wrapped
+
+    def restore(self) -> None:
+        """Bỏ lớp bọc (model được dùng lại cho bài sau)."""
+        self._lm.__dict__.pop("_compute_logits", None)
 
     def _wrapped(self, *args, **kwargs):
         logits = self._orig(*args, **kwargs)
@@ -168,6 +175,58 @@ def _detect_onset_delay(audio_path: Path, onsets: list[float]) -> float:
     return float(grid.with_onset_delay(onsets).onset_delay or 0.0)
 
 
+_CPU_MODEL: dict[tuple[str, str], object] = {}   # giữ một model đã dựng trên CPU để dùng lại giữa các bài
+
+
+def _load_on_cpu(size: str, dtype: str):
+    """Dựng TranscriptionModel trên CPU với dtype mong muốn (nhớ lại cho lần gọi sau cùng cỡ, cùng dtype).
+
+    Không dùng `TranscriptionModel.load_model(device="cuda")`: hàm đó dựng model fp32 trên GPU rồi nạp thêm
+    state_dict fp32 lên GPU trước khi đổi dtype, nên bản large (5,2 GB fp32) lên tới 10,5 GB VRAM đỉnh.
+    """
+    key = (size, dtype)
+    if key in _CPU_MODEL:
+        return _CPU_MODEL[key]
+    _CPU_MODEL.clear()
+    import torch
+    from muscriptor.tokenizer.mt3 import MT3Tokenizer
+    from muscriptor.transcription_model import (
+        TranscriptionModel,
+        _build_model,
+        _config_from_json,
+        _remap_single_codebook_keys,
+    )
+    from safetensors.torch import load_file
+
+    weights = ensure_weights(size)
+    cpu = torch.device("cpu")
+    model = _build_model(cpu, _config_from_json(weights.parent / "config.json"))
+    model.eval()
+    model.load_state_dict(_remap_single_codebook_keys(load_file(str(weights), device="cpu")))
+    if dtype != "float32":
+        model.to(getattr(torch, dtype))
+        model.condition_provider.float()   # như load_model: phần mel/nhúng nhãn luôn fp32
+    tm = TranscriptionModel(model, MT3Tokenizer(instrument_vocabulary="MT3_FULL_PLUS", max_shift_steps=1001), cpu)
+    _CPU_MODEL[key] = tm
+    return tm
+
+
+def _to_device(tm, device) -> None:
+    """Chuyển model sang `device`, sửa các thuộc tính `.device` mà conditioner của MuScriptor tự lưu."""
+    import torch
+    from muscriptor.models.lm import TorchAutocast
+
+    device = torch.device(device)
+    tm._model.to(device)
+    for m in tm._model.modules():
+        if "device" in vars(m):
+            m.device = device
+    tm._device = device
+    # Giống _build_model: trên CUDA bật autocast fp16, nơi khác tắt.
+    tm._model.autocast = (TorchAutocast(enabled=True, device_type="cuda", dtype=torch.float16)
+                          if device.type == "cuda" else TorchAutocast(enabled=False))
+
+
 def transcribe(
     audio_path: str | Path,
     size: str = "small",
@@ -179,38 +238,45 @@ def transcribe(
 ) -> MelodyModelOutput:
     """Chép mọi nốt có cao độ trong `audio_path` bằng MuScriptor cỡ `size`.
 
-    Nạp model mới mỗi lần gọi, trong `gpu_lock()`, rồi giải phóng, để không giữ VRAM giữa các bài.
-    `extras` có: `cfg_coef`, `dtype`, `onset_delay`, `load_s`, `infer_s`, `peak_vram_mb` (CUDA), `duration_s`,
-    `drum_times`, `drum_pitches`.
+    Model dựng trên CPU (ngoài khóa, nhớ lại giữa các bài), chỉ chuyển lên GPU trong `gpu_lock()` rồi trả về CPU,
+    để không giữ VRAM giữa các bài. `extras` có: `cfg_coef`, `dtype`, `onset_delay`, `load_s` (dựng trên CPU, 0 nếu
+    dùng lại), `to_gpu_s`, `infer_s`, `peak_vram_mb` (CUDA), `duration_s`, `drum_times`, `drum_pitches`.
     """
     import torch
 
     from chordtrack.gpu import gpu_lock
 
     audio_path = Path(audio_path)
-    weights = ensure_weights(size)
     dtype = dtype or DEFAULT_DTYPE[size]
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     cuda = device.startswith("cuda")
 
-    from muscriptor.transcription_model import TranscriptionModel
+    t0 = time.perf_counter()
+    tm = _load_on_cpu(size, dtype)
+    load_s = time.perf_counter() - t0
 
+    rec = None
     with gpu_lock():
-        if cuda:
-            torch.cuda.reset_peak_memory_stats()
-        t0 = time.perf_counter()
-        tm = TranscriptionModel.load_model(str(weights), device=device, dtype=dtype)
-        t1 = time.perf_counter()
-        rec = _ProbRecorder(tm._model)
-        events = tm.transcribe(audio_path, cfg_coef=cfg_coef, use_sampling=False, beam_size=1,
-                               batch_size=1, prelude_forcing=True)
-        notes, drum_t, drum_p = events_to_notes(events, rec)
-        if cuda:
-            torch.cuda.synchronize()
-        t2 = time.perf_counter()
-        peak = torch.cuda.max_memory_allocated() / 2**20 if cuda else float("nan")
-        del tm, rec
+        try:
+            if cuda:
+                torch.cuda.reset_peak_memory_stats()
+            t1 = time.perf_counter()
+            _to_device(tm, device)
+            t2 = time.perf_counter()
+            rec = _ProbRecorder(tm._model)
+            events = tm.transcribe(audio_path, cfg_coef=cfg_coef, use_sampling=False, beam_size=1,
+                                   batch_size=1, prelude_forcing=True)
+            with contextlib.redirect_stdout(io.StringIO()):   # MuScriptor in "mel-spec ..." cho mỗi đoạn 5 s
+                notes, drum_t, drum_p = events_to_notes(events, rec)
+            if cuda:
+                torch.cuda.synchronize()
+            t3 = time.perf_counter()
+            peak = torch.cuda.max_memory_allocated() / 2**20 if cuda else float("nan")
+        finally:
+            if rec is not None:
+                rec.restore()
+            _to_device(tm, "cpu")
 
     delay = 0.0
     if correct_onset_delay:
@@ -224,8 +290,9 @@ def transcribe(
         "cfg_coef": np.array(cfg_coef),
         "dtype": np.array(dtype),
         "onset_delay": np.array(delay),
-        "load_s": np.array(t1 - t0),
-        "infer_s": np.array(t2 - t1),
+        "load_s": np.array(load_s),
+        "to_gpu_s": np.array(t2 - t1),
+        "infer_s": np.array(t3 - t2),
         "peak_vram_mb": np.array(peak),
         "duration_s": np.array(sf.info(str(audio_path)).duration),
         "drum_times": drum_t,

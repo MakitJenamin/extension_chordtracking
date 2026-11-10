@@ -114,11 +114,10 @@ def _wav(path, seconds=1.0):
 
 
 def test_transcribe_with_fake_model(monkeypatch, tmp_path):
-    from muscriptor.transcription_model import TranscriptionModel
-
     fake = _FakeTM()
-    monkeypatch.setattr(M, "ensure_weights", lambda size: tmp_path / "model.safetensors")
-    monkeypatch.setattr(TranscriptionModel, "load_model", classmethod(lambda cls, *a, **k: fake))
+    moved = []
+    monkeypatch.setattr(M, "_load_on_cpu", lambda size, dtype: fake)
+    monkeypatch.setattr(M, "_to_device", lambda tm, dev: moved.append(dev))
     monkeypatch.setattr(M, "_detect_onset_delay", lambda path, onsets: 0.02)
     out = M.transcribe(_wav(tmp_path / "a.wav"), "medium", device="cpu")
     assert out.model_name == "muscriptor_medium"
@@ -129,6 +128,27 @@ def test_transcribe_with_fake_model(monkeypatch, tmp_path):
     assert float(out.extras["onset_delay"]) == 0.02
     assert float(out.extras["duration_s"]) == pytest.approx(1.0)
     assert fake.kwargs["cfg_coef"] == 1.0 and fake.kwargs["prelude_forcing"] is True
+    assert moved == ["cpu", "cpu"]                       # lên thiết bị chạy rồi trả về CPU
+    assert "_compute_logits" not in vars(fake._model)    # đã gỡ lớp bọc để dùng lại model
+
+
+def test_to_device_updates_stored_device():
+    from muscriptor.models.lm import TorchAutocast
+
+    class Cond(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.device = "cuda"
+            self.w = torch.nn.Linear(2, 2)
+
+    class TM:
+        _model = torch.nn.Sequential(Cond())
+        _device = "cuda"
+
+    tm = TM()
+    M._to_device(tm, "cpu")
+    assert tm._model[0].device == torch.device("cpu") and tm._device == torch.device("cpu")
+    assert isinstance(tm._model.autocast, TorchAutocast) and not tm._model.autocast.enabled
 
 
 def test_cache_script_skips_existing(monkeypatch, tmp_path):
@@ -173,7 +193,7 @@ def test_real_small_on_sample(tmp_path):
     except M.MuscriptorAuthError as e:
         pytest.skip(str(e))
     clip = tmp_path / "clip.wav"
-    y, sr = sf.read(str(paths.SAMPLE_AUDIO), frames=None)
+    y, sr = sf.read(str(paths.SAMPLE_AUDIO), frames=15 * 48000)
     sf.write(clip, y[: 15 * sr], sr)                # 15 s đầu Let It Be: piano
     out = M.transcribe(clip, "small", correct_onset_delay=False)
     assert len(out.notes) > 10

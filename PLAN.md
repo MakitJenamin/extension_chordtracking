@@ -405,6 +405,14 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     cookie (cookie từ Chrome/Edge lỗi DPAPI do app-bound encryption).
   - ⚠️ MIR-ST500: bài 500 lệch +0,859 s so với nhãn (đã ghi `offset` trong manifest), 81 bài còn lại lệch < 0,1 s.
     Kiểm tra bằng salience CQT so với nhãn nốt, pyin xác nhận. Chi tiết ở `eval/melody/README.md`.
+  - **MuScriptor** (`chordtrack/melody/muscriptor.py`, PR #54): cài `--no-deps` (gói khai báo numpy>=2, chạy được với
+    1.26.4). Greedy, không CFG (`cfg_coef` 1.0, mặc định), prelude forcing; `confidence` = xác suất token cao độ;
+    nhóm giọng hát tên `"voice"` (gồm cả hợp xướng); trống tách ra `extras`. Weights `data/models/muscriptor/<cỡ>/`
+    (small 393 MB, medium 1,2 GB, large 5,2 GB fp32). ⚠️ `TranscriptionModel.load_model(device="cuda")` làm large lên
+    **10,5 GB VRAM đỉnh** (dựng fp32 trên GPU rồi nạp thêm state_dict fp32) → tràn sang RAM, chậm. Wrapper dựng trên
+    CPU, đổi fp16 rồi mới chuyển lên GPU: large còn 3,4 GB. Đo trên Let It Be (243 s, RTX 3060 Ti, trong gpu_lock):
+    small 83 s / 0,6 GB, medium 85 s / 1,7 GB, large fp16 179 s / 3,4 GB. Small gần như không nhanh hơn medium vì
+    sinh từng token (giới hạn bởi Python, không phải GPU). Coordinator chốt bỏ medium, chỉ cache small và large.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
