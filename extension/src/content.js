@@ -79,7 +79,10 @@
       } });
       if (m.ctrl !== my) return;
       Object.assign(m, { ctrl: null, status: "ready", melody, stale: false, job: null });
-      if (CT.settings.showMelody === false) CT.setSettings({ showMelody: true });   // vừa bấm dò: hiện ngay
+      emitMelody(c);
+      // Lần dò đầu (không phải ↻ dò lại) mà dòng nốt đang tắt: bật để thấy kết quả vừa bấm dò.
+      if (!force && CT.settings.showMelody === false) CT.setSettings({ showMelody: true });
+      return;
     } catch (e) {
       if (m.ctrl !== my || e.code === "aborted") return;
       Object.assign(m, { ctrl: null, status: "error", job: null, error: { code: e.code || "unknown", message: e.message } });

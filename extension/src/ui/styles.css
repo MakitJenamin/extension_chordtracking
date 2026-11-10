@@ -272,7 +272,7 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 html[dark] .ct-strip-wrap { --ct-mel: #b69cff; }
 .ct-strip-wrap.ct-has-melody { --ct-mel-h: 32px; height: calc(104px + var(--ct-mel-h)); }
 .ct-has-melody .ct-chord { bottom: calc(var(--ct-lane-bottom) + var(--ct-mel-h)); }
-.ct-mel-lane { position: absolute; left: 0; right: 0; bottom: var(--ct-lane-bottom); height: var(--ct-mel-h); z-index: 2; }
+.ct-mel-lane { position: absolute; left: 0; right: 0; bottom: var(--ct-lane-bottom); height: var(--ct-mel-h); z-index: 5; } /* trên vạch phách (z 4), dưới vạch đỏ (z 10) */
 .ct-note { position: absolute; top: 0; bottom: 0; cursor: pointer; }
 .ct-nl {
   position: absolute; left: -1px; top: 1px; padding: 0 1px; border-radius: 4px; white-space: nowrap;

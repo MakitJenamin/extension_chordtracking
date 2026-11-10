@@ -228,7 +228,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _melody_post(self):
         raw = self._body()
-        body = json.loads(raw or b"{}")
+        try:
+            body = json.loads(raw or b"{}")
+        except ValueError:
+            return self._json({"detail": "body không phải JSON"}, 400)
         src, force = str(body.get("source") or ""), bool(body.get("force"))
         if not src.startswith("dev"):
             st, data, hdr = self._backend("POST", "/melody", raw)
@@ -237,7 +240,7 @@ class Handler(SimpleHTTPRequestHandler):
         f = DEV_MELODY / f"{src}.json"
         if src in melody_done and not force and f.exists():
             return self._json({"status": "done", "song_id": src, "melody": json.loads(f.read_text(encoding="utf-8"))})
-        for jid, j in fake_jobs.items():   # job đang chạy của bài này: trả lại job đó (như backend)
+        for jid, j in list(fake_jobs.items()):   # job đang chạy của bài này: trả lại job đó (như backend)
             if j.get("kind") == "melody" and j["src"] == src and not j.get("finished"):
                 return self._json({"status": "running", "job_id": jid, "song_id": src})
         jid = f"devmel_{src}-{int(time.time() * 1000)}"
@@ -247,7 +250,7 @@ class Handler(SimpleHTTPRequestHandler):
     def _melody_get(self, sid: str):
         if not sid.startswith("dev"):
             st, data, hdr = self._backend("GET", f"/melody/{sid}")
-            if st == 200 or not (st in (404, 405)):
+            if not self._route_missing(st, data):   # backend đã có /melody: theo đúng backend (kể cả 404 "chưa dò")
                 return self._relay(st, data, hdr)
         f = DEV_MELODY / f"{sid}.json"
         if sid in melody_done and f.exists():

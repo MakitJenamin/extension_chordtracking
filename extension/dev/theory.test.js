@@ -201,8 +201,8 @@ test("melodyName chế độ Phím trắng: dịch theo white_key_transpose củ
   assert.equal(T.melodyName(66, d, white), "E");              // F# -> E
   assert.equal(T.melodyName(68, d, white), "F#");             // G# (#4) -> F#
   assert.equal(T.melodyName(72, d, white), "Bb");             // C (b7) -> Bb
-  // Không có white_key_transpose: tự tính từ giọng
-  assert.equal(T.melodyName(69, K("A"), white), "C");         // A trưởng -> C trưởng (dịch +3 về -3)
+  // Không có white_key_transpose: không dịch, như hợp âm (chordLabels)
+  assert.equal(T.melodyName(69, K("A"), white), "A");
   assert.equal(T.melodyName(62, null, white), "D");
 });
 
@@ -256,6 +256,7 @@ test("melodyNotes, noteIndexAt, noteFit", () => {
   assert.deepEqual(notes.map((n) => n.start), [1, 2, 3]);
   assert.deepEqual(T.melodyNotes(null), []);
   assert.deepEqual(T.melodyNotes({}), []);
+  assert.equal(T.melodyNotes({ notes: [{ start: 0, end: 1, pitch: 60.6 }] })[0].pitch, 61);   // pitch lẻ: làm tròn
   assert.equal(T.noteIndexAt(notes, 0.5), -1);
   assert.equal(T.noteIndexAt(notes, 1), 0);
   assert.equal(T.noteIndexAt(notes, 2.2), 1);

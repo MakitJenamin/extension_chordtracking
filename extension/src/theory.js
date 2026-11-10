@@ -335,12 +335,12 @@
 
   /** Tên một nốt giai điệu (số MIDI `pitch`) trong giọng `key` theo chế độ, không có số quãng tám.
    * - "orig": tên nốt của pitch + transpose, viết theo giọng sau khi dịch (như hợp âm).
-   * - "white": dịch -white_key_transpose của vùng giọng (như hợp âm), viết theo C trưởng / A thứ.
+   * - "white": dịch -white_key_transpose của vùng giọng (như hợp âm; thiếu thì 0), viết theo C trưởng / A thứ.
    * - "roman": bậc kiểu số 1–7 (xem DEGREES); bằng đúng phím trắng phải bấm ở chế độ Phím trắng. */
   function melodyName(pitch, key, s) {
     const mode = s && s.mode;
     if (mode === "white") {
-      const w = key ? (key.white_key_transpose ?? whiteOffset(key)) : 0;
+      const w = (key && key.white_key_transpose) || 0;   // như chordLabels (buildSong đã điền cho giọng đơn)
       return noteName(mod12(pitch - w), key && { tonic: key.mode === "minor" ? "A" : "C", mode: key.mode });
     }
     if (mode === "roman") return DEGREES[mod12(pitch - majorTonic(key))];
@@ -370,7 +370,8 @@
   function melodyNotes(melody) {
     const raw = melody && Array.isArray(melody.notes) ? melody.notes : [];
     return raw.filter((n) => n && Number.isFinite(n.start) && Number.isFinite(n.end) && n.end > n.start
-      && Number.isFinite(n.pitch)).sort((a, b) => a.start - b.start);
+      && Number.isFinite(n.pitch)).map((n) => (Number.isInteger(n.pitch) ? n : { ...n, pitch: Math.round(n.pitch) }))
+      .sort((a, b) => a.start - b.start);
   }
 
   /** Chỉ số nốt đang phát tại t (start <= t < end), -1 nếu đang nghỉ. `hint`: chỉ số lần trước (thử trước). */

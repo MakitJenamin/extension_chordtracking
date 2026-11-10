@@ -513,13 +513,17 @@
     panel.mel = m;
     CT.ui.strip.setMelody(m.melody || null);
     panel.renderMelody();
+    refitOverlay();
   });
+  /** Dải cao/thấp đi khi làn nốt hiện/ẩn: lớp phủ toàn màn hình đặt lại vị trí phụ đề theo chiều cao mới. */
+  function refitOverlay() { if (CT.ui.fullscreen && CT.ui.fullscreen.on) CT.ui.fullscreen.syncControls(); }
   let lastShowMel = CT.settings.showMelody !== false;
   CT.bus.on("settings", (st) => {
     const on = st.showMelody !== false;
     if (on === lastShowMel) return;
     lastShowMel = on;
     CT.ui.strip.buildMelody(true);
+    refitOverlay();
   });
   CT.bus.on("song:none", () => { CT.ui.song = null; if (panel.el) { panel.song = null; CT.ui.strip.setSong(null); panel.show("hidden"); } });
 })();

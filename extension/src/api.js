@@ -107,7 +107,7 @@
   function melodyError(e) {
     if (!(e instanceof ApiError)) return new ApiError("http", "Không dò được giai điệu: " + String(e && e.message || e));
     if (e.code === "server_down") return new ApiError("server_down", "Chưa kết nối được server ChordTrack. Bật server rồi bấm lại.");
-    if (e.code === "http" && (e.status === 404 || e.status === 405)) {
+    if (e.code === "http" && e.post && (e.status === 404 || e.status === 405)) {   // chỉ khi chính POST /melody 404/405
       return new ApiError("unsupported", "Server chưa hỗ trợ dò giai điệu. Cập nhật mã server (git pull) rồi khởi động lại.", { status: e.status });
     }
     if (e.code === "youtube_blocked") return new ApiError("youtube_blocked", "YouTube chặn tải audio, cần file cookie (xem hướng dẫn khi phân tích hợp âm).");
@@ -132,7 +132,7 @@
     try {
       const res = await request("/melody", { method: "POST", body: { source: videoId, force } });
       check();
-      if (!res.ok) throw toError(res);
+      if (!res.ok) throw Object.assign(toError(res), { post: true });
       const first = res.data || {};
       if (first.status === "done" && isMelody(first.melody)) return first.melody;
       if (!first.job_id) throw new ApiError("http", "phản hồi /melody không có job_id");
@@ -142,7 +142,7 @@
       } });
       const rr = await request(`/melody/${encodeURIComponent(job.song_id || first.song_id || videoId)}`);
       check();
-      if (!rr.ok) throw toError(rr);
+      if (!rr.ok) throw new ApiError("http", rr.status === 404 ? "job đã xong nhưng server không có kết quả giai điệu" : (rr.error || `HTTP ${rr.status}`), { status: rr.status });
       if (!isMelody(rr.data)) throw new ApiError("http", "kết quả giai điệu không đọc được");
       return rr.data;
     } catch (e) {

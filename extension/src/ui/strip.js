@@ -129,6 +129,7 @@
       });
       this.track.append(frag);
       this.buildMelody(false);
+      this.relabelMelody(false);   // gán nhãn nốt trước khi layout() đo chữ
       this.layout();
       this.relabel();
     }
