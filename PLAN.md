@@ -388,6 +388,12 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     giải mã gần như nhau. Mặc định fp32 batch 8. Nạp model ~8–11 s.
   - Let It Be nhận ra: trống 1702 nốt, acoustic piano 1607, **voice 290**, string ensemble, violin, cello, viola,
     guitar điện/acoustic, bass, choir... (có cả nhạc cụ ảo như violin/cello nhỏ lẻ, cần lọc khi chọn giai điệu).
+  - Đã cache đủ 212 bài, 0 lỗi (2026-11-10): sanity 1, orchset 64, adc2004 20, mirex05 13, kajiura 32, mir_st500 82.
+    Thời gian suy luận / thời lượng audio: Kajiura 0,14 (bài ~4–5 phút mất 30–63 s), MIR-ST500 0,10, Orchset 0,22
+    (đoạn ngắn nên phần cố định chiếm nhiều). VRAM reserved đỉnh 2,2–3,3 GB, vừa 8 GB.
+  - Kajiura: 31/32 bài có nốt `voice` (220–560 nốt mỗi bài); bài không có là `storm_and_fire`. Magia: trống, guitar
+    distortion, guitar acoustic, bass, voice 442, violin, cello, string ensemble. Sora wa Takaku: piano, violin, voice
+    435, viola, cello, string ensemble, choir_and_voice. Orchset: 0/64 đoạn có `voice` (đúng, nhạc giao hưởng).
   - Chọn dòng giai điệu: `chordtrack/melody/line.py` (skyline / salience / ưu tiên nguồn / Viterbi trên khoảng sơ
     cấp cho nốt đa âm; f0 → nốt có trễ, bù lệch dây, vibrato gộp một nốt; ghép f0 + nốt; căn phách tùy chọn).
     Chấm: `python -m eval.melody.score` (CV 3 phần theo bài, mục tiêu OA hoặc F1 onset). Chạy hết 130 bài cache
