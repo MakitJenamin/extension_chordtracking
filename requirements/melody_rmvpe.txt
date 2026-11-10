@@ -1,0 +1,3 @@
+# RMVPE (chordtrack/melody/rmvpe.py): chỉ cần torch, librosa, huggingface_hub đã có sẵn, không thêm gói mới.
+# Weights: huggingface_hub.hf_hub_download("lj1995/VoiceConversionWebUI", "rmvpe.pt",
+#          local_dir=chordtrack.paths.MODELS_DIR / "rmvpe")   (license MIT, SHA-256 6d62215f...ec193)

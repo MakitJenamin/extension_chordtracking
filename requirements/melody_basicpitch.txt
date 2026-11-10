@@ -1,0 +1,7 @@
+# Basic Pitch (chordtrack/melody/basic_pitch.py), chạy file nmp.onnx đi kèm bằng onnxruntime (CPU).
+# PHẢI cài bằng --no-deps: cài thường kéo tensorflow 2.15 và hạ resampy 0.4.3 -> 0.4.2.
+#   pip install --no-deps -r requirements/melody_basicpitch.txt
+
+basic-pitch==0.4.0
+# Phụ thuộc lúc chạy (cài thường, đã có trong venv với các bản này):
+#   librosa==0.10.1 mir_eval==0.8.2 pretty_midi==0.2.11.post0 resampy==0.4.3 scipy==1.13.1 onnxruntime==1.31.1
