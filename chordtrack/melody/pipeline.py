@@ -103,13 +103,16 @@ def _file_hash(*files: Path) -> str:
     return h.hexdigest()[:12]
 
 
-@functools.lru_cache(maxsize=1)
-def code_revision() -> str:
-    """Hash mã các bước dò giai điệu. Mã đổi thì melody.json cũ không dùng lại (đầu ra thô của model thì vẫn
-    dùng lại nếu mã wrapper của model đó không đổi)."""
+@functools.lru_cache(maxsize=None)
+def code_revision(variant: str = "combo") -> str:
+    """Hash mã các bước dò giai điệu của biến thể `variant`. Mã đổi thì file kết quả cũ không dùng lại (đầu ra thô
+    của model thì vẫn dùng lại nếu mã wrapper của model đó không đổi). Biến thể "yourmt3" không hash mã MuScriptor."""
     from chordtrack.melody import muscriptor, yourmt3
 
-    return _file_hash(Path(__file__), Path(L.__file__), Path(yourmt3.__file__), Path(muscriptor.__file__))
+    files = [Path(__file__), Path(L.__file__), Path(yourmt3.__file__)]
+    if variant != "yourmt3":
+        files.append(Path(muscriptor.__file__))
+    return _file_hash(*files)
 
 
 @functools.lru_cache(maxsize=None)
@@ -157,12 +160,12 @@ def note_to_json(n: MelodyNote) -> dict:
 
 
 def build_result(song_id: str, duration: float, notes: list[MelodyNote], timing: dict | None = None,
-                 peak_vram_mb: dict | None = None, model: str = MODEL) -> dict:
+                 peak_vram_mb: dict | None = None, variant: str = DEFAULT_VARIANT) -> dict:
     return {
         "version": RESULT_VERSION,
         "song_id": song_id,
-        "model": model,
-        "code_revision": code_revision(),
+        "model": variant_of(variant).model,
+        "code_revision": code_revision(variant),
         "duration": round(float(duration), 3),
         "uncertain_threshold": UNCERTAIN_THRESHOLD,
         "notes": [note_to_json(n) for n in notes],
@@ -181,9 +184,24 @@ def result_path(song_id: str, variant: str = DEFAULT_VARIANT) -> Path:
 def cached_melody(song_id: str, variant: str = DEFAULT_VARIANT) -> dict | None:
     """`<Melody>` của biến thể `variant` trong cache nếu đúng phiên bản và `code_revision`, ngược lại None."""
     data = read_json(result_path(song_id, variant))
-    if data is None or data.get("version") != RESULT_VERSION or data.get("code_revision") != code_revision():
+    if data is None or data.get("version") != RESULT_VERSION or data.get("code_revision") != code_revision(variant):
         return None
     return data
+
+
+# Ghi vào `code_revision` của kết quả biến thể khác khi đầu ra thô dùng chung bị chạy lại (`force`): kết quả đó dựng
+# từ đầu ra thô cũ, nên coi như cũ (vẫn hiện tạm, kèm header stale) tới khi dò lại.
+RAW_CHANGED = "raw-changed"
+
+
+def _mark_others_stale(song_id: str, variant: str) -> None:
+    for other in VARIANTS:
+        if other == variant:
+            continue
+        p = result_path(song_id, other)
+        data = read_json(p)
+        if data is not None and data.get("code_revision") != RAW_CHANGED:
+            write_json(p, {**data, "code_revision": RAW_CHANGED})
 
 
 def stale_melody(song_id: str, variant: str = DEFAULT_VARIANT) -> dict | None:
@@ -326,6 +344,8 @@ def analyze_melody(source: str, *, force: bool = False,
         report("melody_voice", 0.0)
         voice = run_yourmt3(mix, raw_a)
         _save_raw(voice, raw_a, "yourmt3")
+        # Đầu ra thô YourMT3+ dùng chung giữa các biến thể: kết quả biến thể khác dựng từ bản cũ thì thành cũ.
+        _mark_others_stale(song_id, variant)
     timing["melody_voice"] = time.perf_counter() - t0
     vram["yourmt3"] = _num(voice.extras.get("peak_vram_mib"))
     report("melody_voice", 1.0)
@@ -351,7 +371,7 @@ def analyze_melody(source: str, *, force: bool = False,
     notes = build_line(voice, fill) if fill is not None else build_line_yourmt3(voice)
     timing["melody_line"] = time.perf_counter() - t0
     timing["total"] = time.perf_counter() - t_start
-    result = build_result(song_id, duration, notes, timing, vram, model=spec.model)
+    result = build_result(song_id, duration, notes, timing, vram, variant=variant)
     write_json(result_path(song_id, variant), result)
     report("melody_line", 1.0)
     return result

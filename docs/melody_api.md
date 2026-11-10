@@ -19,7 +19,12 @@ khoảng 10 điểm OA ở đoạn dàn nhạc / nhạc không lời (ORCHSET 43
   biến thể thì trả lại job đang chờ/chạy đó. Hai job vẫn chạy lần lượt trên cùng một worker (GPU 8 GB).
 - Hai biến thể dùng chung đầu ra thô của YourMT3+ (`melody_raw/yourmt3.npz`): bài đã dò bằng biến thể này thì
   biến thể kia không chạy lại YourMT3+ (bản YourMT3+ khi đó mất khoảng 1 giây). `force` chạy lại các model của
-  biến thể được gửi (biến thể `"yourmt3"` chỉ chạy lại YourMT3+).
+  biến thể được gửi (biến thể `"yourmt3"` chỉ chạy lại YourMT3+). Khi YourMT3+ chạy lại, kết quả đã lưu của biến
+  thể kia (dựng từ đầu ra thô cũ) bị đánh dấu cũ (`code_revision` = `"raw-changed"`): `GET` vẫn trả kèm
+  `X-Chordtrack-Stale: 1`, `POST` không `force` thì dựng lại từ đầu ra thô mới (khoảng 1 giây với bản YourMT3+).
+- `code_revision` tính riêng theo biến thể (bản YourMT3+ không phụ thuộc mã MuScriptor).
+- Extension hỏi `GET /health` trước khi gửi `model` khác `"combo"`: không có `melody_models` (server cũ, sẽ bỏ qua
+  `model` và chạy cả job ghép) thì báo cần cập nhật server, không gửi job.
 - Bản YourMT3+ dùng cấu hình tốt nhất của YourMT3+ một mình theo CV (`source_viterbi`, `chorus_as_voice=False`),
   vẫn qua bước sửa nhảy quãng tám (không làm giảm điểm eval).
 - `model` lạ: 422.

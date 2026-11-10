@@ -141,6 +141,16 @@
     const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
     const ok = (m) => { if (!CT.theory.melodyModelOk(model, m)) throw unsupportedModel(); return m; };
     try {
+      if (model !== "combo") {
+        // Server cũ bỏ qua `model` và chạy cả job ghép (vài phút) rồi mới lộ ra sai biến thể: hỏi /health trước.
+        const hr = await request("/health");
+        check();
+        if (hr.ok && hr.data && typeof hr.data === "object") {
+          const mm = hr.data.melody_models;
+          if (!mm || typeof mm !== "object" || !(model in mm)) throw unsupportedModel();
+          if (mm[model] === false) throw new ApiError("job_error", "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`)");
+        }
+      }
       const res = await request("/melody", { method: "POST", body: { source: videoId, force, model } });
       check();
       if (!res.ok) throw Object.assign(toError(res), { post: true });

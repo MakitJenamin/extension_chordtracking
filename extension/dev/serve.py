@@ -16,7 +16,8 @@
 - Giai điệu (docs/melody_api.md) khi backend chưa có `/melody` (trả 404/405) hoặc với videoId giả:
   `POST /melody` tạo job giả ~12 giây (các bước fetch, melody_voice, melody_fill, melody_line), xong thì
   `GET /melody/<id>` trả `data/cache/dev_melody/<id>.json` (tạo bằng extension/dev/make_dev_melody.py).
-  devslow_001 (sau khi hiện hợp âm) cho job giai điệu lỗi. `--melody-cached`: coi như các bài có file đã dò sẵn (thử tự tải khi mở bài).
+  Giai điệu giả dùng chung một dòng nốt cho mọi biến thể (`model`), chỉ đổi trường `model` cho khớp biến thể
+  được hỏi. devslow_001 (sau khi hiện hợp âm) cho job giai điệu lỗi. `--melody-cached`: coi như các bài có file đã dò sẵn (thử tự tải khi mở bài).
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ import urllib.error
 import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 EXT_DIR = Path(__file__).resolve().parents[1]
 REPO = EXT_DIR.parent
@@ -55,6 +56,14 @@ MELODY_STEPS = [("fetch", "Dùng lại audio đã tải"), ("melody_voice", "Dò
                 ("melody_fill", "Dò nhạc cụ (MuScriptor small)"), ("melody_line", "Ghép dòng nốt")]
 MELODY_ERR = "MuScriptor small hết bộ nhớ GPU (CUDA out of memory)"
 melody_done: set[str] = set()   # bài đã "dò" xong bằng job giả (hoặc --melody-cached)
+# <Melody>.model theo biến thể (docs/melody_api.md).
+MELODY_MODEL_NAMES = {"combo": "yourmt3>muscriptor_small", "yourmt3": "yourmt3"}
+
+
+def _dev_melody(f: Path, variant: str | None) -> dict:
+    """Giai điệu giả của harness, trường `model` khớp biến thể được hỏi (mặc định ghép)."""
+    data = json.loads(f.read_text(encoding="utf-8"))
+    return {**data, "model": MELODY_MODEL_NAMES.get(variant or "combo", MELODY_MODEL_NAMES["combo"])}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -239,7 +248,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._relay(st, data, hdr)
         f = DEV_MELODY / f"{src}.json"
         if src in melody_done and not force and f.exists():
-            return self._json({"status": "done", "song_id": src, "melody": json.loads(f.read_text(encoding="utf-8"))})
+            return self._json({"status": "done", "song_id": src, "melody": _dev_melody(f, body.get("model"))})
         for jid, j in list(fake_jobs.items()):   # job đang chạy của bài này: trả lại job đó (như backend)
             if j.get("kind") == "melody" and j["src"] == src and not j.get("finished"):
                 return self._json({"status": "running", "job_id": jid, "song_id": src})
@@ -255,7 +264,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._relay(st, data, hdr)
         f = DEV_MELODY / f"{sid}.json"
         if sid in melody_done and f.exists():
-            return self._file(f, "application/json; charset=utf-8")
+            model = (parse_qs(urlsplit(self.path).query).get("model") or [None])[0]
+            return self._json(_dev_melody(f, model))
         return self._json({"detail": "Chưa dò giai điệu cho bài này"}, 404)
 
     def _fake_melody_job(self, jid: str, j: dict) -> dict:

@@ -67,13 +67,12 @@ class Kind:
 # Biến thể "chỉ YourMT3+" (`model: "yourmt3"`): job loại riêng, để không chặn job ghép cùng bài và để thống kê thời
 # gian bước `melody_voice` không lẫn với job ghép (job ghép hay dùng lại đầu ra thô nên bước này gần 0 giây).
 MELODY_Y3_STEPS = MELODY_VARIANTS["yourmt3"].steps
-MELODY_Y3_STEP_MESSAGES = {
-    "fetch": MELODY_STEP_MESSAGES["fetch"],
-    "melody_voice": "Đang dò giai điệu (YourMT3+)",
-    "melody_line": "Đang tạo dòng giai điệu",
-}
+MELODY_Y3_STEP_MESSAGES = {**{s: MELODY_STEP_MESSAGES[s] for s in MELODY_Y3_STEPS},
+                           "melody_voice": "Đang dò giai điệu (YourMT3+)", "melody_line": "Đang tạo dòng giai điệu"}
 # Đo trên "Let It Be" (243 s, RTX 3060 Ti), audio đã tải sẵn, chưa có đầu ra thô của YourMT3+ (37-45 s); PLAN.md mục 6.
-MELODY_Y3_DEFAULT_STEP_SECONDS = {"fetch": 1.0, "melody_voice": 40.0, "melody_line": 1.0}
+# Có sẵn đầu ra thô (đã dò bằng cách ghép) thì job xong trong khoảng 1 giây, ETA khi đó báo dư.
+MELODY_Y3_DEFAULT_STEP_SECONDS = {**{s: MELODY_DEFAULT_STEP_SECONDS[s] for s in MELODY_Y3_STEPS},
+                                  "melody_voice": 40.0}
 
 KINDS = {
     "analyze": Kind(STEPS, STEP_MESSAGES, DEFAULT_STEP_SECONDS, "Lỗi khi phân tích"),
@@ -81,8 +80,9 @@ KINDS = {
     "melody_yourmt3": Kind(MELODY_Y3_STEPS, MELODY_Y3_STEP_MESSAGES, MELODY_Y3_DEFAULT_STEP_SECONDS,
                            "Lỗi khi dò giai điệu"),
 }
-# Biến thể dò giai điệu (`chordtrack.melody.pipeline.VARIANTS`) -> loại job.
-MELODY_KIND_OF = {"combo": "melody", "yourmt3": "melody_yourmt3"}
+# Biến thể dò giai điệu (`chordtrack.melody.pipeline.VARIANTS`) -> loại job: mặc định "melody" (như trước khi có
+# biến thể), biến thể khác "melody_<tên>" (phải có trong KINDS).
+MELODY_KIND_OF = {v: "melody" if v == "combo" else f"melody_{v}" for v in MELODY_VARIANTS}
 MELODY_VARIANT_OF = {k: v for v, k in MELODY_KIND_OF.items()}
 
 
