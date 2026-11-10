@@ -569,7 +569,13 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   (YourMT3+) · còn khoảng 35 giây", xong sau ~40 s, 497 nốt, nhãn "YourMT3+"; đổi sang Ghép (chưa dò) thì hiện nút,
   dòng nốt ẩn, không tạo job; đổi lại thì hiện ngay 497 nốt. Harness trước đây bỏ query khi chuyển tiếp
   `GET /melody` (đã sửa).
-  - Còn mở: chưa so hai biến thể bằng tai trên bài có đoạn không lời dài; theo eval thì bản YourMT3+ hụt ở đoạn dàn nhạc.
+  - Thử trên YouTube thật sau khi merge (#69, server 8765 bản main): chọn "Chỉ YourMT3+" (chưa dò → nút, không tự
+    chạy), bấm dò: **1,3 s** (có sẵn đầu ra thô từ lần ghép trước), 497 nốt, 25 mờ; ↻ (force, chạy lại YourMT3+):
+    **38 s**, 497 nốt. Đổi về Ghép: hiện bản ghép 537 nốt kèm "bản cũ" (mã đổi nên mọi `melody.json` cũ thành cũ).
+  - Sửa sau đó: ↻ trên bản cũ trước đây gửi `force` (chạy lại cả hai model, ~160 s); nay gửi không `force`, server
+    dựng lại từ đầu ra thô đã lưu (vài giây). ↻ trên bản mới vẫn là dò lại thật.
+  - Còn mở: chưa so hai biến thể bằng tai trên bài có đoạn không lời dài; theo eval thì bản YourMT3+ hụt ở đoạn dàn
+    nhạc. ETA của job YourMT3+ báo ~42 s cả khi có sẵn đầu ra thô (job xong trong ~1 s).
 - [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
   - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
     đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.
