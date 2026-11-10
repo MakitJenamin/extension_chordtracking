@@ -61,8 +61,9 @@ def _gm_class(program: int) -> int:
     return ACCOMP                # piano, phím gõ, organ, guitar, nhạc cụ dân tộc...
 
 
-def source_class(source: str | None) -> int:
-    """Phân loại nhãn nguồn của model: VOICE, MELODIC, UNKNOWN (không có nhãn), ACCOMP, EXCLUDED."""
+def source_class(source: str | None, chorus_as_voice: bool = True) -> int:
+    """Phân loại nhãn nguồn của model: VOICE, MELODIC, UNKNOWN (không có nhãn), ACCOMP, EXCLUDED.
+    `chorus_as_voice=False`: bè hát / hợp xướng ("voice_chorus", "choir...") chỉ tính là nhạc cụ giai điệu."""
     if source is None or not str(source).strip():
         return UNKNOWN
     s = str(source).strip().lower()
@@ -72,6 +73,8 @@ def source_class(source: str | None) -> int:
     if "sax" in s:               # alto/tenor/soprano/baritone sax không phải giọng hát
         return MELODIC
     if any(w in s for w in _VOICE_WORDS):
+        if not chorus_as_voice and ("chorus" in s or "choir" in s):
+            return MELODIC
         return VOICE
     if "bass" in s and "bassoon" not in s:
         return EXCLUDED
@@ -101,6 +104,7 @@ class LineParams:
     w_conf: float = 1.0               # độ nổi theo confidence (velocity) của nốt
     w_dur: float = 0.3                # độ nổi theo log độ dài nốt
     w_pitch: float = 0.5              # độ nổi cộng thêm mỗi quãng tám cao hơn C4
+    chorus_as_voice: bool = True      # bè hát / hợp xướng cùng mức ưu tiên với giọng chính
     rest_score: float = 0.0           # độ nổi của trạng thái nghỉ (> 0 thì bỏ được nốt yếu)
     jump_penalty: float = 0.5         # viterbi: phạt mỗi quãng tám nhảy (sau phần miễn phạt)
     jump_free: float = 2.0            # viterbi: số bán cung nhảy không bị phạt
@@ -198,7 +202,7 @@ def _elementary(notes: list[MelodyNote]) -> tuple[np.ndarray, list[np.ndarray]]:
 def notes_to_line(notes: list[MelodyNote], params: LineParams = DEFAULT_PARAMS) -> list[MelodyNote]:
     """Chọn dòng giai điệu đơn âm từ các nốt đa âm (xem docstring module)."""
     p = params
-    cls_all = [source_class(n.source) for n in notes]
+    cls_all = [source_class(n.source, p.chorus_as_voice) for n in notes]
     keep = [i for i, n in enumerate(notes)
             if p.pitch_min <= n.pitch <= p.pitch_max and n.end - n.start >= p.min_input_dur
             and not (p.exclude_accomp and cls_all[i] == EXCLUDED)]
@@ -395,12 +399,27 @@ def f0_to_line(track: PitchTrack, params: LineParams = DEFAULT_PARAMS) -> list[M
 # --------------------------------------------------------------------------- ghép, căn phách
 
 
+def raw_pitch_track(out: MelodyModelOutput) -> PitchTrack | None:
+    """Đường f0 chưa cắt ngưỡng nếu model lưu (RMVPE: `extras` có `f0_raw_hz` và `salience_max`), để tự chọn
+    ngưỡng voicing qua `LineParams.voicing_threshold`. Không có thì trả `out.pitch_track`."""
+    pt = out.pitch_track
+    if pt is None or "f0_raw_hz" not in out.extras or "salience_max" not in out.extras:
+        return pt
+    raw = np.asarray(out.extras["f0_raw_hz"], dtype=np.float64)
+    sal = np.clip(np.asarray(out.extras["salience_max"], dtype=np.float64), 0.0, 1.0)
+    if len(raw) != len(pt.times) or len(sal) != len(pt.times):
+        return pt
+    return PitchTrack(pt.times, raw, sal)
+
+
 def extract_line(out: MelodyModelOutput, params: LineParams = DEFAULT_PARAMS) -> list[MelodyNote]:
-    """Dòng giai điệu từ một đầu ra model: dùng `notes` nếu có, ngược lại `pitch_track`."""
+    """Dòng giai điệu từ một đầu ra model: dùng `notes` nếu có, ngược lại đường f0 (bản thô nếu có và
+    `voicing_threshold` > 0, ngược lại bản model đã cắt ngưỡng)."""
     if out.notes:
         return notes_to_line(out.notes, params)
     if out.pitch_track is not None:
-        return f0_to_line(out.pitch_track, params)
+        pt = raw_pitch_track(out) if params.voicing_threshold > 0 else out.pitch_track
+        return f0_to_line(pt, params)
     return []
 
 
@@ -463,3 +482,42 @@ def quantize_to_beats(notes: list[MelodyNote], grid: BeatGrid, subdivisions: int
             e = float(later[0]) if len(later) else max(n.end, s + 1e-3)
         out.append(replace(n, start=s, end=e))
     return make_monophonic(out)
+
+
+def voice_intervals(notes: list[MelodyNote], pad: float = 0.2, chorus_as_voice: bool = True) -> list[tuple[float, float]]:
+    """Các khoảng có nốt giọng hát (theo nhãn nguồn), nới mỗi bên `pad` giây và gộp chỗ chồng nhau."""
+    iv = sorted((n.start - pad, n.end + pad) for n in notes
+                if source_class(n.source, chorus_as_voice) == VOICE)
+    out: list[tuple[float, float]] = []
+    for a, b in iv:
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((max(a, 0.0), b))
+    return out
+
+
+def clip_to(notes: list[MelodyNote], intervals: list[tuple[float, float]], inside: bool = True,
+            min_dur: float = 0.06) -> list[MelodyNote]:
+    """Giữ phần các nốt nằm trong (`inside`) hoặc ngoài các khoảng (đã sắp, không chồng nhau)."""
+    if not inside:
+        comp, t = [], -math.inf
+        for a, b in intervals:
+            if a > t:
+                comp.append((t, a))
+            t = max(t, b)
+        comp.append((t, math.inf))
+        intervals = comp
+    out = []
+    for n in notes:
+        for a, b in intervals:
+            s, e = max(n.start, a), min(n.end, b)
+            if e - s >= min_dur:
+                out.append(replace(n, start=s, end=e))
+    return out
+
+
+def combine_gated(primary: list[MelodyNote], secondary: list[MelodyNote], gate: list[tuple[float, float]],
+                  min_dur: float = 0.06) -> list[MelodyNote]:
+    """`primary` trong các khoảng `gate` (vd RMVPE ở chỗ model nốt thấy giọng hát), `secondary` ở phần còn lại."""
+    return make_monophonic(clip_to(primary, gate, True, min_dur) + clip_to(secondary, gate, False, min_dur), min_dur)

@@ -1,14 +1,19 @@
 """Chấm dòng giai điệu của mọi (model × chiến lược × bộ dữ liệu) từ cache, chỉ dùng CPU.
 
-    python -m eval.melody.score [--datasets a,b] [--models m1,m2] [--folds 3] [--jobs 6] [--boot 2000]
-                                [--no-beats] [--out-dir EVAL_DIR/results/melody]
+    python -m eval.melody.score [--datasets a,b] [--models m1,m2] [--exclude muscriptor_medium] [--folds 3]
+                                [--jobs 6] [--boot 2000] [--no-beats] [--out-dir EVAL_DIR/results/melody]
+
+Thêm model mới (vd muscriptor_*) chỉ cần có cache rồi chạy lại lệnh trên: model tự được tìm trong cache.
 
 Đầu vào:
 - Manifest `EVAL_DIR/melody/<dataset>/manifest.jsonl` (xem `eval/melody/README.md`). Trường dùng thêm nếu có:
   `offset` (giây, cộng vào mọi thời điểm của đáp án để khớp audio), `duration`, `chord_ref` (.lab nhãn Harte).
 - Cache `chordtrack.melody.io.cache_path(model, dataset, track_id)`. Model là mọi thư mục trong
   `CACHE_DIR/melody/` không bắt đầu bằng `_`. Model có `notes` chấm các họ chiến lược nốt đa âm, model có
-  `pitch_track` chấm các họ f0. Mỗi cặp (model f0, model nốt) chấm thêm họ `combo` (`combine_lines`).
+  `pitch_track` chấm các họ f0; nếu model lưu f0 thô (`extras` `f0_raw_hz` + `salience_max`, như RMVPE) thì ngưỡng
+  voicing được dò lại trên bản thô (`RAW_VOICING`). Mỗi cặp (model f0, model nốt) chấm thêm họ `combo`
+  (`combine_lines`: lấp khoảng trống của dòng f0) và `combo_gated` (`combine_gated`: dòng f0 ở chỗ model nốt có
+  nhãn giọng hát, dòng model nốt ở phần còn lại).
 - Lưới phách (tùy chọn) `CACHE_DIR/melody/_beats/<dataset>/<track_id>.npz` với mảng `beats`, `downbeats`.
   Có thì chấm thêm bản căn phách của mọi cấu hình (cột `quant` = 1).
 
@@ -26,9 +31,12 @@ Bài của mọi bộ có đáp án gộp lại, chia `--folds` phần (bài th�
 i mod k). Mỗi phần: với mỗi (model, họ, căn phách) chọn cấu hình tốt nhất trên các phần còn lại, chấm phần giữ
 lại. Dòng `cv` là điểm các phần giữ lại ghép lại. Dòng `full` chọn trên cả bộ (lạc quan, và là cấu hình dùng cho
 bộ không đáp án). Dòng `default` là cấu hình đầu tiên của lưới (= `LineParams` mặc định của họ đó).
+Mức model (`cv_model`, `full_model`): cùng cách trên nhưng mỗi (model, căn phách) chọn trong mọi cấu hình của mọi
+họ (trừ `f0raw`), nên cả họ chiến lược lẫn tham số đều được chọn bằng CV. Đây là bảng chính.
 
-Ra `out-dir`: `per_track.csv` (mọi bài, mọi cấu hình), `summary.csv`, `cv_choices.json`, và in bảng markdown kèm
-so cặp hai cấu hình tốt nhất mỗi bộ (bootstrap 95% chênh lệch trung bình theo bài, p Wilcoxon).
+Ra `out-dir`: `per_track.csv` (mọi bài, mọi cấu hình), `summary.csv`, `cv_choices.json`, `report.md` (bảng theo
+model và theo từng họ), và in bảng theo model kèm so cặp hai model tốt nhất mỗi bộ (bootstrap 95% chênh lệch
+trung bình theo bài, p Wilcoxon).
 """
 from __future__ import annotations
 
@@ -46,7 +54,7 @@ import numpy as np
 from chordtrack import paths
 from chordtrack.melody import line as L
 from chordtrack.melody.io import cache_path, load_output
-from chordtrack.types import BeatGrid, MelodyNote, lab_to_segments
+from chordtrack.types import BeatGrid, MelodyNote, PitchTrack, lab_to_segments
 
 FRAME_HOP = 0.01
 ONSET_TOL = 0.05
@@ -73,20 +81,43 @@ def note_families() -> dict[str, list[dict]]:
                          min_dur=[0.06, 0.03, 0.1], exclude_accomp=[True, False]),
         "salience": _grid(P(strategy="salience", source_mode="bonus"),
                           w_conf=[1.0, 0.0], w_dur=[0.3, 0.0], w_pitch=[0.5, 0.0, 1.0]),
+        # ưu tiên nguồn: giọng hát > nhạc cụ giai điệu > không rõ > đệm, trong từng khoảng
         "source": _grid(P(strategy="salience", source_mode="strict"),
-                        w_pitch=[0.5, 1.0], min_dur=[0.06, 0.1]),
+                        w_pitch=[0.5, 1.0], min_dur=[0.06, 0.1], chorus_as_voice=[True, False]),
+        "source_viterbi": _grid(P(strategy="viterbi", source_mode="strict"),
+                                jump_penalty=[0.5, 1.0], cut_penalty=[0.15, 0.05], chorus_as_voice=[True, False]),
         "viterbi": _grid(P(strategy="viterbi"),
                          jump_penalty=[0.5, 0.25, 1.0], cut_penalty=[0.15, 0.05, 0.4], w_pitch=[0.5, 1.0]),
     }
 
 
-def f0_families(has_conf: bool) -> dict[str, list[dict]]:
+# Ngưỡng voicing thử cho model có f0 thô (RMVPE: ngưỡng trên salience_max; model tự cắt ở 0.03).
+RAW_VOICING = [0.03, 0.01, 0.05, 0.1, 0.2, 0.3]
+
+
+def f0_families(has_raw: bool, has_conf: bool) -> dict[str, list[dict]]:
     P = L.LineParams
-    vt = [0.0, 0.3, 0.5] if has_conf else [0.0]
+    vt = RAW_VOICING if has_raw else ([0.0, 0.3, 0.5] if has_conf else [0.0])
     return {
         "f0raw": _grid(P(), voicing_threshold=vt),
-        "f0notes": _grid(P(), median_frames=[5, 1, 9], split_semitones=[0.6, 0.8],
-                         split_min_dur=[0.08, 0.12], voicing_threshold=vt[:1] + vt[2:]),
+        "f0notes": _grid(P(), voicing_threshold=vt, median_frames=[5, 1, 9], split_semitones=[0.6, 0.8],
+                         split_min_dur=[0.08, 0.12]),
+    }
+
+
+# Ghép model f0 (đoạn có giọng) + model nốt (đoạn còn lại). `vt`: ngưỡng voicing của dòng f0 (tham số tách nốt
+# để mặc định), `sec`: họ chiến lược của model nốt (cấu hình mặc định của họ đó).
+COMBO_VT = [0.03, 0.1, 0.2]
+COMBO_SEC = ["viterbi", "source"]
+COMBO_PAD = [0.1, 0.3]
+
+
+def combo_families() -> dict[str, list[dict]]:
+    return {
+        # lấp mọi khoảng trống >= min_gap giây của dòng f0 bằng dòng của model nốt
+        "combo": [dict(vt=v, min_gap=g, sec=c) for v in COMBO_VT for g in (0.3, 1.0) for c in COMBO_SEC],
+        # dòng f0 ở chỗ model nốt thấy giọng hát (nới pad giây), dòng của model nốt ở phần còn lại
+        "combo_gated": [dict(vt=v, pad=d, sec=c) for v in COMBO_VT for d in COMBO_PAD for c in COMBO_SEC],
     }
 
 
@@ -126,27 +157,14 @@ def _resolve(p: str | None, base: str) -> Path | None:
     return q if q.is_absolute() else Path(base) / q
 
 
-def read_numeric_csv(path: Path, ncols: int) -> np.ndarray:
-    """Đọc csv số (bỏ dòng tiêu đề hay dòng hỏng), phân cách bằng dấu phẩy, tab hoặc khoảng trắng."""
-    rows = []
-    for ln in Path(path).read_text(encoding="utf-8").splitlines():
-        parts = ln.replace(",", " ").replace(";", " ").split()
-        try:
-            rows.append([float(x) for x in parts[:ncols]])
-        except ValueError:
-            continue
-    rows = [r for r in rows if len(r) == ncols]
-    return np.array(rows, dtype=np.float64).reshape(-1, ncols)
-
-
-def discover_models(datasets: list[str], only: list[str] | None) -> list[str]:
+def discover_models(datasets: list[str], only: list[str] | None, exclude: list[str] | None = None) -> list[str]:
     """Các model có ít nhất một file cache ở một trong các bộ."""
     root = paths.CACHE_DIR / "melody"
     out: list[str] = []
     if not root.exists():
         return out
     for d in sorted(root.iterdir()):
-        if not d.is_dir() or d.name.startswith("_") or (only and d.name not in only):
+        if not d.is_dir() or d.name.startswith("_") or (only and d.name not in only) or d.name in (exclude or []):
             continue
         if any(next((d / ds).glob("*.npz"), None) for ds in datasets):
             out.append(d.name)
@@ -262,18 +280,18 @@ def score_line(entry: dict, ref: dict, est: list[MelodyNote], raw_f0: tuple | No
 
 
 def load_refs(entry: dict) -> dict:
+    from eval.melody.datasets import load_reference
+
     base, off = entry["_dir"], float(entry.get("offset") or 0.0)
+    loaded = load_reference({**entry, "ref_f0": _resolve(entry.get("ref_f0"), base),
+                             "ref_notes": _resolve(entry.get("ref_notes"), base)})   # đã cộng offset
     ref: dict = {}
     end = 0.0
-    p = _resolve(entry.get("ref_f0"), base)
-    if p is not None:
-        a = read_numeric_csv(p, 2)
-        ref["f0"] = (a[:, 0] + off, np.maximum(a[:, 1], 0.0))
-        end = max(end, float(a[-1, 0] + off) if len(a) else 0.0)
-    p = _resolve(entry.get("ref_notes"), base)
-    if p is not None:
-        a = read_numeric_csv(p, 3)
-        a[:, :2] += off
+    if loaded["f0"] is not None:
+        ref["f0"] = loaded["f0"]
+        end = max(end, float(ref["f0"][0][-1]) if len(ref["f0"][0]) else 0.0)
+    if loaded["notes"] is not None:
+        a = loaded["notes"]
         a = a[a[:, 1] > a[:, 0]]
         ref["notes"] = a
         end = max(end, float(a[:, 1].max()) if len(a) else 0.0)
@@ -336,35 +354,59 @@ def score_track(task: tuple) -> list[dict]:
                          **{k: vals.get(k, math.nan) for k in ALL_METRICS},
                          **{f"w_{k}": wts.get(k, 0.0) for k in ALL_METRICS}})
 
-    defaults_f0, defaults_notes = {}, {}
+    note_lines: dict[str, dict[str, list[MelodyNote]]] = {}   # model -> họ -> dòng của cấu hình mặc định
+    f0_tracks: dict[str, tuple[PitchTrack, bool]] = {}
     for m, o in outs.items():
         if o.notes:
+            note_lines[m] = {}
             for fam, cfgs in note_families().items():
                 for ci, cfg in enumerate(cfgs):
                     est = L.notes_to_line(o.notes, params_of(cfg))
                     emit(m, fam, ci, cfg, est)
-                    if fam == "viterbi" and ci == 0:
-                        defaults_notes[m] = est
+                    if ci == 0:
+                        note_lines[m][fam] = est
         if o.pitch_track is not None:
-            pt = o.pitch_track
-            fams = f0_families(pt.confidence is not None)
-            # f0 thô chỉ khác dòng nốt ở chỉ số mức khung: bài không đáp án thì bỏ (trùng f0notes mặc định).
-            for ci, cfg in enumerate(fams["f0raw"] if ref.get("f0") is not None else []):
-                hz = np.asarray(pt.f0_hz, dtype=np.float64).copy()
-                vt = cfg.get("voicing_threshold", 0.0)
-                if pt.confidence is not None and vt > 0:
-                    hz[np.asarray(pt.confidence) < vt] = 0.0
-                est = L.f0_to_line(pt, params_of(cfg))      # cho các chỉ số không cần đáp án
-                emit(m, "f0raw", ci, cfg, est, raw=(np.asarray(pt.times, dtype=np.float64), hz))
+            pt = L.raw_pitch_track(o)          # f0 chưa cắt ngưỡng nếu model lưu (RMVPE)
+            has_raw = pt is not o.pitch_track
+            f0_tracks[m] = (pt, has_raw)
+            fams = f0_families(has_raw, pt.confidence is not None)
+            default_by_vt: dict[float, list[MelodyNote]] = {}
             for ci, cfg in enumerate(fams["f0notes"]):
                 est = L.f0_to_line(pt, params_of(cfg))
                 emit(m, "f0notes", ci, cfg, est)
-                if ci == 0:
-                    defaults_f0[m] = est
-    for mf, lf in defaults_f0.items():
-        for mn, ln in defaults_notes.items():
-            if mf != mn:
-                emit(f"{mf}+{mn}", "combo", 0, None, L.combine_lines(lf, ln))
+                p = params_of(cfg)
+                if replace(p, voicing_threshold=0.0) == replace(params_of(fams["f0notes"][0]), voicing_threshold=0.0):
+                    default_by_vt[p.voicing_threshold] = est
+            # f0 thô chỉ khác dòng nốt ở chỉ số mức khung: bài không đáp án thì bỏ.
+            for ci, cfg in enumerate(fams["f0raw"] if ref.get("f0") is not None else []):
+                vt = cfg.get("voicing_threshold", 0.0)
+                hz = np.asarray(pt.f0_hz, dtype=np.float64).copy()
+                if pt.confidence is not None and vt > 0:
+                    hz[np.asarray(pt.confidence) < vt] = 0.0
+                # các chỉ số không cần đáp án lấy từ dòng nốt mặc định cùng ngưỡng
+                emit(m, "f0raw", ci, cfg, default_by_vt[vt], raw=(np.asarray(pt.times, dtype=np.float64), hz))
+    base_f0 = params_of(f0_families(True, True)["f0notes"][0])
+    for mf, (pt, has_raw) in f0_tracks.items():
+        if has_raw:
+            prim = {v: L.f0_to_line(pt, replace(base_f0, voicing_threshold=v)) for v in COMBO_VT}
+        else:                     # không có f0 thô: không dò ngưỡng, mọi `vt` dùng chung một dòng
+            one = L.f0_to_line(pt, replace(base_f0, voicing_threshold=0.0))
+            prim = {v: one for v in COMBO_VT}
+        for mn, lines in note_lines.items():
+            if mf == mn:
+                continue
+            name = f"{mf}+{mn}"
+            fams = combo_families()
+            for ci, c in enumerate(fams["combo"]):
+                if c["vt"] in prim:
+                    emit(name, "combo", ci, c, L.combine_lines(prim[c["vt"]], lines[c["sec"]], min_gap=c["min_gap"]))
+            gates = {d: L.voice_intervals(outs[mn].notes, pad=d) for d in COMBO_PAD}
+            if not any(gates.values()):
+                continue          # model nốt không có nhãn giọng hát: bản có cổng chỉ là dòng của model nốt
+            for ci, c in enumerate(fams["combo_gated"]):
+                if c["vt"] in prim:
+                    emit(name, "combo_gated", ci, c,
+                         L.combine_gated(prim[c["vt"]], lines[c["sec"]], gates[c["pad"]]))
     return rows
 
 
@@ -382,46 +424,62 @@ def _agg(rows: list[dict]) -> dict:
     return out
 
 
-def select_cv(rows: list[dict], entries: dict[str, list[dict]], folds: int) -> tuple[list[dict], dict]:
-    """Trả về (các dòng đã chọn, kèm cột `selection`, và mô tả lựa chọn)."""
+def select_cv(rows: list[dict], entries: dict[str, list[dict]], folds: int,
+              level: str = "family") -> tuple[list[dict], dict]:
+    """Chọn cấu hình bằng CV theo bài. Trả về (các dòng đã chọn, kèm cột `selection`, và mô tả lựa chọn).
+
+    `level="family"`: mỗi (model, họ, căn phách) chọn trong lưới của họ đó; nhãn `default`, `full`, `cv`.
+    `level="model"`: mỗi (model, căn phách) chọn trong mọi cấu hình của mọi họ (trừ `f0raw`, không phải dòng
+    nốt), nên họ chiến lược cũng được chọn bằng CV; nhãn `full_model`, `cv_model`, cột `family` = `*`.
+    """
     prim = {(ds, str(e["track_id"])): _primary(e) for ds, es in entries.items() for e in es}
     fold_of = {}
     for ds, es in entries.items():
         labelled = [e for e in es if _primary(e)]
         for i, e in enumerate(labelled):
             fold_of[(ds, str(e["track_id"]))] = i % folds
-    groups: dict[tuple, dict[int, list[dict]]] = {}
+    groups: dict[tuple, dict[tuple, list[dict]]] = {}
     for r in rows:
-        groups.setdefault((r["model"], r["family"], r["quant"]), {}).setdefault(r["cfg"], []).append(r)
+        if level == "family":
+            key, ck = (r["model"], r["family"], r["quant"]), (r["cfg"],)
+        else:
+            if r["family"] == "f0raw":
+                continue
+            key, ck = (r["model"], r["quant"]), (r["family"], r["cfg"])
+        groups.setdefault(key, {}).setdefault(ck, []).append(r)
 
     def objective(cfg_rows: list[dict], keep) -> float:
         v = [r[prim[(r["dataset"], r["track_id"])]] for r in cfg_rows
-             if keep((r["dataset"], r["track_id"])) and prim[(r["dataset"], r["track_id"])]]
+             if keep((r["dataset"], r["track_id"])) and prim.get((r["dataset"], r["track_id"]))]
         v = [x for x in v if np.isfinite(x)]
         return float(np.mean(v)) if v else -math.inf
 
+    sfx = "" if level == "family" else "_model"
     chosen: list[dict] = []
     choices: dict = {}
+
+    def tag(r: dict, sel: str) -> dict:
+        out = {**r, "selection": sel + sfx}
+        if level == "model":
+            out["chosen"] = f"{r['family']}#{r['cfg']}"
+            out["family"] = "*"
+        return out
+
     for key, by_cfg in groups.items():
-        cfgs = sorted(by_cfg)
-        full = max(cfgs, key=lambda c: (objective(by_cfg[c], lambda t: t in fold_of), -c))
-        desc = {"full": full, "folds": []}
-        for r in by_cfg[cfgs[0]]:
-            chosen.append({**r, "selection": "default"})
-        for r in by_cfg[full]:
-            chosen.append({**r, "selection": "full"})
+        cfgs = sorted(by_cfg)       # thứ tự lưới: hòa điểm thì lấy cấu hình đứng trước
+        order = {c: i for i, c in enumerate(cfgs)}
+        pick = lambda keep: max(cfgs, key=lambda c: (objective(by_cfg[c], keep), -order[c]))  # noqa: E731
+        full = pick(lambda t: t in fold_of)
+        desc = {"full": list(full), "full_params": by_cfg[full][0]["params"], "folds": []}
+        if level == "family":
+            chosen.extend(tag(r, "default") for r in by_cfg[cfgs[0]])
+        chosen.extend(tag(r, "full") for r in by_cfg[full])
         for f in range(folds):
-            train = lambda t, f=f: t in fold_of and fold_of[t] != f   # noqa: E731
-            best = max(cfgs, key=lambda c: (objective(by_cfg[c], train), -c))
-            desc["folds"].append(best)
-            for r in by_cfg[best]:
-                t = (r["dataset"], r["track_id"])
-                if fold_of.get(t) == f:
-                    chosen.append({**r, "selection": "cv"})
+            best = pick(lambda t, f=f: t in fold_of and fold_of[t] != f)
+            desc["folds"].append(list(best))
+            chosen.extend(tag(r, "cv") for r in by_cfg[best] if fold_of.get((r["dataset"], r["track_id"])) == f)
         # bộ không đáp án: dùng cấu hình chọn trên cả bộ có đáp án
-        for r in by_cfg[full]:
-            if (r["dataset"], r["track_id"]) not in fold_of:
-                chosen.append({**r, "selection": "cv"})
+        chosen.extend(tag(r, "cv") for r in by_cfg[full] if (r["dataset"], r["track_id"]) not in fold_of)
         choices["|".join(map(str, key))] = desc
     return chosen, choices
 
@@ -440,21 +498,21 @@ def dataset_primary(entries: dict[str, list[dict]]) -> dict[str, str | None]:
 
 
 def compare_top2(chosen: list[dict], summary: list[dict], primary: dict[str, str | None], n_boot: int,
-                 seed: int = 0) -> list[dict]:
+                 seed: int = 0, selection: str = "cv") -> list[dict]:
     """So cặp hai cấu hình (model, họ, căn phách) tốt nhất theo chỉ số mục tiêu (điểm CV) trên mỗi bộ."""
     from eval.ablation_kajiura import bootstrap_diff
 
     rng = np.random.default_rng(seed)
     out = []
     for ds in sorted({s["dataset"] for s in summary}):
-        rows = [s for s in summary if s["selection"] == "cv" and s["dataset"] == ds]
+        rows = [s for s in summary if s["selection"] == selection and s["dataset"] == ds]
         metric = primary.get(ds)
         if metric is None or len(rows) < 2:
             continue
         top = sorted(rows, key=lambda s: -s[metric] if np.isfinite(s[metric]) else math.inf)[:2]
         per = []
         for s in top:
-            per.append({r["track_id"]: r[metric] for r in chosen if r["selection"] == "cv" and r["dataset"] == ds
+            per.append({r["track_id"]: r[metric] for r in chosen if r["selection"] == selection and r["dataset"] == ds
                         and (r["model"], r["family"], r["quant"]) == (s["model"], s["family"], s["quant"])})
         common = sorted(set(per[0]) & set(per[1]))
         if len(common) < 2:
@@ -465,7 +523,8 @@ def compare_top2(chosen: list[dict], summary: list[dict], primary: dict[str, str
 
 
 def _name(s: dict) -> str:
-    return f"{s['model']}/{s['family']}" + ("+beats" if s["quant"] else "")
+    base = s["model"] if s["family"] == "*" else f"{s['model']}/{s['family']}"
+    return base + ("+beats" if s["quant"] else "")
 
 
 # --------------------------------------------------------------------------- in và ghi
@@ -489,30 +548,67 @@ def _fmt(v, pct: bool = True) -> str:
     return f"{100 * v:.1f}" if pct else f"{v:.2f}"
 
 
-def print_tables(summary: list[dict], tests: list[dict], primary: dict[str, str | None]) -> None:
+COL_NAMES = {"oa": "OA", "rpa": "RPA", "rca": "RCA", "vr": "VR", "vfa": "VFA", "note_f1": "F1 onset",
+             "note_off_f1": "F1 on+off", "note_p": "P onset", "note_r": "R onset", "coverage": "% có nốt",
+             "in_chord": "% trong hợp âm", "octave_jumps_pm": "nhảy >8ve/phút", "notes_pm": "nốt/phút",
+             "median_dur": "độ dài trung vị (s)"}
+
+
+def tables_md(summary: list[dict], primary: dict[str, str | None], selection: str, title: str,
+              compact: bool = False) -> list[str]:
+    """Bảng markdown mỗi bộ. `compact`: chỉ các cột chính (OA/RPA/RCA, F1, số không cần đáp án)."""
+    out: list[str] = []
     for ds in sorted({s["dataset"] for s in summary}):
-        rows = [s for s in summary if s["dataset"] == ds and s["selection"] == "cv"]
-        has_f0 = any(np.isfinite(s["oa"]) for s in rows)
-        has_notes = any(np.isfinite(s["note_f1"]) for s in rows)
-        print(f"\n### {ds} ({rows[0]['n_tracks'] if rows else 0} bài, {rows[0]['minutes'] if rows else 0:.1f} phút) "
-              f"— điểm CV, trung bình theo bài (theo thời lượng trong ngoặc)\n")
-        cols = (["oa", "rpa", "rca", "vr", "vfa"] if has_f0 else []) + (["note_f1", "note_off_f1"] if has_notes else [])
-        cols += ["coverage", "in_chord", "octave_jumps_pm", "median_dur"]
-        print("| model / chiến lược | " + " | ".join(cols) + " |")
-        print("|---" * (len(cols) + 1) + "|")
-        key = primary.get(ds) or "coverage"
+        rows = [s for s in summary if s["dataset"] == ds and s["selection"] == selection]
+        if not rows:
+            continue
+        p = primary.get(ds)
+        n = max(s["n_tracks"] for s in rows)
+        mins = max(s["minutes"] for s in rows)
+        if p == "oa":
+            cols = ["oa", "rpa", "rca"] + ([] if compact else ["vr", "vfa"])
+        elif p == "note_f1":
+            cols = ["note_f1", "note_off_f1"] + ([] if compact else ["note_p", "note_r"]) + ["oa", "rpa"]
+        else:
+            cols = []
+        if p is None or not compact:
+            cols += ["coverage", "in_chord", "octave_jumps_pm", "notes_pm", "median_dur"]
+        if p is None and not any(np.isfinite(s["in_chord"]) for s in rows):
+            cols.remove("in_chord")
+        out.append(f"\n### {ds} ({n} bài, {mins:.1f} phút) — {title}\n")
+        out.append("| model | bài | " + " | ".join(COL_NAMES[c] for c in cols) + " |")
+        out.append("|---" * (len(cols) + 2) + "|")
+        key = p or "coverage"
         for s in sorted(rows, key=lambda s: -(s[key] if np.isfinite(s[key]) else -1)):
             cells = []
             for c in cols:
-                pct = c not in ("octave_jumps_pm", "median_dur")
-                cells.append(f"{_fmt(s[c], pct)} ({_fmt(s[c + '_tw'], pct)})")
-            print(f"| {_name(s)} | " + " | ".join(cells) + " |")
-    if tests:
-        print("\n### So cặp hai cấu hình tốt nhất (a − b, điểm %, CI bootstrap 95%, thắng/thua, p Wilcoxon)\n")
-        for t in tests:
-            print(f"- {t['dataset']} {t['metric']}: {t['a']} − {t['b']} = {100 * t['mean']:+.2f} "
-                  f"[{100 * t['lo']:+.2f}, {100 * t['hi']:+.2f}], {t['wins']}/{t['losses']}, "
-                  f"p={t['p_wilcoxon']:.3f} (n={t['n']})")
+                pct = c not in ("octave_jumps_pm", "median_dur", "notes_pm")
+                v, tw = _fmt(s[c], pct), _fmt(s[c + "_tw"], pct)
+                cells.append(v if compact or v == tw else f"{v} ({tw})")
+            out.append(f"| {_name(s)} | {s['n_tracks']} | " + " | ".join(cells) + " |")
+    return out
+
+
+def tests_md(tests: list[dict], title: str) -> list[str]:
+    if not tests:
+        return []
+    out = [f"\n### {title} (a − b, điểm %, CI bootstrap 95%, thắng/thua, p Wilcoxon)\n"]
+    for t in tests:
+        out.append(f"- {t['dataset']} {COL_NAMES.get(t['metric'], t['metric'])}: {t['a']} − {t['b']} = "
+                   f"{100 * t['mean']:+.2f} [{100 * t['lo']:+.2f}, {100 * t['hi']:+.2f}], {t['wins']}/{t['losses']}, "
+                   f"p={t['p_wilcoxon']:.3f} (n={t['n']})")
+    return out
+
+
+def choices_md(choices: dict) -> list[str]:
+    out = ["\n### Cấu hình chọn trên cả các bộ có đáp án (dùng cho bộ không đáp án)\n"]
+    for key, d in sorted(choices.items()):
+        model, quant = key.split("|")
+        fam, ci = d["full"]
+        folds = ", ".join(f"{f}#{c}" for f, c in d["folds"])
+        out.append(f"- {model}{'+beats' if quant == '1' else ''}: {fam}#{ci} `{d['full_params']}` "
+                   f"(các phần CV: {folds})")
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -522,6 +618,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--datasets", help="danh sách bộ, phân cách bằng dấu phẩy (mặc định: mọi manifest)")
     ap.add_argument("--models", help="danh sách model trong cache (mặc định: tất cả)")
+    ap.add_argument("--exclude", default="muscriptor_medium",
+                    help="model bỏ qua, phân cách bằng dấu phẩy (mặc định: muscriptor_medium, đã quyết định không dùng)")
     ap.add_argument("--folds", type=int, default=3)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--boot", type=int, default=2000)
@@ -533,7 +631,8 @@ def main(argv: list[str] | None = None) -> int:
     if not entries:
         print("Không tìm thấy manifest nào trong", paths.EVAL_DIR / "melody", file=sys.stderr)
         return 1
-    models = discover_models(list(entries), args.models.split(",") if args.models else None)
+    models = discover_models(list(entries), args.models.split(",") if args.models else None,
+                             [x for x in args.exclude.split(",") if x])
     if not models:
         print("Không có cache model nào trong", paths.CACHE_DIR / "melody", file=sys.stderr)
         return 1
@@ -555,17 +654,31 @@ def main(argv: list[str] | None = None) -> int:
         print("Không có bài nào có cache.", file=sys.stderr)
         return 1
 
-    chosen, choices = select_cv(rows, entries, args.folds)
-    summary = summarize(chosen)
+    chosen_f, choices_f = select_cv(rows, entries, args.folds, level="family")
+    chosen_m, choices_m = select_cv(rows, entries, args.folds, level="model")
+    chosen_m = [{k: v for k, v in r.items() if k != "chosen"} for r in chosen_m]
+    summary = summarize(chosen_f + chosen_m)
     primary = dataset_primary(entries)
-    tests = compare_top2(chosen, summary, primary, args.boot)
+    tests_m = compare_top2(chosen_m, summary, primary, args.boot, selection="cv_model")
+    tests_f = compare_top2(chosen_f, summary, primary, args.boot, selection="cv")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.out_dir / "per_track.csv", rows)
     write_csv(args.out_dir / "summary.csv", summary)
-    (args.out_dir / "cv_choices.json").write_text(json.dumps({"choices": choices, "tests": tests}, indent=1,
-                                                             ensure_ascii=False), encoding="utf-8")
-    print_tables(summary, tests, primary)
-    print(f"\nĐã ghi {args.out_dir}", flush=True)
+    (args.out_dir / "cv_choices.json").write_text(json.dumps(
+        {"model": choices_m, "family": choices_f, "tests_model": tests_m, "tests_family": tests_f},
+        indent=1, ensure_ascii=False), encoding="utf-8")
+    head = (tables_md(summary, primary, "cv_model", "mỗi model ở cấu hình tốt nhất (họ + tham số chọn bằng CV "
+                                                    "theo bài), trung bình theo bài", compact=True)
+            + tests_md(tests_m, "So cặp hai model tốt nhất") + choices_md(choices_m))
+    detail = (tables_md(summary, primary, "cv", "từng họ chiến lược, điểm CV, trung bình theo bài "
+                                                "(theo thời lượng trong ngoặc)")
+              + tests_md(tests_f, "So cặp hai (model, họ) tốt nhất"))
+    report = ["# Kết quả dò giai điệu", f"\nModel: {', '.join(models)}. CV {args.folds} phần theo bài; mục tiêu "
+              "OA (bộ f0) hoặc F1 onset (MIR-ST500). Điểm %.", "\n## Theo model"] + head + \
+             ["\n## Theo họ chiến lược"] + detail
+    (args.out_dir / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
+    print("\n".join(head))
+    print(f"\nĐã ghi {args.out_dir} (report.md có thêm bảng theo từng họ chiến lược)", flush=True)
     return 0
 
 
