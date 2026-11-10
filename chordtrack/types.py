@@ -102,3 +102,39 @@ def lab_to_segments(path: Path) -> list[ChordSegment]:
             if len(parts) >= 3:
                 out.append(ChordSegment(float(parts[0]), float(parts[1]), parts[2]))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Giai điệu (melody). Cao độ dùng số MIDI (60 = C4). Bên trong luôn giữ quãng tám đầy đủ.
+
+
+@dataclass
+class MelodyNote:
+    start: float
+    end: float
+    pitch: int                        # số MIDI
+    confidence: float | None = None   # khoảng [0, 1]; None nếu model không cung cấp
+    source: str | None = None         # nhạc cụ hoặc "voice" nếu model có nhãn nhạc cụ, ngược lại None
+
+
+@dataclass
+class PitchTrack:
+    """Đường cao độ theo khung (đầu ra của model dò f0 như RMVPE)."""
+
+    times: np.ndarray                     # (T,) thời điểm mỗi khung
+    f0_hz: np.ndarray                     # (T,) tần số cơ bản, 0 ở khung không có giai điệu
+    confidence: np.ndarray | None = None  # (T,) khoảng [0, 1]
+
+
+@dataclass
+class MelodyModelOutput:
+    """Đầu ra thô của một model melody hoặc chép nốt (chordtrack/melody/*.py).
+
+    Model chép nốt nhiều nhạc cụ (YourMT3+, MuScriptor, Basic Pitch) điền `notes` với mọi nốt nghe được,
+    kể cả đa âm; việc chọn dòng giai điệu làm ở bước sau. Model dò f0 (RMVPE) điền `pitch_track`.
+    """
+
+    model_name: str
+    notes: list[MelodyNote] = field(default_factory=list)
+    pitch_track: PitchTrack | None = None
+    extras: dict[str, np.ndarray] = field(default_factory=dict)
