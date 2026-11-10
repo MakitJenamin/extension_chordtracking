@@ -507,6 +507,18 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     cho cùng thứ hạng đầu (`yourmt3>muscriptor_small` 46.4, YourMT3+ 44.5). Nhưng biến thể này thưởng cả việc bật
     nốt mọi lúc: RMVPE khi đó chọn ngưỡng thấp, VFA ở MIREX05 tăng từ 14% lên 73%. Vì vậy nên dùng nó để so sánh,
     không dùng làm mục tiêu chính.
+- [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
+  - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
+    đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.
+  - Nux Walpurgis (Kajiura, `1MVCh02g27M`): bấm "Dò giai điệu", panel hiện "Đang chờ · còn khoảng 3 phút" rồi tiến độ;
+    job xong sau khoảng 290 s (lâu hơn ~160 s ước tính, có thể do chờ GPU), 140 nốt (10 mờ). Bb thứ → phím trắng A
+    thứ (+1) hiện đúng.
+  - ⚠️ Toàn màn hình thật trên YouTube không thử được bằng thao tác tự động (Chrome từ chối `requestFullscreen`);
+    đã thử bằng toàn màn hình giả lập của harness (dòng nốt đi cùng dải vào lớp phủ, cao thêm 40 px).
+  - ⚠️ Còn mở: ở chế độ Phím trắng giọng thứ, bậc 7 nâng viết `Ab` thay vì `G#` (cùng quy ước `FLAT_NAMES` với hợp âm,
+    nên hợp âm E–G#–B cũng thành `Ab`). Nếu người dùng thấy khó đọc thì đổi chung cho cả hợp âm và giai điệu.
+  - ⚠️ Giai điệu nhanh rất dày (~0,17 s/nốt ở 69 px/s): khoảng 20% nốt phải thu gọn nhãn (mũi tên nhỏ dưới tên),
+    ~10% chỉ còn mũi tên và thanh. Toàn màn hình (92 px/s) đỡ hơn.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
