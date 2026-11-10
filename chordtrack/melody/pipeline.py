@@ -3,6 +3,14 @@
     fetch (dùng lại CACHE_DIR/<song_id>/mix.wav nếu có) -> YourMT3+ (tiến trình riêng) -> MuScriptor small
     -> ghép theo cổng giọng (`build_line`) -> CACHE_DIR/<song_id>/melody.json
 
+Hai biến thể (`VARIANTS`, trường `model` của `POST /melody`):
+- `"combo"` (mặc định): ghép `yourmt3>muscriptor_small` như trên.
+- `"yourmt3"`: chỉ YourMT3+ (`build_line_yourmt3`), bỏ bước MuScriptor, ghi `melody_yourmt3.json`. Nhanh hơn
+  khoảng 3-4 lần; theo `data/eval/results/melody/report.md` hơn cách ghép ở F1 nốt giọng hát (MIR-ST500 53.1 so
+  với 49.0) nhưng kém khoảng 10 điểm OA ở đoạn dàn nhạc (ORCHSET 43.0 so với 53.2).
+Hai biến thể dùng chung đầu ra thô của YourMT3+, nên bài đã dò bằng biến thể này thì biến thể kia không phải chạy
+lại YourMT3+.
+
 Cách ghép `yourmt3>muscriptor_small` thắng xếp hạng chung trong `eval/melody/score.py` (PLAN.md mục 11): dòng
 YourMT3+ (`source_viterbi`: ưu tiên giọng + Viterbi) trong các khoảng có nốt `voice` của chính YourMT3+ nới
 `GATE_PAD` giây, ngoài cổng dùng dòng MuScriptor small (`salience`, không tính độ dài nốt). Cấu hình là hằng số ở
@@ -16,7 +24,7 @@ huggingface_hub 2.x, nên chạy bằng `python -m chordtrack.melody.yourmt3 <wa
 chỉ lên GPU trong `gpu_lock()` (xem `chordtrack/melody/muscriptor.py`).
 
 Đầu ra thô của hai model cache ở `CACHE_DIR/<song_id>/melody_raw/<model>.npz` (kèm hash mã wrapper), nên khi chỉ
-đổi cách ghép thì chạy lại mất khoảng một giây. `force=True` chạy lại cả hai model.
+đổi cách ghép thì chạy lại mất khoảng một giây. `force=True` chạy lại các model của biến thể đó.
 """
 from __future__ import annotations
 
@@ -29,6 +37,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -48,6 +57,20 @@ RESULT_VERSION = 1
 STEPS = ("fetch", "melody_voice", "melody_fill", "melody_line")
 MUSCRIPTOR_SIZE = "small"
 
+
+@dataclass(frozen=True)
+class Variant:
+    model: str                  # giá trị `<Melody>.model`
+    result_file: str            # tên file kết quả trong CACHE_DIR/<song_id>/
+    steps: tuple[str, ...]      # các bước báo qua `progress`
+
+
+VARIANTS = {
+    "combo": Variant(MODEL, RESULT_FILE, STEPS),
+    "yourmt3": Variant("yourmt3", "melody_yourmt3.json", ("fetch", "melody_voice", "melody_line")),
+}
+DEFAULT_VARIANT = "combo"
+
 # Cấu hình chọn bằng CV (cả 3 phần chọn giống nhau): a=source_viterbi b=salience_nodur gate=a pad=0.6.
 VOICE_PARAMS = L.LineParams(strategy="viterbi", source_mode="strict")
 FILL_PARAMS = L.LineParams(strategy="salience", source_mode="bonus", w_conf=1.0, w_dur=0.0, w_pitch=0.5)
@@ -62,6 +85,13 @@ OCTAVE_FIX: dict | None = {"max_run": 0.6, "min_jump": 12}
 # MIR-ST500 mờ 9.4% nốt, nốt mờ đúng cao độ 7.3% so với 53.1% ở nốt rõ; ADC2004 mờ 4.6% (17% / 49%); MIREX05 5.4%
 # (9% / 42%); Kajiura mờ 4.6%. Ngưỡng 0.5 chỉ làm mờ khoảng 1%, ngưỡng 0.8 làm mờ 12-18% kể cả nhiều nốt đúng.
 UNCERTAIN_THRESHOLD = 0.6
+# Biến thể "yourmt3": cấu hình CV của YourMT3+ một mình (`cv_choices.json`, khóa `yourmt3|0`, cả 3 phần chọn giống
+# nhau): source_viterbi jump_penalty=0.5 cut_penalty=0.15 chorus_as_voice=False. Khác dòng YourMT3+ trong cách ghép
+# ở chỗ bè hát / hợp xướng không cùng mức ưu tiên với giọng chính. Sửa nhảy quãng tám dùng cùng `OCTAVE_FIX`: chấm
+# lại trên các bộ eval (2026-11-11), trung bình cân bằng 45.54 -> 45.54, F1 MIR-ST500 53.14 -> 53.14, số bước nhảy
+# > 1 quãng tám mỗi phút giảm nhẹ (MIR-ST500 1.91 -> 1.78, Kajiura 1.65 -> 1.54), nên giữ.
+YOURMT3_PARAMS = L.LineParams(strategy="viterbi", source_mode="strict", jump_penalty=0.5, cut_penalty=0.15,
+                              chorus_as_voice=False)
 
 YOURMT3_TIMEOUT = 3600.0   # giây; gồm cả thời gian chờ gpu_lock (tối đa 30 phút) của tiến trình con
 
@@ -104,6 +134,22 @@ def build_line(voice: MelodyModelOutput, fill: MelodyModelOutput) -> list[Melody
     return line
 
 
+def build_line_yourmt3(voice: MelodyModelOutput) -> list[MelodyNote]:
+    """Dòng giai điệu đơn âm chỉ từ đầu ra YourMT3+ (biến thể `"yourmt3"`)."""
+    line = L.notes_to_line(voice.notes, YOURMT3_PARAMS)
+    if OCTAVE_FIX:
+        line = L.fix_octave_jumps(line, **OCTAVE_FIX)
+    return line
+
+
+def variant_of(name: str | None) -> Variant:
+    """Biến thể theo tên (`None` = mặc định). Tên lạ: ValueError."""
+    key = DEFAULT_VARIANT if name is None else name
+    if key not in VARIANTS:
+        raise ValueError(f"model phải là một trong {tuple(VARIANTS)}, nhận {name!r}")
+    return VARIANTS[key]
+
+
 def note_to_json(n: MelodyNote) -> dict:
     conf = 0.0 if n.confidence is None else float(np.clip(n.confidence, 0.0, 1.0))
     return {"start": round(float(n.start), 3), "end": round(float(n.end), 3), "pitch": int(n.pitch),
@@ -111,11 +157,11 @@ def note_to_json(n: MelodyNote) -> dict:
 
 
 def build_result(song_id: str, duration: float, notes: list[MelodyNote], timing: dict | None = None,
-                 peak_vram_mb: dict | None = None) -> dict:
+                 peak_vram_mb: dict | None = None, model: str = MODEL) -> dict:
     return {
         "version": RESULT_VERSION,
         "song_id": song_id,
-        "model": MODEL,
+        "model": model,
         "code_revision": code_revision(),
         "duration": round(float(duration), 3),
         "uncertain_threshold": UNCERTAIN_THRESHOLD,
@@ -128,22 +174,22 @@ def build_result(song_id: str, duration: float, notes: list[MelodyNote], timing:
 # --------------------------------------------------------------------------- cache
 
 
-def result_path(song_id: str) -> Path:
-    return paths.CACHE_DIR / song_id / RESULT_FILE
+def result_path(song_id: str, variant: str = DEFAULT_VARIANT) -> Path:
+    return paths.CACHE_DIR / song_id / variant_of(variant).result_file
 
 
-def cached_melody(song_id: str) -> dict | None:
-    """`<Melody>` trong cache nếu đúng phiên bản và `code_revision`, ngược lại None."""
-    data = read_json(result_path(song_id))
+def cached_melody(song_id: str, variant: str = DEFAULT_VARIANT) -> dict | None:
+    """`<Melody>` của biến thể `variant` trong cache nếu đúng phiên bản và `code_revision`, ngược lại None."""
+    data = read_json(result_path(song_id, variant))
     if data is None or data.get("version") != RESULT_VERSION or data.get("code_revision") != code_revision():
         return None
     return data
 
 
-def stale_melody(song_id: str) -> dict | None:
+def stale_melody(song_id: str, variant: str = DEFAULT_VARIANT) -> dict | None:
     """`<Melody>` trong cache bất kể `code_revision` (để extension hiện tạm kết quả của mã cũ), miễn đúng phiên bản
     định dạng."""
-    data = read_json(result_path(song_id))
+    data = read_json(result_path(song_id, variant))
     return data if data is not None and data.get("version") == RESULT_VERSION else None
 
 
@@ -240,15 +286,19 @@ def _prepare_audio(source: str) -> tuple[str, Path]:
 
 
 def analyze_melody(source: str, *, force: bool = False,
-                   progress: Callable[[str, float], None] | None = None) -> dict:
-    """Dò giai điệu một bài (videoId, URL YouTube hoặc file), trả `<Melody>` (dict JSON) và ghi cache.
+                   progress: Callable[[str, float], None] | None = None, variant: str = DEFAULT_VARIANT) -> dict:
+    """Dò giai điệu một bài (videoId, URL YouTube hoặc file) bằng biến thể `variant` (`VARIANTS`), trả `<Melody>`
+    (dict JSON) và ghi cache.
 
-    `progress(step, fraction)` được gọi ở đầu (0.0) và cuối (1.0) mỗi bước trong `STEPS`. Có cache thì không gọi.
+    `progress(step, fraction)` được gọi ở đầu (0.0) và cuối (1.0) mỗi bước trong `VARIANTS[variant].steps`. Có
+    cache thì không gọi. `force=True` chạy lại các model của biến thể này (biến thể `"yourmt3"` chỉ chạy lại
+    YourMT3+).
     """
+    spec = variant_of(variant)
     report = progress or (lambda step, fraction: None)
     if not force and not Path(source).expanduser().is_file():
         vid = audio_mod.parse_video_id(source)
-        cached = cached_melody(vid) if vid else None
+        cached = cached_melody(vid, variant) if vid else None
         if cached is not None:
             return cached
 
@@ -262,7 +312,7 @@ def analyze_melody(source: str, *, force: bool = False,
     timing["fetch"] = time.perf_counter() - t0
     report("fetch", 1.0)
     if not force:
-        cached = cached_melody(song_id)
+        cached = cached_melody(song_id, variant)
         if cached is not None:
             return cached
     cache_dir = paths.CACHE_DIR / song_id
@@ -280,27 +330,29 @@ def analyze_melody(source: str, *, force: bool = False,
     vram["yourmt3"] = _num(voice.extras.get("peak_vram_mib"))
     report("melody_voice", 1.0)
 
-    t0 = time.perf_counter()
-    raw_b = _raw_path(cache_dir, "muscriptor_small")
-    fill = None if force else _load_raw(raw_b, "muscriptor_small")
-    if fill is None:
-        report("melody_fill", 0.0)
-        fill = run_muscriptor(mix)
-        _save_raw(fill, raw_b, "muscriptor_small")
-    timing["melody_fill"] = time.perf_counter() - t0
-    vram["muscriptor_small"] = _num(fill.extras.get("peak_vram_mb"))
-    report("melody_fill", 1.0)
+    fill = None
+    if "melody_fill" in spec.steps:
+        t0 = time.perf_counter()
+        raw_b = _raw_path(cache_dir, "muscriptor_small")
+        fill = None if force else _load_raw(raw_b, "muscriptor_small")
+        if fill is None:
+            report("melody_fill", 0.0)
+            fill = run_muscriptor(mix)
+            _save_raw(fill, raw_b, "muscriptor_small")
+        timing["melody_fill"] = time.perf_counter() - t0
+        vram["muscriptor_small"] = _num(fill.extras.get("peak_vram_mb"))
+        report("melody_fill", 1.0)
 
     report("melody_line", 0.0)
     t0 = time.perf_counter()
     import soundfile as sf
 
     duration = float(sf.info(str(mix)).duration)
-    notes = build_line(voice, fill)
+    notes = build_line(voice, fill) if fill is not None else build_line_yourmt3(voice)
     timing["melody_line"] = time.perf_counter() - t0
     timing["total"] = time.perf_counter() - t_start
-    result = build_result(song_id, duration, notes, timing, vram)
-    write_json(result_path(song_id), result)
+    result = build_result(song_id, duration, notes, timing, vram, model=spec.model)
+    write_json(result_path(song_id, variant), result)
     report("melody_line", 1.0)
     return result
 
@@ -329,19 +381,28 @@ def melody_ready() -> dict[str, bool]:
     }
 
 
+def variant_ready(ready: dict[str, bool]) -> dict[str, bool]:
+    """Từ kết quả `melody_ready()`: mỗi biến thể đã đủ model để chạy chưa (`"yourmt3"` chỉ cần các khóa
+    `yourmt3_*`)."""
+    return {"combo": all(ready.values()),
+            "yourmt3": all(v for k, v in ready.items() if k.startswith("yourmt3_"))}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m chordtrack.melody.pipeline",
                                  description="Dò giai điệu một bài, in vài nốt đầu và ghi melody.json")
     ap.add_argument("source", help="videoId, URL YouTube hoặc đường dẫn file audio")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--model", choices=tuple(VARIANTS), default=DEFAULT_VARIANT,
+                    help="biến thể: combo (YourMT3+ ghép MuScriptor small, mặc định) hoặc yourmt3 (chỉ YourMT3+)")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    res = analyze_melody(args.source, force=args.force,
+    res = analyze_melody(args.source, force=args.force, variant=args.model,
                          progress=lambda s, f: print(f"[{s}] {'bắt đầu' if f == 0 else 'xong'}", flush=True))
     print(json.dumps({**res, "notes": res["notes"][:10]}, ensure_ascii=False, indent=1))
-    print(f"{len(res['notes'])} nốt, ghi ở {result_path(res['song_id'])}")
+    print(f"{len(res['notes'])} nốt, ghi ở {result_path(res['song_id'], args.model)}")
     return 0
 
 

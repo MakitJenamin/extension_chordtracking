@@ -9,11 +9,12 @@ Chỉ lắng nghe 127.0.0.1, không mở ra mạng ngoài. Endpoint:
 - `GET  /jobs/{job_id}`       tiến độ job (xem `jobs.job_status`)
 - `GET  /result/{song_id}`    JSON kết quả hoặc 404
 - `GET  /songs`               danh sách bài đã phân tích (cho popup của extension)
-- `POST /melody`              dò giai điệu, cùng cách dùng với `/analyze` (hợp đồng: `docs/melody_api.md`)
-- `GET  /melody/{song_id}`    `<Melody>` hoặc 404
+- `POST /melody`              dò giai điệu, cùng cách dùng với `/analyze`, thêm `"model": "combo" | "yourmt3"`
+                              (hợp đồng: `docs/melody_api.md`)
+- `GET  /melody/{song_id}`    `<Melody>` hoặc 404; `?model=yourmt3` lấy biến thể chỉ YourMT3+
 
 Hàng đợi job lưu ở `data/cache/jobs.sqlite`, một worker thread duy nhất cho cả job hợp âm (`kind` = `analyze`) và
-job dò giai điệu (`kind` = `melody`), vì GPU chỉ có 8 GB (xem `chordtrack/jobs.py`).
+job dò giai điệu (`kind` = `melody` / `melody_yourmt3`), vì GPU chỉ có 8 GB (xem `chordtrack/jobs.py`).
 """
 from __future__ import annotations
 
@@ -28,9 +29,9 @@ import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -66,6 +67,13 @@ class AnalyzeRequest(BaseModel):
     force: bool = False
 
 
+MelodyModel = Literal["combo", "yourmt3"]     # = `chordtrack.melody.pipeline.VARIANTS`
+
+
+class MelodyRequest(AnalyzeRequest):
+    model: MelodyModel = "combo"
+
+
 def default_cached_result(song_id: str) -> dict | None:
     """Kết quả trong cache của cấu hình mặc định của `pipeline.analyze`, đúng `code_revision`."""
     from chordtrack import pipeline
@@ -91,43 +99,44 @@ def default_analyze(source: str, *, force: bool = False, progress=None) -> dict:
     return pipeline.analyze(source, force=force, progress=progress)
 
 
-def default_melody(source: str, *, force: bool = False, progress=None) -> dict:
+def default_melody(source: str, *, force: bool = False, progress=None, variant: str = "combo") -> dict:
     from chordtrack.melody import pipeline as melody_pipeline
 
-    return melody_pipeline.analyze_melody(source, force=force, progress=progress)
+    return melody_pipeline.analyze_melody(source, force=force, progress=progress, variant=variant)
 
 
-def default_cached_melody(song_id: str) -> dict | None:
+def default_cached_melody(song_id: str, variant: str = "combo") -> dict | None:
     from chordtrack.melody import pipeline as melody_pipeline
 
-    return melody_pipeline.cached_melody(song_id)
+    return melody_pipeline.cached_melody(song_id, variant)
 
 
-def default_stale_melody(song_id: str) -> dict | None:
+def default_stale_melody(song_id: str, variant: str = "combo") -> dict | None:
     from chordtrack.melody import pipeline as melody_pipeline
 
-    return melody_pipeline.stale_melody(song_id)
+    return melody_pipeline.stale_melody(song_id, variant)
 
 
-_MELODY_READY: list = [0.0, False]   # (thời điểm kiểm tra, kết quả)
+_MELODY_READY: list = [0.0, {}]     # (thời điểm kiểm tra, kết quả)
 MELODY_READY_TTL = 60.0             # giây; /health bị poll thường xuyên, chỉ kiểm tra file lại sau khoảng này
 
 
-def default_melody_ready() -> bool:
+def default_melody_ready() -> dict[str, bool]:
+    """Mỗi biến thể dò giai điệu đã đủ model chưa: `{"combo": bool, "yourmt3": bool}`."""
     import time
 
     from chordtrack.melody import pipeline as melody_pipeline
 
     now = time.monotonic()
     if _MELODY_READY[0] and now - _MELODY_READY[0] < MELODY_READY_TTL:
-        return _MELODY_READY[1]
+        return dict(_MELODY_READY[1])
     try:
-        ok = all(melody_pipeline.melody_ready().values())
+        ok = melody_pipeline.variant_ready(melody_pipeline.melody_ready())
     except Exception:
         log.exception("Không kiểm tra được model dò giai điệu")
-        ok = False
+        ok = {"combo": False, "yourmt3": False}
     _MELODY_READY[:] = [now, ok]
-    return ok
+    return dict(ok)
 
 
 @functools.lru_cache(maxsize=1)
@@ -199,11 +208,13 @@ def create_app(
     start_worker: bool = True,
     poll_interval: float = 2.0,
     melody: Callable[..., dict] = default_melody,
-    cached_melody: Callable[[str], dict | None] = default_cached_melody,
-    stale_melody: Callable[[str], dict | None] = default_stale_melody,
-    melody_ready: Callable[[], bool] = default_melody_ready,
+    cached_melody: Callable[[str, str], dict | None] = default_cached_melody,
+    stale_melody: Callable[[str, str], dict | None] = default_stale_melody,
+    melody_ready: Callable[[], dict[str, bool]] = default_melody_ready,
 ) -> FastAPI:
-    """Tạo app. Test truyền `analyze`/`cached_result`/`melody`/`cached_melody`... giả và `db_path` tạm."""
+    """Tạo app. Test truyền `analyze`/`cached_result`/`melody`/`cached_melody`... giả và `db_path` tạm.
+    `melody(source, force=, progress=, variant=)`, `cached_melody(song_id, variant)`, `stale_melody(song_id,
+    variant)`; `melody_ready()` trả `{"combo": bool, "yourmt3": bool}`."""
     store_holder: dict[str, Any] = {}
 
     @contextlib.asynccontextmanager
@@ -239,6 +250,7 @@ def create_app(
     @app.get("/health")
     def health() -> dict:
         worker = store_holder.get("worker")
+        ready = melody_ready()
         return {
             "status": "ok",
             "version": app_version(),
@@ -248,7 +260,9 @@ def create_app(
             "deno": jobs.deno_path() is not None,
             "ffmpeg": shutil.which("ffmpeg") is not None,
             "cookies": _cookies_ok(),
-            "melody": bool(melody_ready()),
+            # "melody": biến thể mặc định (ghép) chạy được; "melody_models": từng biến thể.
+            "melody": bool(ready.get("combo")),
+            "melody_models": {k: bool(v) for k, v in ready.items()},
         }
 
     def submit(body: AnalyzeRequest, kind: str, cached: Callable[[str], dict | None], key: str) -> dict:
@@ -277,17 +291,18 @@ def create_app(
         return submit(body, "analyze", cached_result, "result")
 
     @app.post("/melody")
-    def melody_endpoint(body: AnalyzeRequest) -> dict:
-        return submit(body, "melody", cached_melody, "melody")
+    def melody_endpoint(body: MelodyRequest) -> dict:
+        # Mỗi biến thể một loại job và một file cache: hai biến thể không chặn nhau.
+        return submit(body, jobs.MELODY_KIND_OF[body.model], lambda sid: cached_melody(sid, body.model), "melody")
 
     @app.get("/melody/{song_id}")
-    def melody_result_endpoint(song_id: str):
+    def melody_result_endpoint(song_id: str, model: MelodyModel = Query("combo")):
         if not SONG_ID_RE.match(song_id):
             raise HTTPException(400, "song_id không hợp lệ")
-        result = cached_melody(song_id)
+        result = cached_melody(song_id, model)
         if result is not None:
             return result
-        stale = stale_melody(song_id)
+        stale = stale_melody(song_id, model)
         if stale is None:
             raise HTTPException(404, "Chưa dò giai điệu bài này")
         return UTF8JSONResponse(stale, headers={"X-Chordtrack-Stale": "1"})

@@ -411,3 +411,13 @@ html[dark] .ct-strip-wrap { --ct-mel: #b69cff; }
 .ct-mel-sw input:checked { background: var(--ct-accent); }
 .ct-mel-sw input:checked::after { transform: translateX(12px); }
 .ct-sw-mel { height: 4px !important; align-self: center; background: #6a3fe0 !important; border-radius: 2px; }
+/* Chọn biến thể dò giai điệu (ghép / chỉ YourMT3+) và tên biến thể đang hiển thị. */
+.ct-melgrp { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.ct-mel-model-sel {
+  max-width: 190px; height: 32px; padding: 0 8px; border: 1px solid var(--ct-layer); border-radius: 16px;
+  background: var(--ct-bg); color: var(--ct-text); font: 500 13px Roboto, Arial, sans-serif;
+  text-overflow: ellipsis; cursor: pointer;
+}
+.ct-mel-model-sel:hover { background: var(--ct-layer); }
+.ct-mel-model-sel:focus-visible { outline: 2px solid var(--ct-accent); outline-offset: 1px; }
+.ct-mel-model { font-size: 11px; color: var(--ct-text2); white-space: nowrap; }

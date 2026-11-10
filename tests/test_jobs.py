@@ -226,13 +226,15 @@ def test_worker_routes_by_kind(store):
         seen.append(("analyze", source))
         return {}
 
-    def melody(source, *, force=False, progress=None):
-        seen.append(("melody", source))
-        done.set()
+    def melody(source, *, force=False, progress=None, variant="combo"):
+        seen.append((variant, source))
+        if variant == "yourmt3":
+            done.set()
         return {}
 
     store.submit("aaaaaaaaaaa", "a")
-    m, _ = store.submit("aaaaaaaaaaa", "a", kind="melody")
+    store.submit("aaaaaaaaaaa", "a", kind="melody")
+    m, _ = store.submit("aaaaaaaaaaa", "a", kind="melody_yourmt3")
     w = jobs.JobWorker(store, analyze, poll_interval=0.05, melody=melody)
     w.start()
     try:
@@ -242,7 +244,30 @@ def test_worker_routes_by_kind(store):
             time.sleep(0.02)
     finally:
         w.stop()
-    assert seen == [("analyze", "a"), ("melody", "a")] and store.get(m.id).status == "done"
+    assert seen == [("analyze", "a"), ("combo", "a"), ("yourmt3", "a")] and store.get(m.id).status == "done"
+
+
+def test_melody_variant_kinds_are_separate(store):
+    """Hai biến thể dò giai điệu: job riêng (không gộp nhau), bước và thống kê thời gian riêng."""
+    c, _ = store.submit("abcdefghijk", "x", kind="melody")
+    y, created = store.submit("abcdefghijk", "x", kind="melody_yourmt3")
+    assert created and y.id != c.id
+    assert store.submit("abcdefghijk", "x", kind="melody_yourmt3") == (y, False)
+    assert jobs.KINDS["melody_yourmt3"].steps == ("fetch", "melody_voice", "melody_line")
+    st = jobs.job_status(store, y)
+    assert st["kind"] == "melody_yourmt3" and st["model"] == "yourmt3"
+    assert jobs.job_status(store, c)["model"] == "combo"
+    combo_total = sum(jobs.MELODY_DEFAULT_STEP_SECONDS.values())
+    y3_total = sum(jobs.MELODY_Y3_DEFAULT_STEP_SECONDS.values())
+    assert st["eta_seconds"] == pytest.approx(combo_total + y3_total)
+    store.claim_next()                     # job ghép: melody_voice dùng lại đầu ra thô, gần 0 giây
+    for step in jobs.MELODY_STEPS:
+        store.step_started(c.id, step)
+        store.step_finished(c.id, step)
+    store.finish(c.id)
+    assert store.step_averages("melody")["melody_voice"] < 1.0
+    assert store.step_averages("melody_yourmt3") == jobs.MELODY_Y3_DEFAULT_STEP_SECONDS
+    assert "Đang chờ" in st["message"] and jobs.job_status(store, y)["eta_seconds"] == pytest.approx(y3_total)
 
 
 def test_worker_without_melody_runner(store):

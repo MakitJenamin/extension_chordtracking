@@ -128,6 +128,17 @@ Vẫn **một worker** cho cả hai loại; mỗi loại có bước, câu thôn
 - ⚠️ Mỗi file `jobs.sqlite` chỉ một worker (khóa `jobs.sqlite.worker.lock`). Server bản cũ (trước khóa, chưa có
   `kind`) chạy song song trên cùng `data/cache` sẽ `recover()` job đang chạy của server mới rồi chạy nó như job hợp
   âm (đã gặp khi thử: job melody bị đánh dấu `done` mà không có `melody.json`). Không chạy hai server cùng lúc.
+- **Biến thể "chỉ YourMT3+" (2026-11-11):** `POST /melody` nhận `"model": "combo" | "yourmt3"` (mặc định `combo`, body
+  cũ không đổi nghĩa), `GET /melody/{id}?model=`, `/health` thêm `melody_models`. Bản YourMT3+ ghi
+  `melody_yourmt3.json`, job loại `melody_yourmt3` (bước `fetch`, `melody_voice`, `melody_line`; job trả thêm
+  `model`), nên hai biến thể có job và thống kê thời gian riêng, không chặn nhau. Cấu hình: CV của YourMT3+ một mình
+  (`source_viterbi`, `chorus_as_voice=False`) + cùng bước sửa nhảy quãng tám (chấm lại: điểm cân bằng 45.54 giữ
+  nguyên, nhảy > 1 quãng tám/phút giảm nhẹ). Hai biến thể dùng chung `melody_raw/yourmt3.npz`.
+  Đo thật (Let It Be, server thử cổng 8767): **chưa có đầu ra thô 37 s** (tổng job, gồm khởi động tiến trình con),
+  **có sẵn đầu ra thô 0,1 s**; 497 nốt (bản ghép 537). Bản ghép chạy sau đó dùng lại đầu ra thô, chỉ còn MuScriptor 86 s.
+  Thử server ở cổng khác mà không đụng hàng đợi của server chính: đặt `CHORDTRACK_DATA` sang thư mục tạm (junction
+  `models` về `data/models`, chép `cache/<id>/mix.wav`), vì mỗi `jobs.sqlite` chỉ một worker; khóa GPU ở thư mục temp
+  nên vẫn dùng chung.
 
 ## 7. Extension (Chrome Manifest V3)
 
@@ -159,6 +170,12 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   vùng giọng, **Bậc La Mã hiện số 1–7 kiểu ký âm số** (giọng thứ dùng giọng trưởng song song) vì số trùng đúng phím
   trắng phải bấm (1 = C … 7 = B). Dòng dày (giai điệu nhanh, ~0,17 s/nốt ở 69 px/s): nhãn không vừa khe tới nốt kế
   thì mũi tên nhỏ xuống dưới tên, hẹp nữa thì chỉ còn mũi tên và thanh (Magia: 151/715 nốt thu gọn, 67 chỉ còn thanh).
+- **Chọn biến thể dò giai điệu (2026-11-11):** ô chọn ngay trước nút "Dò giai điệu": "Ghép (chính xác hơn với nhạc
+  không lời)" / "Chỉ YourMT3+ (nhanh hơn)", nhớ trong `CT.settings.melodyModel`. Mỗi biến thể một trạng thái trong
+  `content.js` (job của biến thể này vẫn chạy khi chuyển sang biến thể kia); đổi lựa chọn thì `GET /melody?model=`
+  nếu chưa hỏi, chưa có thì hiện nút chưa dò, không tự chạy job. Cạnh công tắc "Giai điệu" có chữ nhỏ tên biến thể
+  đang hiện ("Ghép" / "YourMT3+"). Server cũ bỏ qua `?model=` và trả bản ghép: extension kiểm `<Melody>.model`
+  (`theory.melodyModelOk`) nên không hiện nhầm bản ghép thành bản YourMT3+.
 
 ## 8. Đo chất lượng (quan trọng nhất)
 
@@ -547,6 +564,12 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     MIREX05 5.4% (9% / 42%); Kajiura 4.6%. Đã thử tín hiệu "hai model đồng ý cao độ": ở nốt giọng tách được (MIR-ST500
     đúng 90.6% khi đồng ý, 77.3% khi không; ADC2004 72.7% / 46.7%), nhưng 26–43% nốt không đồng ý, mờ chừng đó thì
     nhiều quá. Còn mở: dựng confidence tốt hơn (đồng ý giữa hai model, độ nổi so với nốt cạnh tranh).
+- [x] Tùy chọn "chỉ YourMT3+" cho dò giai điệu (2026-11-11), xem mục 6 và 7. Thử trên Chrome thật qua harness
+  (`extension/dev/serve.py`, backend thử cổng 8767): chọn "Chỉ YourMT3+", bấm dò, panel hiện "Đang dò giai điệu
+  (YourMT3+) · còn khoảng 35 giây", xong sau ~40 s, 497 nốt, nhãn "YourMT3+"; đổi sang Ghép (chưa dò) thì hiện nút,
+  dòng nốt ẩn, không tạo job; đổi lại thì hiện ngay 497 nốt. Harness trước đây bỏ query khi chuyển tiếp
+  `GET /melody` (đã sửa).
+  - Còn mở: chưa so hai biến thể bằng tai trên bài có đoạn không lời dài; theo eval thì bản YourMT3+ hụt ở đoạn dàn nhạc.
 - [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
   - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
     đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.

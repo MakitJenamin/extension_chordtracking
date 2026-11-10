@@ -1,8 +1,8 @@
 """Hàng đợi job phân tích, lưu bằng SQLite (`data/cache/jobs.sqlite`), và một worker thread duy nhất.
 
-- Hai loại job (`kind`): `"analyze"` (hợp âm, `pipeline.analyze`) và `"melody"` (dò giai điệu,
-  `chordtrack.melody.pipeline.analyze_melody`). Mỗi loại có danh sách bước, câu thông báo và thời gian mặc định
-  riêng (`KINDS`), chung một hàng đợi theo thứ tự gửi.
+- Ba loại job (`kind`): `"analyze"` (hợp âm, `pipeline.analyze`), `"melody"` (dò giai điệu bằng cách ghép,
+  `chordtrack.melody.pipeline.analyze_melody`) và `"melody_yourmt3"` (dò giai điệu chỉ bằng YourMT3+). Mỗi loại có
+  danh sách bước, câu thông báo và thời gian mặc định riêng (`KINDS`), chung một hàng đợi theo thứ tự gửi.
 
 - Chỉ **một** worker xử lý lần lượt từng job vì GPU chỉ có 8 GB (mỗi bước model còn tự lấy
   `gpu_lock()` bên trong pipeline). Model được các wrapper cache trong tiến trình, nên các job
@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import functools
 import logging
 import shutil
 import sqlite3
@@ -29,6 +30,7 @@ from typing import Any, Callable
 log = logging.getLogger(__name__)
 
 from chordtrack.melody.pipeline import STEPS as MELODY_STEPS
+from chordtrack.melody.pipeline import VARIANTS as MELODY_VARIANTS
 from chordtrack.pipeline import TIMING_KEYS
 
 STEPS = tuple(k for k in TIMING_KEYS if k != "total")   # các bước pipeline báo qua `progress`
@@ -62,10 +64,26 @@ class Kind:
     error_prefix: str           # đầu câu báo lỗi chung
 
 
+# Biến thể "chỉ YourMT3+" (`model: "yourmt3"`): job loại riêng, để không chặn job ghép cùng bài và để thống kê thời
+# gian bước `melody_voice` không lẫn với job ghép (job ghép hay dùng lại đầu ra thô nên bước này gần 0 giây).
+MELODY_Y3_STEPS = MELODY_VARIANTS["yourmt3"].steps
+MELODY_Y3_STEP_MESSAGES = {
+    "fetch": MELODY_STEP_MESSAGES["fetch"],
+    "melody_voice": "Đang dò giai điệu (YourMT3+)",
+    "melody_line": "Đang tạo dòng giai điệu",
+}
+# Đo trên "Let It Be" (243 s, RTX 3060 Ti), audio đã tải sẵn, chưa có đầu ra thô của YourMT3+ (37-45 s); PLAN.md mục 6.
+MELODY_Y3_DEFAULT_STEP_SECONDS = {"fetch": 1.0, "melody_voice": 40.0, "melody_line": 1.0}
+
 KINDS = {
     "analyze": Kind(STEPS, STEP_MESSAGES, DEFAULT_STEP_SECONDS, "Lỗi khi phân tích"),
     "melody": Kind(MELODY_STEPS, MELODY_STEP_MESSAGES, MELODY_DEFAULT_STEP_SECONDS, "Lỗi khi dò giai điệu"),
+    "melody_yourmt3": Kind(MELODY_Y3_STEPS, MELODY_Y3_STEP_MESSAGES, MELODY_Y3_DEFAULT_STEP_SECONDS,
+                           "Lỗi khi dò giai điệu"),
 }
+# Biến thể dò giai điệu (`chordtrack.melody.pipeline.VARIANTS`) -> loại job.
+MELODY_KIND_OF = {"combo": "melody", "yourmt3": "melody_yourmt3"}
+MELODY_VARIANT_OF = {k: v for v, k in MELODY_KIND_OF.items()}
 
 
 def kind_name(kind: str | None) -> str:
@@ -290,6 +308,8 @@ def job_status(store: JobStore, job: Job, now: float | None = None) -> dict[str,
     total = sum(avg[s] for s in spec.steps) or 1.0
     out: dict[str, Any] = {"job_id": job.id, "song_id": job.song_id, "kind": job.kind, "status": job.status,
                            "step": None, "progress": 0.0, "message": None, "eta_seconds": None, "error": None}
+    if job.kind in MELODY_VARIANT_OF:
+        out["model"] = MELODY_VARIANT_OF[job.kind]
     if job.status == "done":
         out.update(progress=1.0, message="Xong", eta_seconds=0.0)
     elif job.status == "error":
@@ -399,13 +419,16 @@ def _short(exc: BaseException, limit: int = 300) -> str:
 
 class JobWorker:
     """Một worker thread lấy job theo thứ tự tạo và gọi hàm của loại job đó: `analyze(source, force=...,
-    progress=...)` với job `"analyze"`, `melody(...)` (cùng chữ ký) với job `"melody"`."""
+    progress=...)` với job `"analyze"`, `melody(..., variant=...)` (cùng chữ ký, thêm biến thể theo
+    `MELODY_VARIANT_OF`) với job `"melody"` và `"melody_yourmt3"`."""
 
     def __init__(self, store: JobStore, analyze: AnalyzeFn, poll_interval: float = 2.0, *,
                  melody: AnalyzeFn | None = None):
         self.store = store
         self.lock_conflict = False     # server khác đã chạy worker trên cùng DB
-        self.runners: dict[str, AnalyzeFn | None] = {"analyze": analyze, "melody": melody}
+        self.runners: dict[str, AnalyzeFn | None] = {"analyze": analyze}
+        for kind, variant in MELODY_VARIANT_OF.items():
+            self.runners[kind] = None if melody is None else functools.partial(melody, variant=variant)
         self.poll_interval = poll_interval
         self._wake = threading.Event()
         self._stop = threading.Event()

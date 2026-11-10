@@ -249,7 +249,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _melody_get(self, sid: str):
         if not sid.startswith("dev"):
-            st, data, hdr = self._backend("GET", f"/melody/{sid}")
+            query = urlsplit(self.path).query        # ?model=combo|yourmt3
+            st, data, hdr = self._backend("GET", f"/melody/{sid}" + (f"?{query}" if query else ""))
             if not self._route_missing(st, data):   # backend đã có /melody: theo đúng backend (kể cả 404 "chưa dò")
                 return self._relay(st, data, hdr)
         f = DEV_MELODY / f"{sid}.json"
