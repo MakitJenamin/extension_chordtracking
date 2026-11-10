@@ -94,7 +94,8 @@ def test_score_end_to_end(fake_data, capsys):
     # mọi họ đều có mặt, kể cả combo và bản căn phách
     fams = {(m, f) for (_, m, f, _) in cv}
     assert {("notem", "skyline"), ("notem", "viterbi"), ("notem", "source"), ("notem", "salience"),
-            ("f0m", "f0raw"), ("f0m", "f0notes"), ("f0m+notem", "combo")} <= fams
+            ("notem", "source_viterbi"), ("f0m", "f0raw"), ("f0m", "f0notes"), ("f0m+notem", "combo"),
+            ("f0m+notem", "combo_gated")} <= fams
     assert ("fake_f0", "notem", "viterbi", "1") in cv
     # model nốt chép đúng giai điệu (bè piano thấp bị bỏ nhờ ưu tiên giọng/cao độ)
     assert float(cv[("fake_f0", "notem", "viterbi", "0")]["oa"]) > 0.9
@@ -104,13 +105,43 @@ def test_score_end_to_end(fake_data, capsys):
     assert float(free["in_chord"]) == pytest.approx(0.5)
     assert float(free["coverage"]) == pytest.approx(0.5)
     choices = json.loads((out_dir / "cv_choices.json").read_text(encoding="utf-8"))
-    assert len(choices["choices"]["notem|viterbi|0"]["folds"]) == 2
+    assert len(choices["family"]["notem|viterbi|0"]["folds"]) == 2
+    # mức model: chọn cả họ lẫn tham số, không bao giờ chọn f0raw
+    assert set(choices["model"]) >= {"notem|0", "f0m|0", "f0m+notem|0", "notem|1"}
+    assert choices["model"]["f0m|0"]["full"][0] == "f0notes"
+    cvm = {(r["dataset"], r["model"], r["quant"]): r for r in summary if r["selection"] == "cv_model"}
+    assert cvm[("fake_f0", "notem", "0")]["family"] == "*"
+    assert float(cvm[("fake_f0", "notem", "0")]["oa"]) > 0.9
+    assert int(cvm[("fake_free", "notem", "0")]["n_tracks"]) == 1
+    assert "So cặp hai model tốt nhất" in printed
+    report = (out_dir / "report.md").read_text(encoding="utf-8")
+    assert "## Theo model" in report and "## Theo họ chiến lược" in report
     assert (out_dir / "per_track.csv").stat().st_size > 0
+
+
+def test_raw_pitch_track_threshold_grid(fake_data):
+    # model lưu f0 thô kiểu RMVPE: ngưỡng voicing được dò trên salience_max
+    t = np.arange(0, 4, 0.01)
+    raw = np.full(len(t), 440.0)
+    sal = np.where(t < 2, 0.8, 0.02)
+    cut = np.where(sal > 0.03, raw, 0.0)
+    out = MelodyModelOutput("r", pitch_track=PitchTrack(t, cut, sal), extras={"f0_raw_hz": raw, "salience_max": sal})
+    pt = L.raw_pitch_track(out)
+    assert pt is not out.pitch_track and pt.f0_hz[-1] == 440.0
+    assert L.extract_line(out, L.LineParams(voicing_threshold=0.01))[-1].end == pytest.approx(4.0, abs=0.02)
+    assert L.extract_line(out, L.LineParams(voicing_threshold=0.03))[-1].end == pytest.approx(2.0, abs=0.02)
+    assert L.extract_line(out)[-1].end == pytest.approx(2.0, abs=0.02)    # mặc định: bản model đã cắt
+    save_output(out, cache_path("rawm", "fake_f0", "t0"))
+    rows = S.score_track(({**json.loads((paths.EVAL_DIR / "melody" / "fake_f0" / "manifest.jsonl")
+                                        .read_text(encoding="utf-8").splitlines()[0]),
+                           "_dir": str(paths.EVAL_DIR / "melody" / "fake_f0")}, ["rawm"], None))
+    vts = {r["params"].split()[0] for r in rows if r["family"] == "f0notes"}
+    assert vts == {f"voicing_threshold={v}" for v in S.RAW_VOICING}
 
 
 def test_offset_shifts_reference(tmp_path):
     p = tmp_path / "r.csv"
-    p.write_text("onset,offset,midi\n1.0,2.0,60\n", encoding="utf-8")
+    p.write_text("1.0,2.0,60\n", encoding="utf-8")
     ref = S.load_refs({"_dir": str(tmp_path), "ref_notes": str(p), "offset": 0.5})
     assert ref["notes"][0].tolist() == [1.5, 2.5, 60]
     assert ref["f0"][1][np.searchsorted(ref["f0"][0], 2.0)] == pytest.approx(L.midi_to_hz(60))
@@ -121,3 +152,13 @@ def test_offset_shifts_reference(tmp_path):
 def test_dataset_primary_uses_note_f1_for_note_datasets():
     entries = {"st": [{"ref_notes": "a.csv", "ref_f0": None}], "f0": [{"ref_f0": "b.csv"}], "free": [{}]}
     assert S.dataset_primary(entries) == {"st": "note_f1", "f0": "oa", "free": None}
+
+
+def test_common_subset_only_when_coverage_differs():
+    def row(ds, m, t):
+        return {"selection": "cv_model", "dataset": ds, "model": m, "track_id": t}
+    chosen = [row("a", "x", "1"), row("a", "x", "2"), row("a", "y", "1"),      # y thiếu bài 2
+              row("b", "x", "1"), row("b", "y", "1")]                            # phủ như nhau: bỏ
+    out = S.common_subset(chosen, "cv_model")
+    assert {(r["dataset"], r["model"], r["track_id"]) for r in out} == {("a", "x", "1"), ("a", "y", "1")}
+    assert all(r["selection"] == "cv_model_common" for r in out)

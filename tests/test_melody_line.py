@@ -1,6 +1,8 @@
 """Test chọn dòng giai điệu (chordtrack.melody.line) bằng dữ liệu tổng hợp, chỉ CPU."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -164,3 +166,22 @@ def test_elementary_matches_bruteforce():
     for k, a in enumerate(active):
         m = (bounds[k] + bounds[k + 1]) / 2
         assert sorted(a.tolist()) == [i for i, n in enumerate(notes) if n.start <= m < n.end]
+
+
+def test_chorus_as_voice_and_gated_combine():
+    assert L.source_class("voice_chorus") == L.VOICE
+    assert L.source_class("voice_chorus", chorus_as_voice=False) == L.MELODIC
+    assert L.source_class("voice", chorus_as_voice=False) == L.VOICE
+    notes = [N(0.0, 1.0, 64, None, "voice_chorus"), N(0.0, 1.0, 72, None, "violin")]
+    p = L.LineParams(strategy="salience", source_mode="strict")
+    assert [n.pitch for n in L.notes_to_line(notes, p)] == [64]
+    assert [n.pitch for n in L.notes_to_line(notes, replace(p, chorus_as_voice=False))] == [72]
+    # cổng giọng: dòng f0 trong khoảng có giọng (nới 0.1 s), dòng model nốt ngoài khoảng đó
+    gate = L.voice_intervals([N(1.0, 2.0, 60, None, "voice"), N(1.95, 3.0, 62, None, "voice"),
+                              N(0.0, 5.0, 40, None, "piano")], pad=0.1)
+    assert gate == [(0.9, 3.1)]
+    primary = [N(0.5, 3.5, 67)]
+    secondary = [N(0.0, 1.0, 70), N(3.0, 5.0, 72)]
+    out = L.combine_gated(primary, secondary, gate)
+    assert [(round(n.start, 2), round(n.end, 2), n.pitch) for n in out] == [(0.0, 0.9, 70), (0.9, 3.1, 67),
+                                                                            (3.1, 5.0, 72)]
