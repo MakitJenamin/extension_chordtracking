@@ -431,6 +431,20 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     CPU, đổi fp16 rồi mới chuyển lên GPU: large còn 3,4 GB. Đo trên Let It Be (243 s, RTX 3060 Ti, trong gpu_lock):
     small 83 s / 0,6 GB, medium 85 s / 1,7 GB, large fp16 179 s / 3,4 GB. Small gần như không nhanh hơn medium vì
     sinh từng token (giới hạn bởi Python, không phải GPU). Coordinator chốt bỏ medium, chỉ cache small và large.
+  - Cache MuScriptor (2026-11-11, `python -m eval.melody.cache_muscriptor`): **small đủ mọi bộ** (212 bài: sanity,
+    orchset 64, adc2004 20, mirex05 13, mir_st500 82, kajiura 32). **Large chỉ tập con** (133 bài): sanity, orchset,
+    adc2004, mirex05 đủ, **mir_st500 25 bài đầu manifest** (401–431), **kajiura 10 bài đầu manifest** (akeboshi →
+    i_beg_you). So large với model khác thì chấm trên đúng tập con này.
+  - Tốc độ (thời gian sinh / thời lượng audio, trong gpu_lock, GPU có agent khác chạy xen): large 0,76 (adc2004,
+    mirex05) đến 1,35 (orchset); mir_st500 25 bài 1,01, kajiura 10 bài 1,31. Small trên cùng tập con: mir_st500 0,24,
+    kajiura 0,48; cả bộ kajiura 0,51, orchset 0,54. Bài càng dày nốt càng chậm (sinh từng token). ⚠️ Large chậm hơn
+    thời gian thực trên nhạc dày → chỉ để biết trần chất lượng; small là ứng viên cho sản phẩm. VRAM đỉnh: small
+    0,65 GB, large fp16 3,4 GB.
+  - Nhạc cụ nhận ra: Let It Be (large) acoustic_piano 1614 nốt, synth_pad 350, distorted_electric_guitar 338,
+    electric_bass 286, voice 250; small tương tự (piano 1503, clean guitar 546, bass 304, voice 252, strings, trumpet).
+    Kajiura "Akeboshi" (large): distorted guitar 3177, bass 880, **voice 464**, string_ensemble 303. Có nốt `voice` ở
+    10/10 bài Kajiura (large) và 31/32 (small), mir_st500 22/25 (large) và 75/82 (small), orchset 0/64 (large) đúng
+    vì là nhạc không lời. Trống tách riêng ở `extras`.
   - **Chấm đầy đủ RMVPE, YourMT3+, Basic Pitch (2026-11-10, 212 bài, `python -m eval.melody.score --jobs 8`)**, CPU
     khoảng 6 phút. Bảng đầy đủ ở `data/eval/results/melody/report.md`. Chọn họ chiến lược + tham số bằng CV 3 phần
     theo bài, mục tiêu cân bằng theo bộ (OA ở bộ f0, F1 onset ở MIR-ST500). Điểm % (OA hoặc F1 onset), một cấu
