@@ -374,6 +374,20 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   dùng đã chấp nhận), YourMT3+, RMVPE, Basic Pitch bằng `mir_eval` trên bộ có đáp án (MIR-ST500, ADC2004, MIREX05,
   Orchset), Kajiura chỉ chấm số không cần đáp án. Khung chung: `MelodyNote`, `PitchTrack`, `MelodyModelOutput` trong
   `types.py`, cache ở `chordtrack/melody/io.py`, hợp đồng ở `eval/melody/README.md`.
+  - **YourMT3+** (`chordtrack/melody/yourmt3.py`, `python -m eval.melody.cache_yourmt3`). Mã lấy từ HF Space
+    `mimbres/YourMT3` commit `5e66c1e` (metadata Space và header từng file: **Apache-2.0**; repo GitHub
+    `mimbres/YourMT3` để GPLv3 nhưng chỉ chứa README). Checkpoint `YPTF.MoE+Multi (noPS)` (mặc định của demo), nằm
+    trong Space nên theo Apache-2.0; tác giả không ghi license riêng cho weights. ⚠️ Dữ liệu huấn luyện có MIR-ST500
+    và nhiều bộ khác, nên điểm trên MIR-ST500 có thể lạc quan.
+  - ⚠️ YourMT3 cần transformers 4.45.1 (dùng nội bộ T5 cũ), bản này đòi huggingface_hub < 1.0, venv có 2.4 (demucs,
+    muscriptor dùng). Cài riêng transformers + huggingface_hub 0.36.2 + tokenizers vào `third_party_src/YourMT3_pydeps`,
+    wrapper tự thêm vào `sys.path`; không nạp chung tiến trình với code đã import huggingface_hub 2.x. Venv chỉ thêm
+    pytorch-lightning 2.6.6 (không đổi torch/numpy).
+  - Demo truyền `-pr 16` nhưng không áp dụng khi suy luận (thực chất fp32). "Let It Be" 243 s: fp32 batch 8 mất 25,7 s,
+    VRAM reserved đỉnh 2,6 GB; fp16 autocast batch 8 chậm hơn (34 s, 1,2 GB); fp16 batch 32: 20,7 s, 4,0 GB. Số nốt và lỗi
+    giải mã gần như nhau. Mặc định fp32 batch 8. Nạp model ~8–11 s.
+  - Let It Be nhận ra: trống 1702 nốt, acoustic piano 1607, **voice 290**, string ensemble, violin, cello, viola,
+    guitar điện/acoustic, bass, choir... (có cả nhạc cụ ảo như violin/cello nhỏ lẻ, cần lọc khi chọn giai điệu).
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
