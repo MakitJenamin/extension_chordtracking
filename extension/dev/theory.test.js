@@ -1,4 +1,4 @@
-// Test cho extension/src/theory.js. Chạy: node --test extension/dev/
+// Test cho extension/src/theory.js. Chạy: node --test extension/dev/theory.test.js
 // Dùng thêm result.json thật ở data/cache nếu có (bỏ qua nếu máy không có dữ liệu).
 const test = require("node:test");
 const assert = require("node:assert/strict");

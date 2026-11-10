@@ -94,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1
 .venv\Scripts\python.exe extension\dev\serve.py
 # 3. mở http://127.0.0.1:8770/watch?v=QDYfEBY9NM4
 ```
-Test JS (hàm thuần của `theory.js`, gồm tên nốt giai điệu, mũi tên, transpose): `node --test extension/dev/`
+Test JS (hàm thuần của `theory.js`, gồm tên nốt giai điệu, mũi tên, transpose): `node --test extension/dev/theory.test.js`
 (đặt `CHORDTRACK_DATA=<checkout chính>\data` để chạy cả test dùng dữ liệu thật khi chạy từ worktree).
 
 - Thanh trên cùng của harness có sẵn: Let It Be (một giọng), Magia (Kajiura, 5 chỗ đổi giọng), "Đang phân tích"
