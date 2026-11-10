@@ -147,9 +147,7 @@ def test_run_yourmt3_reports_child_error(tmp_path, monkeypatch):
     class FakePopen:
         def __init__(self, cmd, *, stdin, stdout, stderr, **kw):
             seen["cmd"] = cmd
-            assert stdin == subprocess.PIPE          # pipe giữ mở để tiến trình con biết khi cha chết
             stderr.write("Traceback...\nFileNotFoundError: Thiếu checkpoint YourMT3: x.ckpt".encode("utf-8"))
-            self.stdin = open(tmp_path / "stdin", "wb")
 
         def wait(self, timeout=None):
             return 1
@@ -157,7 +155,25 @@ def test_run_yourmt3_reports_child_error(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", FakePopen)
     with pytest.raises(RuntimeError, match="Thiếu checkpoint YourMT3"):
         mp.run_yourmt3(tmp_path / "a.wav", tmp_path / "raw" / "yourmt3.npz")
-    assert seen["cmd"][1:3] == ["-m", "chordtrack.melody.yourmt3"] and "--exit-with-parent" in seen["cmd"]
+    assert seen["cmd"][1:3] == ["-m", "chordtrack.melody.yourmt3"] and "--parent-pid" in seen["cmd"]
+
+
+def test_child_exits_with_parent_and_imports_work(tmp_path):
+    """Tiến trình con vẫn import được trong lúc theo dõi tiến trình cha, và thoát khi cha chết."""
+    import subprocess
+    import sys
+
+    child = ("import sys,time; from chordtrack.melody.yourmt3 import exit_with_parent; "
+             "exit_with_parent(int(sys.argv[1])); import numpy; print('ok', flush=True); time.sleep(60)")
+    parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        p = subprocess.Popen([sys.executable, "-c", child, str(parent.pid)], stdout=subprocess.PIPE, text=True)
+        assert p.stdout.readline().strip() == "ok"
+        parent.kill()
+        parent.wait()
+        assert p.wait(timeout=20) == 3
+    finally:
+        parent.kill()
 
 
 def test_cached_raw_steps_only_report_done(fake_models, monkeypatch):
