@@ -1,0 +1,10 @@
+# YourMT3+ (chordtrack/melody/yourmt3.py). Mã nguồn: Hugging Face Space mimbres/YourMT3 (Apache-2.0), clone vào
+# third_party_src/YourMT3; checkpoint YPTF.MoE+Multi (noPS) đặt ở data/models/yourmt3/.
+# Cài vào venv (chỉ thêm gói mới, không đụng torch/numpy):
+#   pip install -r requirements/melody_yourmt3.txt -c requirements/constraints.txt
+pytorch-lightning==2.6.6
+# Dùng thêm einops, librosa, mido: đã có sẵn trong venv.
+#
+# KHÔNG cài vào venv: transformers 4.45.1 đòi huggingface_hub<1.0, venv đang có huggingface_hub 2.x (demucs, muscriptor).
+# Cài riêng vào thư mục mà wrapper tự thêm vào sys.path:
+#   pip install --no-deps --target third_party_src/YourMT3_pydeps transformers==4.45.1 huggingface_hub==0.36.2 tokenizers==0.20.3 regex==2026.11.9
