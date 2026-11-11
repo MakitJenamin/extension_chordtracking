@@ -131,7 +131,7 @@ Extension (`CT.theory.melodyEffective`, `melodyAvail`) đọc `melody_models` kh
   extension, không gọi server. Mức chia mỗi phách (2 hoặc 4) tự chọn theo tempo và độ dày giai điệu
   (`theory.autoSnapDiv`). Bài không có lưới phách thì giữ nguyên. Cài đặt cũ `melodySnap` bị xóa.
 - Nút phân đoạn cạnh nút dò: "Giai điệu: Bình thường | Kỹ" (không dùng tên model), cùng kiểu với Gốc/Phím trắng/Bậc La Mã (nhớ lựa
-  chọn, `CT.settings.melodyModel`, **mặc định `yourmt3`** = Bình thường). Extension luôn gửi `model`. Nút "♪ Dò giai điệu" màu tím cho nổi bật;
+  chọn, `CT.settings.melodyModel`, **mặc định `yourmt3`** = Bình thường). Extension luôn gửi `model`. Nút "♪ Dò giai điệu" màu đỏ cho nổi bật;
   chip tiến độ ghi rõ cách đang dò ("Giai điệu (Bình thường) 45% · …"). Mỗi lần bấm chỉ gửi **một** POST
   cho cách đang chọn; đổi lựa chọn thì chỉ `GET` biến thể đó (đã có thì hiện, chưa có thì hiện nút dò), **không** tự
   gửi job. Job của cách kia vẫn chạy ở nền thì hiện chip nhỏ "Bình thường đang dò… 40%".
