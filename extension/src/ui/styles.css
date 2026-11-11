@@ -416,3 +416,10 @@ html[dark] .ct-strip-wrap { --ct-mel: #b69cff; }
 .ct-seg-sm { align-items: center; }
 .ct-seg-sm button { height: 28px; padding: 0 10px; font-size: 12px; }
 .ct-seg-lbl { padding: 0 2px 0 8px; color: var(--ct-text2); font-size: 14px; line-height: 1; }
+/* Công tắc của dòng giai điệu: "Tách giọng", "Nốt khớp phách" + ô chọn mức chia (chỉ hiện khi bật khớp phách). */
+.ct-melopts { flex-wrap: nowrap; align-items: center; }
+.ct-snapdiv {
+  height: 24px; padding: 0 4px; border-radius: 6px; border: 1px solid var(--ct-line, color-mix(in srgb, var(--ct-text) 20%, transparent));
+  background: var(--ct-bg); color: var(--ct-text); font: inherit; font-size: 12px; cursor: pointer;
+}
+.ct-snapdiv[hidden] { display: none; }

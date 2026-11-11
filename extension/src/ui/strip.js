@@ -59,7 +59,8 @@
         const n = e.target.closest(".ct-note");
         if (n && this.song) {
           this.viewOff = 0;
-          CT.seekTo(this.notes[+n.dataset.i].start + 0.01);
+          const note = this.notes[+n.dataset.i];
+          CT.seekTo((note.start0 ?? note.start) + 0.01);   // nốt đã căn phách: tua tới đầu nốt thật
           return;
         }
         const c = e.target.closest(".ct-chord");
@@ -97,6 +98,7 @@
       this.lastX = null;
       this.viewOff = 0;
       this.returnAt = 0;
+      this.notes = this.melodyLine();     // lưới phách của bài mới
       if (!song) { this.buildMelody(false); return; }
       const frag = document.createDocumentFragment();
       song.beats.forEach((b, i) => {
@@ -140,7 +142,20 @@
     setMelody(melody) {
       if (melody === this.melody) return;
       this.melody = melody || null;
-      this.notes = T().melodyNotes(this.melody);
+      this.notes = this.melodyLine();
+      this.buildMelody(true);
+    }
+
+    /** Nốt của <Melody> đang giữ, căn về lưới phách của bài nếu bật "Nốt khớp phách" (CT.theory.snapNotes). */
+    melodyLine() {
+      const notes = T().melodyNotes(this.melody);
+      const s = CT.settings;
+      return s.melodySnap && this.song ? T().snapNotes(notes, this.song.beats, s.melodySnapDiv === 2 ? 2 : 4) : notes;
+    }
+
+    /** Bật/tắt "Nốt khớp phách" hoặc đổi mức chia: tính lại nốt và dựng lại làn nốt. */
+    resnapMelody() {
+      this.notes = this.melodyLine();
       this.buildMelody(true);
     }
 

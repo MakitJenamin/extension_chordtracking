@@ -298,3 +298,49 @@ test("biến thể dò giai điệu: melodyVariant, melodyModelOk", () => {
   assert.ok(!T.melodyModelOk("combo", y3));
   assert.deepEqual(Object.keys(T.MELODY_MODELS), ["yourmt3", "combo"]);
 });
+
+test("biến thể tách giọng: melodyKey, melodyParts, melodyModelOk", () => {
+  assert.equal(T.melodyKey("yourmt3", false), "yourmt3");
+  assert.equal(T.melodyKey("yourmt3", true), "yourmt3_vocals");
+  assert.equal(T.melodyKey("combo", true), "combo_vocals");
+  assert.equal(T.melodyKey("khac", true), "yourmt3_vocals");
+  assert.deepEqual(T.melodyParts("combo_vocals"), { model: "combo", vocals: true });
+  assert.deepEqual(T.melodyParts("yourmt3"), { model: "yourmt3", vocals: false });
+  assert.deepEqual(T.melodyParts("khac_vocals"), { model: "yourmt3", vocals: false });
+  assert.deepEqual(T.melodyParts(undefined), { model: "yourmt3", vocals: false });
+  assert.deepEqual(T.MELODY_KEYS, ["yourmt3", "yourmt3_vocals", "combo", "combo_vocals"]);
+  const yv = { model: "yourmt3[vocals]", notes: [] };
+  const cv = { model: "yourmt3[vocals]>muscriptor_small", notes: [] };
+  assert.ok(T.melodyModelOk("yourmt3_vocals", yv) && !T.melodyModelOk("yourmt3", yv));
+  assert.ok(T.melodyModelOk("combo_vocals", cv) && !T.melodyModelOk("combo", cv));
+  assert.ok(!T.melodyModelOk("combo_vocals", { notes: [] }));     // server cũ bỏ qua vocals
+  assert.ok(!T.melodyModelOk("combo_vocals", { model: "yourmt3>muscriptor_small", notes: [] }));
+});
+
+test("snapNotes: căn nốt về lưới phách chia 4 / 2, không nốt độ dài 0, không chồng nhau", () => {
+  const beats = [0, 1, 2, 3, 4];                     // 60 BPM: lưới 1/16 = 0.25 s
+  assert.deepEqual(T.beatSubdivisions(beats, 2), [-1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5]);
+  const n = (start, end, pitch = 60) => ({ start, end, pitch, confidence: 0.9 });
+  const out = T.snapNotes([n(0.27, 0.71), n(0.74, 1.2), n(1.2, 1.3)], beats, 4);
+  assert.deepEqual(out.map((x) => [x.start, x.end]), [[0.25, 0.75], [0.75, 1.25], [1.25, 1.5]]);
+  assert.equal(out[0].start0, 0.27);
+  assert.equal(out[2].confidence, 0.9);
+  // Nốt ngắn rơi vào cùng một điểm lưới: kéo cuối tới điểm kế tiếp.
+  assert.deepEqual(T.snapNotes([n(2.01, 2.05)], beats, 4).map((x) => [x.start, x.end]), [[2, 2.25]]);
+  // Chia 2: lưới 0.5 s.
+  assert.deepEqual(T.snapNotes([n(0.3, 0.8)], beats, 2).map((x) => [x.start, x.end]), [[0.5, 1]]);
+  // Nốt dày hơn lưới: không được chồng nhau hay độ dài <= 0 (mốc nào không căn được thì giữ gốc).
+  const dense = [];
+  for (let t = 0.0; t < 3; t += 0.07) dense.push(n(+t.toFixed(3), +(t + 0.06).toFixed(3), 60 + (dense.length % 5)));
+  const d = T.snapNotes(dense, beats, 4);
+  assert.equal(d.length, dense.length);
+  for (let i = 0; i < d.length; i++) {
+    assert.ok(d[i].end > d[i].start, `nốt ${i} độ dài > 0`);
+    if (i) assert.ok(d[i].start >= d[i - 1].end - 1e-9, `nốt ${i} không chồng nốt trước`);
+  }
+  // Ngoài lưới (xa hơn một phách sau phách cuối) giữ nguyên; không có phách thì trả lại như cũ.
+  assert.deepEqual(T.snapNotes([n(7.1, 7.3)], beats, 4).map((x) => [x.start, x.end]), [[7.1, 7.3]]);
+  const raw = [n(1.1, 1.2)];
+  assert.equal(T.snapNotes(raw, [], 4), raw);
+  assert.deepEqual(T.snapNotes([], beats), []);
+});

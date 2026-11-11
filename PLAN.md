@@ -576,6 +576,27 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     dựng lại từ đầu ra thô đã lưu (vài giây). ↻ trên bản mới vẫn là dò lại thật.
   - Còn mở: chưa so hai biến thể bằng tai trên bài có đoạn không lời dài; theo eval thì bản YourMT3+ hụt ở đoạn dàn
     nhạc. ETA của job YourMT3+ báo ~42 s cả khi có sẵn đầu ra thô (job xong trong ~1 s).
+- [x] **Tách giọng BS-Roformer và căn nốt về phách cho dò giai điệu (2026-11-11).** Người dùng bỏ việc chấm trên
+  212 bài, muốn tích hợp thẳng rồi tự nghe. Hợp đồng ở `docs/melody_api.md`.
+  - Backend: cờ `vocals` (POST /melody, `GET ?vocals=1`) kết hợp với `yourmt3` và `combo` → 4 biến thể
+    (`pipeline.VARIANTS`, khóa `yourmt3_vocals`, `combo_vocals`; `<Melody>.model` `yourmt3[vocals]`,
+    `yourmt3[vocals]>muscriptor_small`; file `melody_yourmt3_vocals.json`, `melody_vocals.json`; job
+    `melody_yourmt3_vocals`, `melody_combo_vocals`). Bước `melody_separate`: `separation._run_roformer` ghi
+    `vocals.wav` + `instrumental.wav` vào `data/cache/<id>/` qua `separation.separate_vocals` (pipeline hợp âm sẽ dùng
+    lại; xóa bass/no_bass cũ như `separate()`; đã có thì không tách lại, trừ `force`). YourMT3+ trên stem (đầu ra thô `melody_raw/yourmt3_vocals.npz`, dùng chung hai bản tách giọng);
+    cổng giọng = nốt `voice` của YourMT3+ trên stem nới 0,6 s; ngoài cổng YourMT3+ trên mix (bước
+    `melody_voice_mix`) hoặc MuScriptor small. Tham số chép theo bản ghép, **chưa chấm điểm** trên bộ eval.
+  - Đo thật trên Let It Be (243 s, file cục bộ, chưa có đầu ra thô nào): bản YourMT3+ tách giọng 109 s = tách giọng
+    49,7 s + YourMT3+ stem 23,3 s + YourMT3+ mix 36,0 s; tức **thêm ~73 s** so với chỉ YourMT3+. VRAM đỉnh: Roformer
+    1,6 GB (allocated), YourMT3+ trên stem 1,6 GB, trên mix 2,6 GB (reserved). Bản ghép tách giọng ngay sau đó: dùng lại
+    stem và YourMT3+ stem, chỉ chạy MuScriptor 89 s. Nốt từ 13 s: G3 A3 G3 C4 D4 E4 E4 D4 C4 (đúng câu đầu), 72% nốt
+    của dòng có nguồn `voice`. (Lúc đo task cache stem trên bộ eval: Roformer 48,5 s cho Let It Be, 0,2× thời gian thực.)
+    Kajiura "Akeboshi" (273 s, bản YourMT3+ tách giọng): 131 s = tách 56,0 + stem 25,1 + mix 49,5; 556 nốt, 85% nguồn
+    `voice` (còn lại violin, guitar distortion, string ensemble ở đoạn không lời). VRAM đỉnh YourMT3+ mix 3,0 GB.
+  - Extension: công tắc "Tách giọng" (`melodyVocals`) cạnh nút "♪ YourMT3+ | Ghép", trạng thái theo khóa
+    `theory.melodyKey`; "Nốt khớp phách" (`melodySnap`, mặc định tắt) + ô 1/16 | 1/8: `theory.snapNotes` căn mốc
+    đầu/cuối nốt về lưới phách chia nhỏ của `song.beats`, nốt bị căn về độ dài 0 thì kéo cuối tới điểm lưới kế, chỗ
+    chồng nhau / quá ngắn thì trả mốc gốc.
 - [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
   - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
     đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.

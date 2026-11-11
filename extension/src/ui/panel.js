@@ -38,7 +38,10 @@
     { code: "KeyG", key: "G", label: "Ẩn/hiện dòng giai điệu", run: () => CT.setSettings({ showMelody: CT.settings.showMelody === false }) },
   ];
   // Bước của job dò giai điệu (docs/melody_api.md).
-  const MELODY_STEPS = { fetch: "Tải audio", melody_voice: "Dò giọng hát", melody_fill: "Dò nhạc cụ", melody_line: "Ghép dòng nốt" };
+  // Tách giọng thêm vào mỗi bài (lần đầu): BS-Roformer ~50 s + YourMT3+ trên stem ~23 s, đo trên "Let It Be" 243 s.
+  const VOCALS_EXTRA = "75 giây";
+  const MELODY_STEPS = { fetch: "Tải audio", melody_separate: "Tách giọng", melody_voice: "Dò giọng hát",
+    melody_voice_mix: "Dò bản mix", melody_fill: "Dò nhạc cụ", melody_line: "Ghép dòng nốt" };
   const etaText = (eta) => (eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
     : `còn khoảng ${Math.round(eta / 60)} phút`);
   const sc = (code) => "Alt+Shift+" + SHORTCUTS.find((s) => s.code === code).key;
@@ -164,8 +167,17 @@
         h("span", { class: "ct-seg-lbl", "aria-hidden": "true" }, "♪"),
         ...Object.entries(MM).map(([k, v]) => h("button", { type: "button", "data-v": k, title: `${v.label}. ${v.tip}`,
           onclick: () => CT.setSettings({ melodyModel: k }) }, v.short)));
+      // Hai công tắc của dòng giai điệu: tách giọng (biến thể khác, cần dò riêng) và căn nốt về phách (chỉ hiển thị).
+      this.snapDiv = h("select", { class: "ct-snapdiv", "aria-label": "Mức chia phách khi căn nốt",
+        title: "Mức chia mỗi phách khi căn nốt: 1/16 (4 phần mỗi phách) hoặc 1/8 (2 phần), tính theo nhịp x/4",
+        onchange: (e) => CT.setSettings({ melodySnapDiv: +e.target.value || 4 }) },
+        h("option", { value: "4" }, "1/16"), h("option", { value: "2" }, "1/8"));
+      this.melOpts = h("span", { class: "ct-opts ct-melopts" },
+        check("melodyVocals", "Tách giọng", `${T().MELODY_VOCALS_TIP} Chậm hơn khoảng ${VOCALS_EXTRA} cho bài 4 phút (lần đầu mỗi bài). Mỗi lựa chọn là một bản dò riêng: chưa dò thì bấm “Dò giai điệu”`),
+        check("melodySnap", "Nốt khớp phách", "Căn đầu/cuối nốt giai điệu về lưới phách (chia theo ô bên cạnh) để dễ đọc nhịp. Chỉ đổi cách hiện, không dò lại"),
+        this.snapDiv);
       this.opts = h("div", { class: "ct-controls" },
-        this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox), h("span", { class: "ct-grow" }),
+        this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox, this.melOpts), h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
@@ -194,8 +206,10 @@
       const box = this.melBox;
       if (!box) return;
       const m = this.mel || { status: "unknown" };
-      const variant = T().melodyVariant(m.model || CT.settings.melodyModel);
-      const fast = variant === "yourmt3";
+      const parts = T().melodyParts(m.model || T().melodyKey(CT.settings.melodyModel, !!CT.settings.melodyVocals));
+      const variant = parts.model;
+      const fast = variant === "yourmt3" && !parts.vocals;
+      const label = T().MELODY_MODELS[variant].label + (parts.vocals ? ", tách giọng" : "");
       const run = (force) => () => CT.app && CT.app.detectMelody(force);
       const btn = (kids, tip, onclick, cls = "ct-btn") => h("button", { type: "button", class: cls, title: tip, onclick }, ...kids);
       let kids;
@@ -227,7 +241,7 @@
         if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để cập nhật", text: "bản cũ" }));
       } else {
         kids = [btn(["♪ Dò giai điệu"],
-          `Dò dòng nốt giai điệu bằng AI trên máy (${T().MELODY_MODELS[variant].label}; chạy riêng, mất ${fast ? "khoảng 1 phút" : "vài phút"}). Kết quả hiện dưới dải hợp âm`, run(false))];
+          `Dò dòng nốt giai điệu bằng AI trên máy (${label}; chạy riêng, mất ${fast ? "khoảng 1 phút" : "vài phút"}). Kết quả hiện dưới dải hợp âm`, run(false))];
       }
       box.replaceChildren(...kids);
     },
@@ -270,6 +284,8 @@
       this.metroBtn.classList.toggle("ct-on", !!s.metronome);
       this.volEl.value = Math.round((s.metronomeVolume ?? 0.6) * 100);
       for (const c of this.opts.querySelectorAll("input[data-k]")) c.checked = !!s[c.dataset.k];
+      this.snapDiv.value = String(s.melodySnapDiv === 2 ? 2 : 4);
+      this.snapDiv.hidden = !s.melodySnap;
       const col = !!s.panelCollapsed;
       this.el.classList.toggle("ct-collapsed", col);
       this.collapseBtn.textContent = col ? "▾" : "▴";
@@ -535,6 +551,15 @@
   });
   /** Dải cao/thấp đi khi làn nốt hiện/ẩn: lớp phủ toàn màn hình đặt lại vị trí phụ đề theo chiều cao mới. */
   function refitOverlay() { if (CT.ui.fullscreen && CT.ui.fullscreen.on) CT.ui.fullscreen.syncControls(); }
+  // "Nốt khớp phách" / mức chia: tính lại vị trí nốt trên dải (không gọi server).
+  const snapSig = (st) => `${!!st.melodySnap}|${st.melodySnapDiv}`;
+  let lastMelSnap = snapSig(CT.settings);
+  CT.bus.on("settings", (st) => {
+    const sig = snapSig(st);
+    if (sig === lastMelSnap) return;
+    lastMelSnap = sig;
+    CT.ui.strip.resnapMelody();
+  });
   let lastShowMel = CT.settings.showMelody !== false;
   CT.bus.on("settings", (st) => {
     const on = st.showMelody !== false;

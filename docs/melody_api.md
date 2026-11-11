@@ -8,12 +8,28 @@ Thêm (2026-11-11): tùy chọn **chỉ YourMT3+** (`"model": "yourmt3"`), bỏ 
 3-4 lần. Theo `report.md`, YourMT3+ một mình hơn cách ghép ở F1 nốt giọng hát (MIR-ST500 53.1 so với 49.0) nhưng kém
 khoảng 10 điểm OA ở đoạn dàn nhạc / nhạc không lời (ORCHSET 43.0 so với 53.2). Mặc định vẫn là ghép.
 
-## Biến thể (`model`)
+Thêm (2026-11-11): cờ **tách giọng** `"vocals": true`, kết hợp được với cả hai `model`. BS-Roformer
+(BS-Roformer-Viperx-1297, như bước tách nguồn của pipeline hợp âm) tách stem giọng `CACHE_DIR/<song_id>/vocals.wav`
+(dùng lại nếu đã có), YourMT3+ chạy trên stem giọng; đoạn có giọng (nốt `voice` của YourMT3+ trên stem, nới 0,6 s) lấy
+dòng đó, đoạn không giọng lấy YourMT3+ trên mix (`model: "yourmt3"`) hoặc MuScriptor small trên mix (`model: "combo"`).
+Chưa chấm trên bộ eval, người dùng tự nghe thử. Thêm khoảng 75 giây cho bài 4 phút ở lần đầu (tách giọng ~50 s,
+YourMT3+ trên stem ~23 s).
 
-| `model` (request) | `<Melody>.model` | File cache | `kind` của job | Các bước |
-|---|---|---|---|---|
-| `"combo"` (mặc định) | `"yourmt3>muscriptor_small"` | `melody.json` | `"melody"` | `fetch`, `melody_voice`, `melody_fill`, `melody_line` |
-| `"yourmt3"` | `"yourmt3"` | `melody_yourmt3.json` | `"melody_yourmt3"` | `fetch`, `melody_voice`, `melody_line` |
+## Biến thể (`model` + `vocals`)
+
+| `model`, `vocals` (request) | khóa biến thể | `<Melody>.model` | File cache | `kind` của job | Các bước |
+|---|---|---|---|---|---|
+| `"combo"` (mặc định), `false` | `combo` | `"yourmt3>muscriptor_small"` | `melody.json` | `"melody"` | `fetch`, `melody_voice`, `melody_fill`, `melody_line` |
+| `"yourmt3"`, `false` | `yourmt3` | `"yourmt3"` | `melody_yourmt3.json` | `"melody_yourmt3"` | `fetch`, `melody_voice`, `melody_line` |
+| `"yourmt3"`, `true` | `yourmt3_vocals` | `"yourmt3[vocals]"` | `melody_yourmt3_vocals.json` | `"melody_yourmt3_vocals"` | `fetch`, `melody_separate`, `melody_voice`, `melody_voice_mix`, `melody_line` |
+| `"combo"`, `true` | `combo_vocals` | `"yourmt3[vocals]>muscriptor_small"` | `melody_vocals.json` | `"melody_combo_vocals"` | `fetch`, `melody_separate`, `melody_voice`, `melody_fill`, `melody_line` |
+
+Ở bản tách giọng, `melody_voice` là YourMT3+ trên stem giọng, `melody_voice_mix` là YourMT3+ trên mix. Đầu ra thô
+dùng lại tối đa giữa các biến thể: `melody_raw/yourmt3.npz` (YourMT3+ mix), `yourmt3_vocals.npz` (YourMT3+ stem),
+`muscriptor_small.npz`, và `vocals.wav` (đầu ra thô trên stem ghi dấu file `vocals.wav`; stem bị tách lại thì chạy
+lại). `force` chạy lại các model của biến thể được gửi, bản tách giọng tách lại cả stem (bass của pipeline hợp âm làm
+từ instrumental cũ bị xóa để lần phân tích sau tách lại);
+đầu ra thô nào chạy lại thì kết quả các biến thể khác dùng nó bị đánh dấu cũ (`"raw-changed"`).
 
 - Mỗi biến thể có cache và job riêng: job theo (song_id, biến thể), nên hai biến thể không chặn nhau; gửi trùng cùng
   biến thể thì trả lại job đang chờ/chạy đó. Hai job vẫn chạy lần lượt trên cùng một worker (GPU 8 GB).
@@ -33,25 +49,30 @@ khoảng 10 điểm OA ở đoạn dàn nhạc / nhạc không lời (ORCHSET 43
 
 ### `POST /melody`
 
-Body JSON: `{"source": "<videoId hoặc URL YouTube>", "force": false, "model": "combo"}` (`model` tùy chọn, mặc
-định `"combo"`; body không có `model` là cách ghép như trước). Giống `POST /analyze`:
+Body JSON: `{"source": "<videoId hoặc URL YouTube>", "force": false, "model": "combo", "vocals": false}` (`model`
+tùy chọn, mặc định `"combo"`; `vocals` tùy chọn, mặc định `false`; body không có hai trường này là cách ghép như
+trước). Giống `POST /analyze`:
 
 - Đã có kết quả (đúng `code_revision`) và không `force`: `{"status": "done", "song_id": "...", "melody": <Melody>}`.
 - Ngược lại tạo (hoặc trả lại) job: `{"status": "queued" | "running", "job_id": "...", "song_id": "..."}`.
 
 Theo dõi job bằng `GET /jobs/{job_id}` như cũ (cùng dạng `status`, `step`, `progress`, `eta_seconds`, `message`,
 `error`). Job hợp âm có `"kind": "analyze"`; job dò giai điệu có `"kind": "melody"` (ghép) hoặc `"melody_yourmt3"`
-(chỉ YourMT3+), kèm `"model": "combo" | "yourmt3"`. Các bước: `fetch` (dùng lại audio đã tải nếu có),
-`melody_voice` (YourMT3+), `melody_fill` (MuScriptor small, chỉ biến thể ghép), `melody_line` (ghép / tạo dòng nốt).
+(chỉ YourMT3+), `"melody_yourmt3_vocals"`, `"melody_combo_vocals"` (tách giọng), kèm `"model": "combo" | "yourmt3"`
+và `"vocals": bool`. Các bước: `fetch` (dùng lại audio đã tải nếu có), `melody_separate` (BS-Roformer, chỉ bản tách
+giọng), `melody_voice` (YourMT3+, trên stem giọng nếu tách giọng), `melody_voice_mix` (YourMT3+ trên mix, chỉ bản
+YourMT3+ tách giọng), `melody_fill` (MuScriptor small, chỉ bản ghép), `melody_line` (ghép / tạo dòng nốt).
 
-### `GET /melody/{song_id}?model=combo|yourmt3`
+### `GET /melody/{song_id}?model=combo|yourmt3&vocals=0|1`
 
-Trả `<Melody>` của biến thể `model` (mặc định `combo`), 404 nếu biến thể đó chưa có. Kết quả mã cũ trả kèm header `X-Chordtrack-Stale: 1` như `/result`.
+Trả `<Melody>` của biến thể (`model`, `vocals`) (mặc định `combo`, không tách giọng), 404 nếu biến thể đó chưa có. Kết quả mã cũ trả kèm header `X-Chordtrack-Stale: 1` như `/result`.
 
 ### `GET /health`
 
 Thêm trường `"melody": true | false` (đã cài đủ model cho biến thể ghép chưa) và
-`"melody_models": {"combo": bool, "yourmt3": bool}` (từng biến thể; `yourmt3` chỉ cần YourMT3+).
+`"melody_models": {"combo": bool, "yourmt3": bool, "yourmt3_vocals": bool, "combo_vocals": bool}` (từng biến thể
+theo khóa; `yourmt3` chỉ cần YourMT3+, bản `*_vocals` cần thêm gói `audio-separator`). Extension gửi `vocals` chỉ khi
+khóa biến thể có trong `melody_models` (server cũ không có thì báo cần cập nhật server).
 
 ## `<Melody>`
 
@@ -80,6 +101,11 @@ Thêm trường `"melody": true | false` (đã cài đủ model cho biến thể
 - Nốt `uncertain` hiện **mờ**.
 - Dịch giọng (`transpose` và chế độ hiển thị của hợp âm) áp dụng cho cả nốt giai điệu: tên nốt tính từ `pitch + transpose`.
 - Có nút **"Dò giai điệu"**: bấm mới gửi `POST /melody`, hiện tiến độ job; đã có kết quả thì tự tải bằng `GET /melody/{id}`.
+- Công tắc "Tách giọng" (`CT.settings.melodyVocals`, mặc định tắt, nhớ lựa chọn) cạnh nút phân đoạn: chọn bản tách
+  giọng của model đang chọn; như đổi model, đã có thì hiện, chưa có thì hiện nút dò (không tự chạy job).
+- Công tắc "Nốt khớp phách" (`CT.settings.melodySnap`, mặc định tắt) và ô mức chia 1/16 | 1/8
+  (`melodySnapDiv` 4 | 2): căn đầu/cuối nốt về lưới phách `song.beats` của kết quả hợp âm (`theory.snapNotes`), chỉ ở
+  extension, không gọi server.
 - Nút phân đoạn cạnh nút dò: "♪ YourMT3+ | Ghép", cùng kiểu với Gốc/Phím trắng/Bậc La Mã (nhớ lựa chọn,
   `CT.settings.melodyModel`, **mặc định `yourmt3`**, người dùng chốt 2026-11-11). Extension luôn gửi `model`. Nút dò và
   lần tự tải dùng biến thể đang chọn; đổi lựa chọn thì tải biến thể đó nếu đã có, chưa có thì hiện trạng thái chưa dò

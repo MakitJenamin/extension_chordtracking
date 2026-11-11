@@ -147,8 +147,8 @@ Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ 
 | `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
 | `GET /songs` | Danh sách bài đã phân tích |
-| `POST /melody` | Dò giai điệu, giống `/analyze`; `"model": "combo"` (mặc định, job `kind: "melody"`) hoặc `"yourmt3"` (job `melody_yourmt3`); hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
-| `GET /melody/{song_id}?model=combo\|yourmt3` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
+| `POST /melody` | Dò giai điệu, giống `/analyze`; `"model": "combo"` (mặc định, job `kind: "melody"`) hoặc `"yourmt3"` (job `melody_yourmt3`), thêm `"vocals": true` để tách giọng BS-Roformer trước (job `melody_<model>_vocals`, thêm ~75 s mỗi bài 4 phút); hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
+| `GET /melody/{song_id}?model=combo\|yourmt3&vocals=0\|1` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType application/json -Body '{"source": "QDYfEBY9NM4"}'

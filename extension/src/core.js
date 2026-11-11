@@ -37,6 +37,8 @@
  *                    | "ready" (có melody) | "error" (có error {code, message})
  *   CT.state.melody                  <Melody> đang hiện (hoặc null)
  *   CT.settings.showMelody           hiện dòng giai điệu dưới dải hợp âm (mặc định bật, nhớ lựa chọn)
+ *   CT.settings.melodyVocals         dò giai điệu bản tách giọng (cờ `vocals` của POST /melody, mặc định tắt)
+ *   CT.settings.melodySnap           căn nốt giai điệu về lưới phách khi hiển thị (mặc định tắt); melodySnapDiv 4 | 2
  *   CT.app.detectMelody(force)       bấm "Dò giai điệu": POST /melody và theo dõi job
  */
 (() => {
@@ -64,6 +66,9 @@
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
     melodyModel: "yourmt3",   // biến thể dò giai điệu: "yourmt3" (chỉ YourMT3+, mặc định) | "combo" (ghép YourMT3+ + MuScriptor)
+    melodyVocals: false,      // tách giọng (BS-Roformer) trước khi dò: đoạn có giọng lấy YourMT3+ trên stem giọng
+    melodySnap: false,        // căn đầu/cuối nốt giai điệu về lưới phách (CT.theory.snapNotes), chỉ để hiển thị
+    melodySnapDiv: 4,         // số phần chia mỗi phách khi căn nốt: 4 (nốt 1/16 ở nhịp x/4) | 2 (nốt 1/8)
     settingsRev: 3,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
