@@ -94,9 +94,9 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # 10–20 phút l�
 Script tự cài Python, PyTorch, model, ffmpeg, Deno. Tùy chọn: `-Cpu`, `-Full`, `-Melody`, `-NoTools`.
 
 **🎵 Dò giai điệu (tùy chọn, `-Melody`):** thêm YourMT3+ và MuScriptor small (khoảng 1 GB, mỗi bài 2–3 phút trên GPU).
-Trong panel chọn được **"Ghép"** (mặc định: YourMT3+ ở đoạn hát, MuScriptor small ở phần còn lại, tốt hơn với nhạc
-không lời) hoặc **"Chỉ YourMT3+"** (khoảng 40 giây cho bài 4 phút, bắt giọng hát tốt bằng hoặc hơn, kém ở đoạn dàn
-nhạc). Bài đã dò bằng một cách thì cách kia không phải chạy lại YourMT3+.
+Trong panel chọn **♪ YourMT3+** (mặc định: khoảng 40 giây cho bài 4 phút, bắt giọng hát tốt) hoặc **Ghép** (YourMT3+
+ở đoạn hát, MuScriptor small ở phần còn lại: chậm hơn, tốt hơn với đoạn nhạc không lời). Server vẫn coi `combo` là
+mặc định khi body không có `model`; extension luôn gửi `model`. Bài đã dò bằng một cách thì cách kia không phải chạy lại YourMT3+.
 Weights MuScriptor theo license **CC BY-NC 4.0 (chỉ dùng phi thương mại)** và để ở repo gated trên Hugging Face, nên
 cần tài khoản Hugging Face. Sau khi chạy `setup.ps1` như trên:
 

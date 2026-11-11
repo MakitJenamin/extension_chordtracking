@@ -392,15 +392,18 @@
   }
 
   /* Biến thể dò giai điệu (`model` của POST /melody, docs/melody_api.md). `model`: giá trị <Melody>.model. */
+  // Thứ tự khóa = thứ tự nút trên panel. Mặc định "yourmt3" (người dùng chốt 2026-11-11: nghe thấy tốt hơn).
   const MELODY_MODELS = {
-    combo: { model: "yourmt3>muscriptor_small", short: "Ghép", label: "Ghép (chính xác hơn với nhạc không lời)",
-      tip: "YourMT3+ ở đoạn có giọng hát, MuScriptor small ở phần còn lại. Chậm hơn (khoảng 2–3 phút cho bài 4 phút) nhưng bắt giai điệu nhạc cụ tốt hơn" },
     yourmt3: { model: "yourmt3", short: "YourMT3+", label: "Chỉ YourMT3+ (nhanh hơn)",
-      tip: "Chỉ dùng YourMT3+: nhanh hơn khoảng 3–4 lần (dưới 1 phút cho bài 4 phút), bắt giọng hát tốt bằng hoặc hơn, kém hơn ở đoạn nhạc không lời" },
+      tip: "Chỉ dùng YourMT3+: dưới 1 phút cho bài 4 phút, bắt giọng hát tốt" },
+    combo: { model: "yourmt3>muscriptor_small", short: "Ghép", label: "Ghép YourMT3+ và MuScriptor",
+      tip: "YourMT3+ ở đoạn có giọng hát, MuScriptor small ở phần còn lại. Chậm hơn (khoảng 2–3 phút cho bài 4 phút) nhưng bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn" },
   };
-  const MELODY_DEFAULT = "combo";
+  const MELODY_DEFAULT = "yourmt3";
+  // Biến thể của kết quả cũ không có trường `model` (trước khi có tùy chọn, server chỉ có bản ghép).
+  const MELODY_LEGACY = "combo";
 
-  /** Biến thể hợp lệ từ cài đặt (giá trị lạ hoặc thiếu: mặc định "combo"). */
+  /** Biến thể hợp lệ từ cài đặt (giá trị lạ hoặc thiếu: mặc định "yourmt3"). */
   function melodyVariant(v) { return Object.prototype.hasOwnProperty.call(MELODY_MODELS, v) ? v : MELODY_DEFAULT; }
 
   /** <Melody> có đúng là của biến thể `variant` không. Server cũ bỏ qua `?model=` và trả bản ghép, nên bản
@@ -408,13 +411,13 @@
   function melodyModelOk(variant, melody) {
     const want = MELODY_MODELS[melodyVariant(variant)].model;
     const got = melody && melody.model;
-    return got === want || (melodyVariant(variant) === MELODY_DEFAULT && !got);
+    return got === want || (melodyVariant(variant) === MELODY_LEGACY && !got);
   }
 
   /** Tên ngắn của biến thể đang hiển thị, từ <Melody>.model ("Ghép", "YourMT3+"; model lạ: giữ nguyên). */
   function melodyModelName(model) {
     for (const v of Object.values(MELODY_MODELS)) if (v.model === model) return v.short;
-    return model ? String(model) : MELODY_MODELS[MELODY_DEFAULT].short;
+    return model ? String(model) : MELODY_MODELS[MELODY_LEGACY].short;
   }
 
   const theory = {

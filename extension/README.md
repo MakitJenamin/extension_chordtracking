@@ -34,7 +34,7 @@ extension, không đọc hay gửi dữ liệu gì. Lần đầu (bản đang n�
 | Ô "Đặt transpose đàn" | Giá trị nút transpose của đàn cho vùng giọng đang phát; chuyển vàng và đếm ngược 8 giây trước chỗ đổi giọng | |
 | Metronome + thanh âm lượng | Tiếng phách theo `beats` của bài (src/metronome.js) | Alt+Shift+M |
 | ♪ Dò giai điệu | Dò dòng nốt giai điệu (`POST /melody`, job riêng, chỉ chạy khi bấm; hiện tiến độ, bước, thời gian còn lại). Bài đã dò thì tự tải khi bật ChordTrack (`GET /melody/{id}`) | |
-| Ô chọn cạnh nút dò | "Ghép (chính xác hơn với nhạc không lời)" hoặc "Chỉ YourMT3+ (nhanh hơn)" (nhớ lựa chọn, `CT.settings.melodyModel`). Đổi lựa chọn thì hiện bản đã dò của cách đó, chưa có thì hiện nút dò (không tự chạy). Chữ nhỏ cạnh công tắc "Giai điệu" cho biết dòng nốt đang hiện dò bằng cách nào | |
+| Nút "♪ YourMT3+ \| Ghép" cạnh nút dò | Chọn cách dò, mặc định YourMT3+ (nhớ lựa chọn, `CT.settings.melodyModel`). Đổi lựa chọn thì hiện bản đã dò của cách đó, chưa có thì hiện nút dò (không tự chạy). Nút đang sáng là cách của dòng nốt đang hiện | |
 | Công tắc "Giai điệu" / ↻ | Ẩn/hiện dòng nốt (nhớ lựa chọn, `CT.settings.showMelody`); ↻ dò lại (bỏ kết quả đã lưu) | Alt+Shift+G |
 | ▴ / ▾ | Thu gọn khung (chỉ còn hợp âm hiện tại và chấm phách) | Alt+Shift+H |
 | Bấm hợp âm / đoạn | Tua video tới đó | |

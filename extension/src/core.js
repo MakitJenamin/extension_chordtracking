@@ -63,7 +63,7 @@
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
-    melodyModel: "combo",     // biến thể dò giai điệu: "combo" (ghép YourMT3+ + MuScriptor) | "yourmt3" (chỉ YourMT3+)
+    melodyModel: "yourmt3",   // biến thể dò giai điệu: "yourmt3" (chỉ YourMT3+, mặc định) | "combo" (ghép YourMT3+ + MuScriptor)
     settingsRev: 2,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
