@@ -19,6 +19,11 @@
 ---
 
 <p align="center">
+  <img src="docs/img/demo.gif" alt="Dải hợp âm và dòng giai điệu chạy theo video">
+  <br><sub>🎬 Hợp âm (kèm bậc La Mã) và dòng giai điệu trượt theo video, vạch đỏ là chỗ đang phát</sub>
+</p>
+
+<p align="center">
   <img src="docs/img/fullscreen.jpg" alt="ChordTrack khi xem toàn màn hình">
   <br><sub>🖥️ Toàn màn hình: dải hợp âm đè lên video, ngay trên thanh điều khiển, chữ luôn rõ để vừa xem vừa đàn</sub>
 </p>
