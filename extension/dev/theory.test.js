@@ -282,7 +282,7 @@ test("Magia: dòng nốt giả ở chế độ Phím trắng hầu hết là ph�
   for (let i = 1; i < notes.length; i++) assert.ok(notes[i].start >= notes[i - 1].start);
 });
 
-test("biến thể dò giai điệu: melodyVariant, melodyModelOk, melodyModelName", () => {
+test("biến thể dò giai điệu: melodyVariant, melodyModelOk", () => {
   assert.equal(T.melodyVariant("yourmt3"), "yourmt3");
   assert.equal(T.melodyVariant("combo"), "combo");
   for (const bad of [undefined, null, "", "khac", "toString", "__proto__"]) assert.equal(T.melodyVariant(bad), "yourmt3");
@@ -296,9 +296,5 @@ test("biến thể dò giai điệu: melodyVariant, melodyModelOk, melodyModelNa
   assert.ok(!T.melodyModelOk("yourmt3", combo));               // server cũ bỏ qua ?model= và trả bản ghép
   assert.ok(!T.melodyModelOk("yourmt3", { notes: [] }));
   assert.ok(!T.melodyModelOk("combo", y3));
-  assert.equal(T.melodyModelName("yourmt3"), "YourMT3+");
-  assert.equal(T.melodyModelName("yourmt3>muscriptor_small"), "Ghép");
-  assert.equal(T.melodyModelName("model_moi"), "model_moi");
-  assert.equal(T.melodyModelName(undefined), "Ghép");
   assert.deepEqual(Object.keys(T.MELODY_MODELS), ["yourmt3", "combo"]);
 });

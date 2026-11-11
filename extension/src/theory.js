@@ -414,18 +414,12 @@
     return got === want || (melodyVariant(variant) === MELODY_LEGACY && !got);
   }
 
-  /** Tên ngắn của biến thể đang hiển thị, từ <Melody>.model ("Ghép", "YourMT3+"; model lạ: giữ nguyên). */
-  function melodyModelName(model) {
-    for (const v of Object.values(MELODY_MODELS)) if (v.model === model) return v.short;
-    return model ? String(model) : MELODY_MODELS[MELODY_LEGACY].short;
-  }
-
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
     DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit,
-    MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyModelName,
+    MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
   else window.CT.theory = theory;
