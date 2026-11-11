@@ -597,6 +597,12 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     `theory.melodyKey`; "Nốt khớp phách" (`melodySnap`, mặc định tắt) + ô 1/16 | 1/8: `theory.snapNotes` căn mốc
     đầu/cuối nốt về lưới phách chia nhỏ của `song.beats`, nốt bị căn về độ dài 0 thì kéo cuối tới điểm lưới kế, chỗ
     chồng nhau / quá ngắn thì trả mốc gốc.
+  - Thử trên YouTube thật sau khi merge (#72, server 8765 khởi động lại từ main, Chrome): panel vẫn một hàng
+    ("♪ YourMT3+ | Ghép", nút dò, "Tách giọng", "Nốt khớp phách"). Bật "Tách giọng": hiện nút "Dò giai điệu", dòng nốt
+    ẩn, không tự chạy job. Chọn YourMT3+, bấm dò: "Đang tách giọng hát (BS-Roformer)" → "Đang dò giọng hát trên stem
+    giọng (YourMT3+)" → xong sau ~74 s (server: tách 52,6 s, stem 26,4 s, YourMT3+ mix dùng lại), 455 nốt. Bật "Nốt
+    khớp phách": nốt căn vào lưới, ô 1/16 hiện; đổi 1/8 vẫn 455 nốt, không nốt nào chồng nhau hay rộng 0. ETA đầu
+    job báo ~2 phút vì tính cả bước YourMT3+ mix (36 s) dù đã có sẵn.
 - [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
   - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
     đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.
