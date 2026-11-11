@@ -90,8 +90,8 @@ Cột phải liệt kê **từng đoạn** của bài: vòng hợp âm, bậc La
 |---|---|
 | 💻 Hệ điều hành | Windows 10 hoặc 11 (64-bit) |
 | 🎮 GPU | NVIDIA khuyến nghị (đã thử RTX 3060 Ti 8 GB). Không có GPU vẫn chạy được bằng CPU nhưng chậm hơn nhiều |
-| 💾 Ổ đĩa | Khoảng __DISK__ trống (PyTorch bản CUDA chiếm phần lớn) |
-| 🌐 Mạng | Tải khoảng __DL__ ở lần cài đầu |
+| 💾 Ổ đĩa | Khoảng 10 GB trống (cài xong chiếm 7,3 GB, PyTorch bản CUDA đã 4 GB) |
+| 🌐 Mạng | Tải khoảng 5 GB ở lần cài đầu |
 | 🧭 Trình duyệt | Google Chrome (hoặc trình duyệt nhân Chromium cho nạp extension) |
 
 Python 3.11, git, ffmpeg và Deno: chưa có thì script tự cài bằng `winget`.
@@ -110,11 +110,17 @@ Script tự làm hết: Python 3.11 → `.venv` → PyTorch (bản CUDA nếu th
 ffmpeg, Deno → chạy thử. Cuối cùng in **tóm tắt**: thời gian từng bước, có GPU không, và dò giai điệu bật được những gì.
 Chạy lại nhiều lần không sao, bước nào xong rồi sẽ bỏ qua.
 
-Đo thật trên máy RTX 3060 Ti, mạng gia đình, cài từ đầu (không có cache pip):
+Đo thật (2026-11-11): clone mới, máy RTX 3060 Ti, mạng khoảng 12 MB/s, không dùng cache pip, không đăng nhập Hugging
+Face. **Tổng khoảng 14 phút.**
 
-| Bước | Tải về | Thời gian |
-|---|---|---|
-__STEPS__
+| Phần | Tải về | Trên đĩa | Thời gian |
+|---|---|---|---|
+| PyTorch 2.14 bản CUDA | 2,6 GB | 4,0 GB | phần lớn của ~11 phút đầu (cùng thư viện và model hợp âm) |
+| Thư viện Python khác (gồm tách nguồn audio-separator) | ~0,4 GB | ~0,9 GB | |
+| Model hợp âm, nhịp (ChordMini, Chord-CNN-LSTM, ChordFormer, beat_this) | ~0,9 GB | 0,96 GB | |
+| Dò giai điệu: BS-Roformer (tách giọng) | 0,64 GB | 0,61 GB | ~1 phút |
+| Dò giai điệu: YourMT3+ (mã, checkpoint, transformers riêng) | 0,6 GB | 0,64 GB | ~1,5 phút |
+| Chạy thử (hợp âm C – G và một chuỗi nốt qua YourMT3+) | | | ~40 giây |
 
 Tùy chọn: `-Cpu` (cài PyTorch bản CPU), `-NoMelody` (bỏ dò giai điệu), `-Full` (thêm thư viện đánh giá cho dev),
 `-NoTools` (không tự cài ffmpeg, Deno).
@@ -172,6 +178,8 @@ gated, nên `setup.ps1` không tự tải được. Chưa làm thì nút Kỹ m�
    ```
    rồi khởi động lại server (tắt tiến trình cũ, chạy lại `start_server.ps1`).
 
+   Weights MuScriptor small tải thêm khoảng 0,4 GB.
+
 ## 🛠️ Gặp lỗi thường gặp
 
 <details>
@@ -217,6 +225,14 @@ Server chạy từng job một nên không tự tranh VRAM với chính nó. Má
 Bình thường nếu chưa có tài khoản Hugging Face: cách Nhanh vẫn dùng được. Muốn bật Kỹ, làm ba bước ở mục
 [Dò giai điệu](#-dò-giai-điệu). `fetch_models.py --muscriptor` báo 401/403 nghĩa là chưa đăng nhập (`hf auth login`)
 hoặc chưa bấm đồng ý điều khoản trên trang model.
+</details>
+
+<details>
+<summary><b>Setup báo "Filename too long" / lỗi khi tải YourMT3+</b></summary>
+
+Windows giới hạn đường dẫn 260 ký tự. Script đã bật `core.longpaths` cho git, nhưng nếu vẫn lỗi thì clone lại vào thư
+mục ngắn (ví dụ `C:\chordtrack`) hoặc bật *Enable Win32 long paths* (Group Policy) / `LongPathsEnabled` rồi chạy lại
+`setup.ps1`.
 </details>
 
 <details>
