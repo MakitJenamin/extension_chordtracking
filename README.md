@@ -84,17 +84,34 @@ Cột phải liệt kê **từng đoạn** của bài: vòng hợp âm, bậc La
 
 ## 🚀 Cài đặt (Windows)
 
-### Cần có
+### Cấu hình máy
 
-| | |
-|---|---|
-| 💻 Hệ điều hành | Windows 10 hoặc 11 (64-bit) |
-| 🎮 GPU | NVIDIA khuyến nghị (đã thử RTX 3060 Ti 8 GB). Không có GPU vẫn chạy được bằng CPU nhưng chậm hơn nhiều |
-| 💾 Ổ đĩa | Khoảng 10 GB trống (cài xong chiếm 7,3 GB, PyTorch bản CUDA đã 4 GB) |
-| 🌐 Mạng | Tải khoảng 5 GB ở lần cài đầu |
-| 🧭 Trình duyệt | Google Chrome (hoặc trình duyệt nhân Chromium cho nạp extension) |
+| | Tối thiểu | Khuyến nghị | Máy đã thử |
+|---|---|---|---|
+| 💻 Hệ điều hành | Windows 10 64-bit | Windows 11 | Windows 11 Pro |
+| 🧠 RAM | 8 GB | 16 GB | 32 GB |
+| 🎮 GPU | Không bắt buộc (chạy CPU, chậm hơn nhiều) | NVIDIA ≥ 4 GB VRAM, driver hỗ trợ CUDA 12.6 | RTX 3060 Ti 8 GB |
+| ⚙️ CPU | 64-bit, 4 nhân | 6 nhân trở lên | i5-12400F (6 nhân, 12 luồng) |
+| 💾 Ổ đĩa trống | 10 GB | 20 GB (còn chỗ cho cache) | |
+| 🌐 Mạng | Tải khoảng 5 GB ở lần cài đầu | | ~12 MB/s, cài mất ~14 phút |
+| 🧭 Trình duyệt | Chrome hoặc trình duyệt nhân Chromium nạp được extension | Google Chrome | Google Chrome |
 
 Python 3.11, git, ffmpeg và Deno: chưa có thì script tự cài bằng `winget`.
+
+Cột "Tối thiểu" là **ước tính từ số đo** trên máy đã thử, chưa chạy thật trên máy yếu như vậy. Số đo (2026-11-11, bài
+"Let It Be" dài 4 phút):
+
+| Việc | RAM đỉnh | VRAM đỉnh | Thời gian (GPU) |
+|---|---|---|---|
+| Phân tích hợp âm, nhịp, cấu trúc | 2,1 GB | 0,7 GB | ~16 giây |
+| Dò giai điệu cách Bình thường (tách giọng + YourMT3+) | 3,4 GB | 3,0 GB | ~2 phút |
+| Server lúc rảnh (giữ model hợp âm trên RAM) | 2,3 GB | 0 | |
+
+- **GPU dưới 4 GB VRAM**: hợp âm vẫn chạy trên GPU, dò giai điệu có thể hết VRAM. Khi đó cài lại với `setup.ps1 -Cpu`.
+- **Không có GPU**: hợp âm mất khoảng 1 phút mỗi bài. Dò giai điệu trên CPU chưa đo, chắc chắn chậm hơn nhiều.
+- **Cache**: mỗi bài 4 phút chiếm khoảng 45 MB audio và khoảng 125 MB cache nếu có dò giai điệu (`data\audio`,
+  `data\cache`). Xóa hai thư mục này để lấy lại chỗ, bài cũ sẽ phải phân tích lại.
+- **macOS, Linux**: chưa hỗ trợ. Script cài đặt chỉ có bản PowerShell, mã Python chưa thử trên hệ điều hành khác.
 
 ### 1. Tải mã nguồn và cài
 
@@ -180,7 +197,7 @@ gated, nên `setup.ps1` không tự tải được. Chưa làm thì nút Kỹ m�
 
    Weights MuScriptor small tải thêm khoảng 0,4 GB.
 
-## 🛠️ Gặp lỗi thường gặp
+## 🛠️ Lỗi thường gặp
 
 <details>
 <summary><b>Extension báo "Chưa kết nối được server" / bấm không có gì</b></summary>
@@ -266,12 +283,85 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType applic
 
 </details>
 
+## 🧑‍💻 Phát triển và đóng góp
+
+### Cài cho dev
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Full
+```
+
+`-Full` cài thêm thư viện đánh giá (`requirements\eval.txt`) và model chỉ dùng khi chấm điểm. Luôn gọi Python của venv
+bằng đường dẫn đầy đủ (`.venv\Scripts\python.exe`), vì lệnh `python` trên Windows có thể trỏ tới bản giả của Microsoft Store.
+
+### Cấu trúc thư mục
+
+| Thư mục | Nội dung |
+|---|---|
+| `chordtrack/` | Backend: tải audio (`audio.py`), tách nguồn, bắt nhịp, nhận hợp âm (`chords/`), trộn kết quả (`fusion.py`), giọng và cấu trúc bài (`analysis.py`), dò giai điệu (`melody/`), hàng đợi job (`jobs.py`), server FastAPI (`server.py`) |
+| `chordtrack/types.py` | Kiểu dữ liệu dùng chung giữa các module (`Stems`, `BeatGrid`, `ChordSegment`, `ChordModelOutput`…) |
+| `extension/` | Extension Chrome (Manifest V3). `extension/dev/` có harness thử giao diện không cần YouTube |
+| `eval/` | Bộ đánh giá hợp âm ([eval/README.md](eval/README.md)) và giai điệu ([eval/melody/README.md](eval/melody/README.md)) |
+| `scripts/` | Cài đặt, tải model (kiểm SHA-256), chạy server, chạy thử sau khi cài |
+| `requirements/` | Thư viện theo từng module; `constraints.txt` ghim phiên bản chung |
+| `tests/` | Test pytest |
+| `third_party_src/`, `data/` | Mã model bên thứ ba, weights, audio, cache. **Không nằm trong git** |
+
+### Chạy test
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q -m "not gpu"   # test nhanh, không cần GPU
+.venv\Scripts\python.exe -m pytest -q -m gpu         # test chạy model thật (chậm, cần weights)
+node --test extension\dev\theory.test.js             # logic hợp âm, transpose của extension
+.venv\Scripts\python.exe scripts\smoke_test.py --melody   # kiểm tra cài đặt từ đầu tới cuối
+```
+
+Thử giao diện extension không cần tab YouTube: chạy `.venv\Scripts\python.exe extension\dev\serve.py`, rồi mở
+`http://127.0.0.1:8770/watch?v=QDYfEBY9NM4`. Trong `serve.py` có danh sách videoId giả để thử các trạng thái: job
+chạy chậm, YouTube đòi cookie, server tắt.
+
+### Quy ước
+
+- **Python 3.11, numpy 1.x.** Đừng nâng numpy lên 2.x: scipy 1.13, ChordMini, Chord-CNN-LSTM và audio-separator
+  đều cần numpy 1.26 (`requirements/constraints.txt`).
+- Thư viện mới ghi vào `requirements/<module>.txt` của module đó.
+- Code chạy model trên GPU phải nằm trong `with chordtrack.gpu.gpu_lock():` để các job không tranh VRAM. Test cần GPU
+  thì gắn `@pytest.mark.gpu`.
+- Dùng kiểu trong `chordtrack/types.py`, đừng định nghĩa kiểu trùng.
+- Muốn đổi model hay tham số trộn thì phải chấm lại bằng bộ đánh giá ở `eval/` và ghi số trước/sau vào PR. Không
+  chọn theo cảm giác nghe.
+- **Repo public:** không commit audio, weights, cookie hay dữ liệu có bản quyền.
+
+### Gửi đóng góp
+
+1. Với thay đổi lớn, mở issue trước để bàn hướng làm.
+2. Tạo nhánh từ `main`, sửa, chạy test ở trên.
+3. Mở pull request vào `main`. Mô tả nêu: thay đổi gì, vì sao, kết quả test và điểm đánh giá nếu có. Viết tiếng Việt
+   hay tiếng Anh đều được.
+
+Báo lỗi qua [GitHub Issues](https://github.com/MakitJenamin/extension_chordtracking/issues), kèm videoId, log ở
+`data\cache\server.log` và ảnh chụp nếu lỗi ở giao diện.
+
+## 🙏 Cảm ơn
+
+ChordTrack đứng trên vai các dự án sau. Commit đã ghim và chi tiết license ở [THIRD_PARTY.md](THIRD_PARTY.md).
+
+- **Nhận hợp âm:** [ChordMini](https://github.com/ptnghia-j/ChordMini) (Nghia Phan và cộng sự),
+  [Chord-CNN-LSTM](https://github.com/ptnghia-j/chord-cnn-lstm-model) (Junyan Jiang và cộng sự, Music X Lab),
+  [ChordFormer](https://github.com/mwaseemrandhawa/ChordFormer) (Akram, Dettori, Colla, Buttazzo).
+- **Bắt nhịp:** [Beat This!](https://github.com/CPJKU/beat_this) (Foscarin, Schlüter, Widmer, CPJKU).
+- **Dò giai điệu:** [YourMT3+](https://huggingface.co/spaces/mimbres/YourMT3) (Chang, Dixon, Benetos),
+  [MuScriptor](https://github.com/muscriptor/muscriptor) (Kyutai và Mirelo).
+- **Tách nguồn:** BS-Roformer và HTDemucs qua [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
+- **Tải audio:** [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+- **Đánh giá:** nhãn hợp âm The Beatles của [Isophonics](http://isophonics.net/).
+
 ## 📜 License
 
 Mã dự án: [MIT](LICENSE). Model hợp âm, bắt nhịp và dò giai điệu thuộc tác giả gốc, xem [THIRD_PARTY.md](THIRD_PARTY.md).
 YourMT3+ (dò giai điệu, cách Bình thường): Apache-2.0. BS-Roformer (tách giọng): qua gói audio-separator (MIT).
 ⚠️ Weights MuScriptor (cách dò Kỹ, tùy chọn) theo CC BY-NC 4.0: chỉ dùng phi thương mại.
 ⚠️ ChordFormer không có license, THIRD_PARTY.md hướng dẫn cách tắt.
-⚠️ Tải audio bằng yt-dlp chỉ nên dùng cho cá nhân (xem cảnh báo ở mục Gặp lỗi thường gặp).
+⚠️ Tải audio bằng yt-dlp chỉ nên dùng cho cá nhân (xem cảnh báo ở mục Lỗi thường gặp).
 
 <div align="center"><sub>Kế hoạch, quyết định và số đo chất lượng: <a href="PLAN.md">PLAN.md</a></sub></div>
