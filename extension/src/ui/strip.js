@@ -150,7 +150,8 @@
     melodyLine() {
       const notes = T().melodyNotes(this.melody);
       const s = CT.settings;
-      return s.melodySnap && this.song ? T().snapNotes(notes, this.song.beats, s.melodySnapDiv === 2 ? 2 : 4) : notes;
+      if (!s.melodySnap || !this.song) return notes;
+      return T().snapNotes(notes, this.song.beats, T().autoSnapDiv(notes, this.song.beats));
     }
 
     /** Bật/tắt "Nốt khớp phách" hoặc đổi mức chia: tính lại nốt và dựng lại làn nốt. */

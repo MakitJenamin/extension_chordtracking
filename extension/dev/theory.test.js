@@ -344,3 +344,16 @@ test("snapNotes: căn nốt về lưới phách chia 4 / 2, không nốt độ d
   assert.equal(T.snapNotes(raw, [], 4), raw);
   assert.deepEqual(T.snapNotes([], beats), []);
 });
+
+test("autoSnapDiv: tự chọn mức chia phách theo tempo và độ dày giai điệu", () => {
+  const n = (s, e) => ({ start: s, end: e, pitch: 60 });
+  const slow = [0, 1, 2, 3, 4, 5, 6, 7, 8];                       // 60 BPM
+  const fast = slow.map((t) => t * 0.4);                           // 150 BPM: ô 1/16 = 0.1 s
+  const eighths = Array.from({ length: 16 }, (_, i) => n(i * 0.5, i * 0.5 + 0.45));
+  const sixteenths = Array.from({ length: 32 }, (_, i) => n(i * 0.25, i * 0.25 + 0.2));
+  assert.equal(T.autoSnapDiv(eighths, slow), 2);                  // giai điệu thưa: 1/8
+  assert.equal(T.autoSnapDiv(sixteenths, slow), 4);               // nhiều nốt ngắn: 1/16
+  assert.equal(T.autoSnapDiv(sixteenths.map((x) => n(x.start * 0.4, x.end * 0.4)), fast.map((t) => t * 0.6)), 2); // quá nhanh
+  assert.equal(T.autoSnapDiv([], slow), 4);
+  assert.equal(T.autoSnapDiv(eighths, []), 4);
+});

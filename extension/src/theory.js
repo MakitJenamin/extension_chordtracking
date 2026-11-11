@@ -420,6 +420,22 @@
     }
     return notes.map((n, i) => ({ ...n, start: q[2 * i], end: q[2 * i + 1], start0: n.start, end0: n.end }));
   }
+  /** Tự chọn mức chia phách khi căn nốt: 4 (nốt 1/16 ở nhịp x/4) hoặc 2 (nốt 1/8), theo tempo và độ dày giai điệu.
+   * Bài nhanh (ô 1/16 ngắn hơn 0,1 s) luôn chia 2. Còn lại chia 4 khi từ 20% số nốt trở lên ngắn hơn 3/8 phách
+   * (tức giống nốt 1/16 hơn nốt 1/8), ngược lại chia 2 cho dòng nốt gọn, dễ đọc. */
+  function autoSnapDiv(notes, beats) {
+    const b = (beats || []).filter(Number.isFinite);
+    if (b.length < 2 || !notes || !notes.length) return 4;
+    const d = [];
+    for (let i = 1; i < b.length; i++) if (b[i] > b[i - 1]) d.push(b[i] - b[i - 1]);
+    if (!d.length) return 4;
+    d.sort((x, y) => x - y);
+    const P = d[d.length >> 1];
+    if (P / 4 < 0.1) return 2;
+    const short = notes.filter((n) => n.end - n.start < 0.375 * P).length;
+    return short >= 0.2 * notes.length ? 4 : 2;
+  }
+
 
   /** Chỉ số nốt đang phát tại t (start <= t < end), -1 nếu đang nghỉ. `hint`: chỉ số lần trước (thử trước). */
   function noteIndexAt(notes, t, hint = -1) {
@@ -481,7 +497,7 @@
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
-    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, beatSubdivisions, snapNotes,
+    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
     MELODY_VOCALS_RESULT, MELODY_VOCALS_TIP,
   };

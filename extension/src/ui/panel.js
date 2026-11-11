@@ -168,14 +168,9 @@
         ...Object.entries(MM).map(([k, v]) => h("button", { type: "button", "data-v": k, title: `${v.label}. ${v.tip}`,
           onclick: () => CT.setSettings({ melodyModel: k }) }, v.short)));
       // Hai công tắc của dòng giai điệu: tách giọng (biến thể khác, cần dò riêng) và căn nốt về phách (chỉ hiển thị).
-      this.snapDiv = h("select", { class: "ct-snapdiv", "aria-label": "Mức chia phách khi căn nốt",
-        title: "Mức chia mỗi phách khi căn nốt: 1/16 (4 phần mỗi phách) hoặc 1/8 (2 phần), tính theo nhịp x/4",
-        onchange: (e) => CT.setSettings({ melodySnapDiv: +e.target.value || 4 }) },
-        h("option", { value: "4" }, "1/16"), h("option", { value: "2" }, "1/8"));
       this.melOpts = h("span", { class: "ct-opts ct-melopts" },
         check("melodyVocals", "Tách giọng", `${T().MELODY_VOCALS_TIP} Chậm hơn khoảng ${VOCALS_EXTRA} cho bài 4 phút (lần đầu mỗi bài). Mỗi lựa chọn là một bản dò riêng: chưa dò thì bấm “Dò giai điệu”`),
-        check("melodySnap", "Nốt khớp phách", "Căn đầu/cuối nốt giai điệu về lưới phách (chia theo ô bên cạnh) để dễ đọc nhịp. Chỉ đổi cách hiện, không dò lại"),
-        this.snapDiv);
+        check("melodySnap", "Nốt khớp phách", "Căn đầu/cuối nốt giai điệu về lưới phách của bài để dễ đọc nhịp. Mức chia (1/8 hay 1/16) tự chọn theo tempo và độ dày giai điệu. Chỉ đổi cách hiện, không dò lại"));
       this.opts = h("div", { class: "ct-controls" },
         this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox, this.melOpts), h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
@@ -284,8 +279,6 @@
       this.metroBtn.classList.toggle("ct-on", !!s.metronome);
       this.volEl.value = Math.round((s.metronomeVolume ?? 0.6) * 100);
       for (const c of this.opts.querySelectorAll("input[data-k]")) c.checked = !!s[c.dataset.k];
-      this.snapDiv.value = String(s.melodySnapDiv === 2 ? 2 : 4);
-      this.snapDiv.hidden = !s.melodySnap;
       const col = !!s.panelCollapsed;
       this.el.classList.toggle("ct-collapsed", col);
       this.collapseBtn.textContent = col ? "▾" : "▴";
@@ -552,7 +545,7 @@
   /** Dải cao/thấp đi khi làn nốt hiện/ẩn: lớp phủ toàn màn hình đặt lại vị trí phụ đề theo chiều cao mới. */
   function refitOverlay() { if (CT.ui.fullscreen && CT.ui.fullscreen.on) CT.ui.fullscreen.syncControls(); }
   // "Nốt khớp phách" / mức chia: tính lại vị trí nốt trên dải (không gọi server).
-  const snapSig = (st) => `${!!st.melodySnap}|${st.melodySnapDiv}`;
+  const snapSig = (st) => `${!!st.melodySnap}`;
   let lastMelSnap = snapSig(CT.settings);
   CT.bus.on("settings", (st) => {
     const sig = snapSig(st);
