@@ -9,12 +9,12 @@ Chỉ lắng nghe 127.0.0.1, không mở ra mạng ngoài. Endpoint:
 - `GET  /jobs/{job_id}`       tiến độ job (xem `jobs.job_status`)
 - `GET  /result/{song_id}`    JSON kết quả hoặc 404
 - `GET  /songs`               danh sách bài đã phân tích (cho popup của extension)
-- `POST /melody`              dò giai điệu, cùng cách dùng với `/analyze`, thêm `"model": "combo" | "yourmt3"`
-                              (hợp đồng: `docs/melody_api.md`)
-- `GET  /melody/{song_id}`    `<Melody>` hoặc 404; `?model=yourmt3` lấy biến thể chỉ YourMT3+
+- `POST /melody`              dò giai điệu, cùng cách dùng với `/analyze`, thêm `"model": "combo" | "yourmt3"` và
+                              `"vocals": bool` (tách giọng; hợp đồng: `docs/melody_api.md`)
+- `GET  /melody/{song_id}`    `<Melody>` hoặc 404; `?model=yourmt3` lấy biến thể chỉ YourMT3+, `&vocals=1` bản tách giọng
 
 Hàng đợi job lưu ở `data/cache/jobs.sqlite`, một worker thread duy nhất cho cả job hợp âm (`kind` = `analyze`) và
-job dò giai điệu (`kind` = `melody` / `melody_yourmt3`), vì GPU chỉ có 8 GB (xem `chordtrack/jobs.py`).
+job dò giai điệu (`kind` = `melody` / `melody_yourmt3` / `melody_*_vocals`), vì GPU chỉ có 8 GB (xem `chordtrack/jobs.py`).
 """
 from __future__ import annotations
 
@@ -67,11 +67,12 @@ class AnalyzeRequest(BaseModel):
     force: bool = False
 
 
-MelodyModel = Literal["combo", "yourmt3"]     # = `chordtrack.melody.pipeline.VARIANTS`
+MelodyModel = Literal["combo", "yourmt3"]     # = `chordtrack.melody.pipeline.BASE_MODELS`
 
 
 class MelodyRequest(AnalyzeRequest):
     model: MelodyModel = "combo"
+    vocals: bool = False        # tách giọng: đoạn có giọng lấy YourMT3+ trên stem giọng BS-Roformer
 
 
 def default_cached_result(song_id: str) -> dict | None:
@@ -292,17 +293,19 @@ def create_app(
 
     @app.post("/melody")
     def melody_endpoint(body: MelodyRequest) -> dict:
-        # Mỗi biến thể một loại job và một file cache: hai biến thể không chặn nhau.
-        return submit(body, jobs.MELODY_KIND_OF[body.model], lambda sid: cached_melody(sid, body.model), "melody")
+        # Mỗi biến thể (model, vocals) một loại job và một file cache: các biến thể không chặn nhau.
+        key = jobs.melody_variant_key(body.model, body.vocals)
+        return submit(body, jobs.MELODY_KIND_OF[key], lambda sid: cached_melody(sid, key), "melody")
 
     @app.get("/melody/{song_id}")
-    def melody_result_endpoint(song_id: str, model: MelodyModel = Query("combo")):
+    def melody_result_endpoint(song_id: str, model: MelodyModel = Query("combo"), vocals: bool = Query(False)):
         if not SONG_ID_RE.match(song_id):
             raise HTTPException(400, "song_id không hợp lệ")
-        result = cached_melody(song_id, model)
+        key = jobs.melody_variant_key(model, vocals)
+        result = cached_melody(song_id, key)
         if result is not None:
             return result
-        stale = stale_melody(song_id, model)
+        stale = stale_melody(song_id, key)
         if stale is None:
             raise HTTPException(404, "Chưa dò giai điệu bài này")
         return UTF8JSONResponse(stale, headers={"X-Chordtrack-Stale": "1"})

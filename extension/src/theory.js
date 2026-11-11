@@ -374,6 +374,53 @@
       .sort((a, b) => a.start - b.start);
   }
 
+  /** Lưới phách chia đều mỗi phách thành `div` phần (div 4 = nốt 1/16 ở nhịp x/4), kéo dài một phách ở hai đầu bài. */
+  function beatSubdivisions(beats, div = 4) {
+    const b = [...new Set((beats || []).filter(Number.isFinite))].sort((x, y) => x - y);
+    if (b.length < 2) return b;
+    const d = Math.max(1, Math.round(div) || 1);
+    const ext = [b[0] - (b[1] - b[0]), ...b, b[b.length - 1] + (b[b.length - 1] - b[b.length - 2])];
+    const out = [];
+    for (let i = 0; i + 1 < ext.length; i++) {
+      for (let f = 0; f < d; f++) out.push(ext[i] + (ext[i + 1] - ext[i]) * f / d);
+    }
+    out.push(ext[ext.length - 1]);
+    return out;
+  }
+
+  /** Căn đầu và cuối mỗi nốt (đã sắp, không chồng nhau, như melodyNotes) về điểm gần nhất của lưới phách chia `div`.
+   * Chỉ để hiển thị; giữ start0/end0 gốc. Nốt bị căn thành độ dài 0 thì kéo cuối tới điểm lưới kế tiếp; chỗ nào
+   * căn xong mà nốt quá ngắn (< 30 ms, hoặc ngắn hơn bản gốc nếu gốc đã ngắn hơn) hay chồng lên nốt trước thì
+   * trả các mốc đó về thời điểm gốc. Ngoài phạm vi lưới (trước phách đầu / sau phách cuối hơn một phách) giữ nguyên. */
+  function snapNotes(notes, beats, div = 4) {
+    if (!notes || !notes.length) return notes || [];
+    const g = beatSubdivisions(beats, div);
+    if (g.length < 2) return notes;
+    const MIN = 0.03;
+    const nearest = (t) => {
+      const k = lastLE(g, t);
+      if (k < 0 || k >= g.length - 1) return t;
+      return t - g[k] <= g[k + 1] - t ? g[k] : g[k + 1];
+    };
+    const next = (t) => { const k = lastLE(g, t + 1e-6); return k + 1 < g.length ? g[k + 1] : null; };
+    const b = notes.flatMap((n) => [n.start, n.end]);   // mốc gốc: s0 e0 s1 e1 ...
+    const q = b.map(nearest);
+    for (let k = 1; k < q.length; k += 2) {
+      if (q[k] > q[k - 1]) continue;
+      const nx = next(q[k - 1]);
+      q[k] = nx == null ? b[k] : nx;
+    }
+    // Khoảng tối thiểu giữa mốc k-1 và k: độ dài nốt (k lẻ) hoặc khe giữa hai nốt (k chẵn, được bằng 0).
+    const need = (k) => (k % 2 ? Math.min(MIN, b[k] - b[k - 1]) : Math.min(0, b[k] - b[k - 1]));
+    const bad = (k) => q[k] < q[k - 1] + need(k) - 1e-9;
+    for (let k = 1; k < q.length; k++) {
+      if (!bad(k)) continue;
+      q[k] = b[k];
+      for (let j = k; j > 0 && bad(j); j--) { q[j - 1] = b[j - 1]; q[j] = b[j]; }
+    }
+    return notes.map((n, i) => ({ ...n, start: q[2 * i], end: q[2 * i + 1], start0: n.start, end0: n.end }));
+  }
+
   /** Chỉ số nốt đang phát tại t (start <= t < end), -1 nếu đang nghỉ. `hint`: chỉ số lần trước (thử trước). */
   function noteIndexAt(notes, t, hint = -1) {
     if (hint >= 0 && hint < notes.length && t >= notes[hint].start && t < notes[hint].end) return hint;
@@ -406,20 +453,37 @@
   /** Biến thể hợp lệ từ cài đặt (giá trị lạ hoặc thiếu: mặc định "yourmt3"). */
   function melodyVariant(v) { return Object.prototype.hasOwnProperty.call(MELODY_MODELS, v) ? v : MELODY_DEFAULT; }
 
-  /** <Melody> có đúng là của biến thể `variant` không. Server cũ bỏ qua `?model=` và trả bản ghép, nên bản
-   * "yourmt3" phải có đúng model; bản ghép nhận cả kết quả cũ không có trường model. */
+  /* Tách giọng (cờ `vocals` của POST /melody, CT.settings.melodyVocals): mỗi model nút bấm có thêm bản tách giọng.
+   * Khóa đầy đủ của một biến thể = khóa trạng thái trong content.js = khóa `melody_models` của /health. */
+  const MELODY_VOCALS_RESULT = { yourmt3: "yourmt3[vocals]", combo: "yourmt3[vocals]>muscriptor_small" };
+  const MELODY_VOCALS_TIP = "Tách giọng hát bằng BS-Roformer trước khi dò: đoạn có giọng lấy YourMT3+ chạy trên stem giọng (ít lẫn nhạc đệm), đoạn không giọng giữ như cũ.";
+  /** Khóa biến thể từ (model, vocals): "yourmt3" | "combo" | "yourmt3_vocals" | "combo_vocals". */
+  function melodyKey(model, vocals) { return melodyVariant(model) + (vocals ? "_vocals" : ""); }
+  /** {model, vocals} của một khóa biến thể (khóa lạ: model mặc định, không tách giọng). */
+  function melodyParts(key) {
+    const s = String(key || "");
+    const vocals = s.endsWith("_vocals");
+    const model = vocals ? s.slice(0, -7) : s;
+    return Object.prototype.hasOwnProperty.call(MELODY_MODELS, model) ? { model, vocals } : { model: MELODY_DEFAULT, vocals: false };
+  }
+  const MELODY_KEYS = Object.keys(MELODY_MODELS).flatMap((m) => [m, m + "_vocals"]);
+
+  /** <Melody> có đúng là của biến thể `variant` (khóa đầy đủ) không. Server cũ bỏ qua `?model=`/`vocals` và trả bản
+   * ghép, nên các bản khác phải có đúng model; bản ghép nhận cả kết quả cũ không có trường model. */
   function melodyModelOk(variant, melody) {
-    const want = MELODY_MODELS[melodyVariant(variant)].model;
+    const p = melodyParts(variant);
+    const want = p.vocals ? MELODY_VOCALS_RESULT[p.model] : MELODY_MODELS[p.model].model;
     const got = melody && melody.model;
-    return got === want || (melodyVariant(variant) === MELODY_LEGACY && !got);
+    return got === want || (!p.vocals && p.model === MELODY_LEGACY && !got);
   }
 
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
-    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit,
-    MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk,
+    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, beatSubdivisions, snapNotes,
+    MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
+    MELODY_VOCALS_RESULT, MELODY_VOCALS_TIP,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
   else window.CT.theory = theory;

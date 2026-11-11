@@ -281,7 +281,8 @@ class FakeMelody:
                 self.in_fill.set()
                 assert self.gate.wait(10)
             progress(step, 1.0)
-        model = "yourmt3>muscriptor_small" if variant == "combo" else "yourmt3"
+        model = {"combo": "yourmt3>muscriptor_small", "yourmt3": "yourmt3", "yourmt3_vocals": "yourmt3[vocals]",
+                 "combo_vocals": "yourmt3[vocals]>muscriptor_small"}[variant]
         res = {"song_id": vid, "model": model, "code_revision": "x", "duration": 10.0,
                "notes": [{"start": 1.0, "end": 1.5, "pitch": 60 if variant == "combo" else 62, "confidence": 0.8,
                           "uncertain": False, "source": "voice"}]}
@@ -396,3 +397,27 @@ def test_second_server_on_same_db_refuses_jobs(fake, tmp_path):
         assert c2.get("/health").json()["worker_alive"] is False
         assert c2.post("/melody", json={"source": VID}).status_code == 503
         assert c2.post("/analyze", json={"source": VID}).status_code == 503
+
+
+def test_melody_vocals_flag(fake, tmp_path):
+    """`vocals: true` (tách giọng): biến thể riêng cho mỗi model, job và cache riêng, GET theo `&vocals=1`."""
+    mel = FakeMelody()
+    with make_melody_client(fake, mel, tmp_path) as c:
+        assert c.get(f"/melody/{VID}?model=yourmt3&vocals=1").status_code == 404
+        r = c.post("/melody", json={"source": VID, "model": "yourmt3", "vocals": True}).json()
+        st = wait_status(c, r["job_id"], "done")
+        assert st["kind"] == "melody_yourmt3_vocals" and st["model"] == "yourmt3" and st["vocals"] is True
+        assert c.get(f"/melody/{VID}?model=yourmt3&vocals=1").json()["model"] == "yourmt3[vocals]"
+        assert c.get(f"/melody/{VID}?model=yourmt3").status_code == 404          # bản không tách giọng chưa có
+        assert c.get(f"/melody/{VID}?model=combo&vocals=true").status_code == 404
+        r = c.post("/melody", json={"source": VID, "vocals": True}).json()        # không có model = ghép
+        st = wait_status(c, r["job_id"], "done")
+        assert st["kind"] == "melody_combo_vocals" and st["model"] == "combo" and st["vocals"] is True
+        assert st["step"] is None or st["progress"] == 1.0
+        got = c.get(f"/melody/{VID}?model=combo&vocals=1").json()
+        assert got["model"] == "yourmt3[vocals]>muscriptor_small"
+        done = c.post("/melody", json={"source": VID, "model": "yourmt3", "vocals": True}).json()
+        assert done["status"] == "done" and done["melody"]["model"] == "yourmt3[vocals]"
+        st = c.get(f"/jobs/{r['job_id']}").json()
+        assert jobs.KINDS[st["kind"]].steps == ("fetch", "melody_separate", "melody_voice", "melody_fill", "melody_line")
+    assert mel.calls == [(VID, False, "yourmt3_vocals"), (VID, False, "combo_vocals")]

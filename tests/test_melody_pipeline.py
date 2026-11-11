@@ -84,9 +84,19 @@ def fake_models(tmp_path, monkeypatch):
     calls = {"yourmt3": 0, "muscriptor": 0}
 
     def fake_yourmt3(audio, out_path):
+        if audio == d / "vocals.wav":     # YourMT3+ trên stem giọng (biến thể tách giọng): nốt giọng cao hơn 1 cung
+            calls["yourmt3_vocals"] = calls.get("yourmt3_vocals", 0) + 1
+            notes = [N(n.start, n.end, n.pitch + 2, None, n.source) for n in voice.notes if n.source == "voice"]
+            return MelodyModelOutput("yourmt3", notes, None, {"peak_vram_mib": np.array(1500.0)})
         calls["yourmt3"] += 1
         assert audio == d / "mix.wav"
         return MelodyModelOutput("yourmt3", list(voice.notes), None, {"peak_vram_mib": np.array(2600.0)})
+
+    def fake_separation(mix, cache_dir):
+        calls["separate"] = calls.get("separate", 0) + 1
+        assert mix == d / "mix.wav" and cache_dir == d
+        sf.write(d / "vocals.wav", np.zeros(44100 * 3, dtype=np.float32), 44100)
+        return {"seconds": 1.0, "peak_vram_mb": 1600.0}
 
     def fake_muscriptor(audio):
         calls["muscriptor"] += 1
@@ -94,6 +104,7 @@ def fake_models(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mp, "run_yourmt3", fake_yourmt3)
     monkeypatch.setattr(mp, "run_muscriptor", fake_muscriptor)
+    monkeypatch.setattr(mp, "run_separation", fake_separation)
     monkeypatch.setattr(mp.audio_mod, "fetch", lambda s: pytest.fail("không được tải lại audio đã có"))
     return calls
 
@@ -199,12 +210,14 @@ def test_stale_melody_checks_version(fake_models):
 def test_melody_ready_keys():
     r = mp.melody_ready()
     assert set(r) == {"yourmt3_code", "yourmt3_pydeps", "yourmt3_checkpoint", "muscriptor_package",
-                      "muscriptor_weights"}
+                      "muscriptor_weights", "separator_package"}
     assert all(isinstance(v, bool) for v in r.values())
-    v = mp.variant_ready({**{k: True for k in r}, "muscriptor_weights": False})
-    assert v == {"combo": False, "yourmt3": True}
-    assert mp.variant_ready({**{k: True for k in r}, "yourmt3_checkpoint": False}) == {"combo": False,
-                                                                                       "yourmt3": False}
+    ok = {k: True for k in r}
+    v = mp.variant_ready({**ok, "muscriptor_weights": False})
+    assert v == {"combo": False, "yourmt3": True, "combo_vocals": False, "yourmt3_vocals": True}
+    v = mp.variant_ready({**ok, "separator_package": False})
+    assert v == {"combo": True, "yourmt3": True, "combo_vocals": False, "yourmt3_vocals": False}
+    assert not any(mp.variant_ready({**ok, "yourmt3_checkpoint": False}).values())
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
@@ -275,9 +288,57 @@ def test_code_revision_per_variant(monkeypatch):
         assert mp.code_revision("yourmt3") == y3 and mp.code_revision("combo") != combo
     finally:
         mp.code_revision.cache_clear()
-    assert set(typing.get_args(server.MelodyModel)) == set(mp.VARIANTS)
+    assert set(typing.get_args(server.MelodyModel)) == set(mp.BASE_MODELS)
+    assert {mp.variant_key(m, v) for m in mp.BASE_MODELS for v in (False, True)} == set(mp.VARIANTS)
+    assert all(mp.VARIANTS[mp.variant_key(s.base, s.vocals)] is s for s in mp.VARIANTS.values())
     assert set(jobs.MELODY_KIND_OF) == set(mp.VARIANTS) and all(k in jobs.KINDS for k in jobs.MELODY_KIND_OF.values())
     assert all(jobs.KINDS[jobs.MELODY_KIND_OF[v]].steps == s.steps for v, s in mp.VARIANTS.items())
+
+
+def test_build_line_yourmt3_vocals():
+    """Bản YourMT3+ tách giọng: dòng từ stem giọng trong cổng giọng của stem (nới GATE_PAD), dòng mix ngoài cổng."""
+    stem = MelodyModelOutput("yourmt3", [N(10.0, 10.5, 64, None, "voice"), N(10.5, 11.0, 65, None, "voice"),
+                                         N(10.0, 11.0, 40, None, "acoustic_piano")])
+    mix = MelodyModelOutput("yourmt3", [N(t, t + 0.5, 72, None, "violin") for t in np.arange(8.0, 13.0, 0.5)])
+    got = mp.build_line_yourmt3_vocals(stem, mix)
+    assert [n.pitch for n in got if 10.0 <= n.start < 11.0] == [64, 65]        # giọng từ stem, bỏ bè đệm lọt vào
+    assert all(n.pitch == 72 for n in got if n.end <= 10.0 - mp.GATE_PAD or n.start >= 11.0 + mp.GATE_PAD)
+    assert not any(n.pitch == 72 and 9.5 < n.start < 11.5 for n in got)          # trong cổng không có dòng mix
+    assert all(a.end <= b.start + 1e-9 for a, b in zip(got, got[1:]))
+    # Stem không có nốt voice (bài không lời): cả dòng lấy từ mix.
+    empty = MelodyModelOutput("yourmt3", [N(10.0, 11.0, 40, None, "acoustic_piano")])
+    assert mp.build_line_yourmt3_vocals(empty, mix) == mp.build_line_yourmt3(mix)
+
+
+def test_vocals_variants_reuse_raw_and_stem(fake_models):
+    """Bản tách giọng: tách stem một lần (dùng lại vocals.wav), YourMT3+ trên stem dùng chung giữa hai bản, dùng lại
+    YourMT3+ mix / MuScriptor đã có; file và model riêng; force không tách lại stem."""
+    mp.analyze_melody(VID, variant="yourmt3")                         # đã có YourMT3+ trên mix
+    assert fake_models == {"yourmt3": 1, "muscriptor": 0}
+    events = []
+    res = mp.analyze_melody(VID, variant="yourmt3_vocals", progress=lambda s, f: events.append((s, f)))
+    assert res["model"] == "yourmt3[vocals]"
+    assert mp.result_path(VID, "yourmt3_vocals").name == "melody_yourmt3_vocals.json"
+    assert fake_models == {"yourmt3": 1, "muscriptor": 0, "separate": 1, "yourmt3_vocals": 1}
+    assert ("melody_separate", 0.0) in events and ("melody_voice_mix", 0.0) not in events
+    assert [s for s, f in events if f == 1.0] == list(mp.VARIANTS["yourmt3_vocals"].steps)
+    assert res["peak_vram_mb"] == {"roformer": 1600.0, "yourmt3_vocals": 1500.0, "yourmt3": 2600.0}
+    assert res["notes"] and mp.cached_melody(VID, "yourmt3")["model"] == "yourmt3"
+
+    combo = mp.analyze_melody(VID, variant="combo_vocals")           # dùng lại stem và YourMT3+ trên stem
+    assert combo["model"] == "yourmt3[vocals]>muscriptor_small"
+    assert mp.result_path(VID, "combo_vocals").name == "melody_vocals.json"
+    assert fake_models == {"yourmt3": 1, "muscriptor": 1, "separate": 1, "yourmt3_vocals": 1}
+    assert set(combo["timing"]) >= {"melody_separate", "melody_voice", "melody_fill"}
+    assert "melody_voice_mix" not in combo["timing"]
+
+    # force bản YourMT3+ tách giọng: chạy lại YourMT3+ trên stem và trên mix, không tách lại; các bản dùng chung đầu
+    # ra thô bị chạy lại thành cũ.
+    mp.analyze_melody(VID, variant="yourmt3_vocals", force=True)
+    assert fake_models == {"yourmt3": 2, "muscriptor": 1, "separate": 1, "yourmt3_vocals": 2}
+    assert mp.stale_melody(VID, "combo_vocals")["code_revision"] == mp.RAW_CHANGED
+    assert mp.stale_melody(VID, "yourmt3")["code_revision"] == mp.RAW_CHANGED
+    assert mp.cached_melody(VID, "yourmt3_vocals") is not None
 
 
 @pytest.mark.gpu

@@ -11,6 +11,12 @@ Hai biến thể (`VARIANTS`, trường `model` của `POST /melody`):
 Hai biến thể dùng chung đầu ra thô của YourMT3+, nên bài đã dò bằng biến thể này thì biến thể kia không phải chạy
 lại YourMT3+.
 
+Tách giọng (cờ `vocals` của `POST /melody`, biến thể `"yourmt3_vocals"` và `"combo_vocals"`, 2026-11-11): BS-Roformer
+tách stem giọng (`CACHE_DIR/<song_id>/vocals.wav`, dùng lại nếu pipeline hợp âm đã tách), YourMT3+ chạy trên stem
+giọng cho đoạn có giọng (cổng = nốt `voice` của YourMT3+ trên stem, nới `GATE_PAD` giây); ngoài cổng dùng YourMT3+
+trên mix (`yourmt3_vocals`) hoặc MuScriptor small trên mix (`combo_vocals`). Chưa chấm điểm trên bộ eval (người dùng
+tự nghe thử), tham số lấy theo bản ghép.
+
 Cách ghép `yourmt3>muscriptor_small` thắng xếp hạng chung trong `eval/melody/score.py` (PLAN.md mục 11): dòng
 YourMT3+ (`source_viterbi`: ưu tiên giọng + Viterbi) trong các khoảng có nốt `voice` của chính YourMT3+ nới
 `GATE_PAD` giây, ngoài cổng dùng dòng MuScriptor small (`salience`, không tính độ dài nốt). Cấu hình là hằng số ở
@@ -63,13 +69,29 @@ class Variant:
     model: str                  # giá trị `<Melody>.model`
     result_file: str            # tên file kết quả trong CACHE_DIR/<song_id>/
     steps: tuple[str, ...]      # các bước báo qua `progress`
+    base: str = "combo"         # `model` của request: "combo" | "yourmt3"
+    vocals: bool = False        # cờ `vocals` của request: đoạn có giọng lấy YourMT3+ trên stem giọng
+    raws: tuple[str, ...] = ("yourmt3", "muscriptor_small")    # đầu ra thô (melody_raw/<tên>.npz) biến thể dùng
 
 
 VARIANTS = {
     "combo": Variant(MODEL, RESULT_FILE, STEPS),
-    "yourmt3": Variant("yourmt3", "melody_yourmt3.json", ("fetch", "melody_voice", "melody_line")),
+    "yourmt3": Variant("yourmt3", "melody_yourmt3.json", ("fetch", "melody_voice", "melody_line"), "yourmt3",
+                       raws=("yourmt3",)),
+    "yourmt3_vocals": Variant("yourmt3[vocals]", "melody_yourmt3_vocals.json",
+                              ("fetch", "melody_separate", "melody_voice", "melody_voice_mix", "melody_line"),
+                              "yourmt3", True, ("yourmt3_vocals", "yourmt3")),
+    "combo_vocals": Variant("yourmt3[vocals]>muscriptor_small", "melody_vocals.json",
+                            ("fetch", "melody_separate", "melody_voice", "melody_fill", "melody_line"),
+                            "combo", True, ("yourmt3_vocals", "muscriptor_small")),
 }
 DEFAULT_VARIANT = "combo"
+BASE_MODELS = ("combo", "yourmt3")      # giá trị `model` của request
+
+
+def variant_key(model: str = DEFAULT_VARIANT, vocals: bool = False) -> str:
+    """Khóa của `VARIANTS` từ (`model`, `vocals`) của request."""
+    return f"{model}_vocals" if vocals else model
 
 # Cấu hình chọn bằng CV (cả 3 phần chọn giống nhau): a=source_viterbi b=salience_nodur gate=a pad=0.6.
 VOICE_PARAMS = L.LineParams(strategy="viterbi", source_mode="strict")
@@ -110,7 +132,7 @@ def code_revision(variant: str = "combo") -> str:
     from chordtrack.melody import muscriptor, yourmt3
 
     files = [Path(__file__), Path(L.__file__), Path(yourmt3.__file__)]
-    if variant != "yourmt3":
+    if variant_of(variant).base != "yourmt3":
         files.append(Path(muscriptor.__file__))
     return _file_hash(*files)
 
@@ -119,7 +141,7 @@ def code_revision(variant: str = "combo") -> str:
 def _wrapper_revision(model: str) -> str:
     from chordtrack.melody import muscriptor, yourmt3
 
-    mod = yourmt3 if model == "yourmt3" else muscriptor
+    mod = yourmt3 if model.startswith("yourmt3") else muscriptor
     return _file_hash(Path(mod.__file__))
 
 
@@ -140,6 +162,17 @@ def build_line(voice: MelodyModelOutput, fill: MelodyModelOutput) -> list[Melody
 def build_line_yourmt3(voice: MelodyModelOutput) -> list[MelodyNote]:
     """Dòng giai điệu đơn âm chỉ từ đầu ra YourMT3+ (biến thể `"yourmt3"`)."""
     line = L.notes_to_line(voice.notes, YOURMT3_PARAMS)
+    if OCTAVE_FIX:
+        line = L.fix_octave_jumps(line, **OCTAVE_FIX)
+    return line
+
+
+def build_line_yourmt3_vocals(stem: MelodyModelOutput, mix: MelodyModelOutput) -> list[MelodyNote]:
+    """Biến thể `"yourmt3_vocals"`: dòng YourMT3+ trên stem giọng (`stem`) trong các khoảng có nốt `voice` của chính
+    nó nới `GATE_PAD` giây, ngoài cổng dùng dòng YourMT3+ trên mix (`mix`). Cả hai dòng dùng `YOURMT3_PARAMS`."""
+    line_a = L.notes_to_line(stem.notes, YOURMT3_PARAMS)
+    line_b = L.notes_to_line(mix.notes, YOURMT3_PARAMS)
+    line = L.combine_gated(line_a, line_b, L.voice_intervals(stem.notes, pad=GATE_PAD))
     if OCTAVE_FIX:
         line = L.fix_octave_jumps(line, **OCTAVE_FIX)
     return line
@@ -194,9 +227,10 @@ def cached_melody(song_id: str, variant: str = DEFAULT_VARIANT) -> dict | None:
 RAW_CHANGED = "raw-changed"
 
 
-def _mark_others_stale(song_id: str, variant: str) -> None:
-    for other in VARIANTS:
-        if other == variant:
+def _mark_others_stale(song_id: str, variant: str, raw: str = "yourmt3") -> None:
+    """Đầu ra thô `raw` vừa chạy lại: kết quả của các biến thể khác cũng dựng từ nó thành cũ."""
+    for other, spec in VARIANTS.items():
+        if other == variant or raw not in spec.raws:
             continue
         p = result_path(song_id, other)
         data = read_json(p)
@@ -303,6 +337,18 @@ def _prepare_audio(source: str) -> tuple[str, Path]:
     return src.song_id, mix
 
 
+def run_separation(mix: Path, cache_dir: Path) -> dict:
+    """Tách stem giọng bằng BS-Roformer (`separation._run_roformer`, tự giữ `gpu_lock()`), ghi `vocals.wav` và
+    `instrumental.wav` vào `cache_dir` như bước tách nguồn của pipeline hợp âm (pipeline đó sẽ dùng lại). Trả thống
+    kê thời gian / VRAM đỉnh (MB)."""
+    from chordtrack import separation
+
+    stats = separation._run_roformer(mix, cache_dir / "vocals.wav", cache_dir / "instrumental.wav")
+    p = cache_dir / separation.STATS_FILE        # thêm vào thống kê chung với pipeline hợp âm, giữ mục cũ
+    write_json(p, {**(read_json(p) or {}), "roformer": stats})
+    return stats
+
+
 def analyze_melody(source: str, *, force: bool = False,
                    progress: Callable[[str, float], None] | None = None, variant: str = DEFAULT_VARIANT) -> dict:
     """Dò giai điệu một bài (videoId, URL YouTube hoặc file) bằng biến thể `variant` (`VARIANTS`), trả `<Melody>`
@@ -310,7 +356,7 @@ def analyze_melody(source: str, *, force: bool = False,
 
     `progress(step, fraction)` được gọi ở đầu (0.0) và cuối (1.0) mỗi bước trong `VARIANTS[variant].steps`. Có
     cache thì không gọi. `force=True` chạy lại các model của biến thể này (biến thể `"yourmt3"` chỉ chạy lại
-    YourMT3+).
+    YourMT3+); stem giọng `vocals.wav` đã có thì luôn dùng lại (tách giọng cho cùng một kết quả).
     """
     spec = variant_of(variant)
     report = progress or (lambda step, fraction: None)
@@ -337,38 +383,51 @@ def analyze_melody(source: str, *, force: bool = False,
 
     # Bước dùng lại đầu ra thô có sẵn chỉ báo xong (không báo bắt đầu), để thời gian gần 0 của nó không được ghi
     # vào thống kê ước tính thời gian của job.
-    t0 = time.perf_counter()
-    raw_a = _raw_path(cache_dir, "yourmt3")
-    voice = None if force else _load_raw(raw_a, "yourmt3")
-    if voice is None:
-        report("melody_voice", 0.0)
-        voice = run_yourmt3(mix, raw_a)
-        _save_raw(voice, raw_a, "yourmt3")
-        # Đầu ra thô YourMT3+ dùng chung giữa các biến thể: kết quả biến thể khác dựng từ bản cũ thì thành cũ.
-        _mark_others_stale(song_id, variant)
-    timing["melody_voice"] = time.perf_counter() - t0
-    vram["yourmt3"] = _num(voice.extras.get("peak_vram_mib"))
-    report("melody_voice", 1.0)
-
-    fill = None
-    if "melody_fill" in spec.steps:
+    def raw_step(step: str, raw: str, run: Callable[[], MelodyModelOutput]) -> MelodyModelOutput:
         t0 = time.perf_counter()
-        raw_b = _raw_path(cache_dir, "muscriptor_small")
-        fill = None if force else _load_raw(raw_b, "muscriptor_small")
-        if fill is None:
-            report("melody_fill", 0.0)
-            fill = run_muscriptor(mix)
-            _save_raw(fill, raw_b, "muscriptor_small")
-        timing["melody_fill"] = time.perf_counter() - t0
-        vram["muscriptor_small"] = _num(fill.extras.get("peak_vram_mb"))
-        report("melody_fill", 1.0)
+        path = _raw_path(cache_dir, raw)
+        out = None if force else _load_raw(path, raw)
+        if out is None:
+            report(step, 0.0)
+            out = run()
+            _save_raw(out, path, raw)
+            # Đầu ra thô dùng chung giữa các biến thể: kết quả biến thể khác dựng từ bản cũ thì thành cũ.
+            _mark_others_stale(song_id, variant, raw)
+        timing[step] = time.perf_counter() - t0
+        vram[raw] = _num(out.extras.get("peak_vram_mib", out.extras.get("peak_vram_mb")))
+        report(step, 1.0)
+        return out
+
+    mix_voice = fill = None
+    if spec.vocals:
+        # Stem giọng: dùng lại vocals.wav nếu đã có (pipeline hợp âm hoặc lần dò trước), kể cả khi `force`.
+        t0 = time.perf_counter()
+        vocals_wav = cache_dir / "vocals.wav"
+        if not vocals_wav.exists():
+            report("melody_separate", 0.0)
+            vram["roformer"] = _num(run_separation(mix, cache_dir).get("peak_vram_mb"))
+        timing["melody_separate"] = time.perf_counter() - t0
+        report("melody_separate", 1.0)
+        voice = raw_step("melody_voice", "yourmt3_vocals",
+                         lambda: run_yourmt3(vocals_wav, _raw_path(cache_dir, "yourmt3_vocals")))
+        if "melody_voice_mix" in spec.steps:
+            mix_voice = raw_step("melody_voice_mix", "yourmt3", lambda: run_yourmt3(mix, _raw_path(cache_dir, "yourmt3")))
+    else:
+        voice = raw_step("melody_voice", "yourmt3", lambda: run_yourmt3(mix, _raw_path(cache_dir, "yourmt3")))
+    if "melody_fill" in spec.steps:
+        fill = raw_step("melody_fill", "muscriptor_small", lambda: run_muscriptor(mix))
 
     report("melody_line", 0.0)
     t0 = time.perf_counter()
     import soundfile as sf
 
     duration = float(sf.info(str(mix)).duration)
-    notes = build_line(voice, fill) if fill is not None else build_line_yourmt3(voice)
+    if fill is not None:
+        notes = build_line(voice, fill)
+    elif mix_voice is not None:
+        notes = build_line_yourmt3_vocals(voice, mix_voice)
+    else:
+        notes = build_line_yourmt3(voice)
     timing["melody_line"] = time.perf_counter() - t0
     timing["total"] = time.perf_counter() - t_start
     result = build_result(song_id, duration, notes, timing, vram, variant=variant)
@@ -398,14 +457,20 @@ def melody_ready() -> dict[str, bool]:
         "yourmt3_checkpoint": yourmt3.CHECKPOINT.exists(),
         "muscriptor_package": importlib.util.find_spec("muscriptor") is not None,
         "muscriptor_weights": all((w / f).exists() for f in ("model.safetensors", "config.json")),
+        # BS-Roformer: weights tự tải vào MODELS_DIR/audio-separator ở lần chạy đầu, chỉ cần gói audio-separator.
+        "separator_package": importlib.util.find_spec("audio_separator") is not None,
     }
 
 
 def variant_ready(ready: dict[str, bool]) -> dict[str, bool]:
-    """Từ kết quả `melody_ready()`: mỗi biến thể đã đủ model để chạy chưa (`"yourmt3"` chỉ cần các khóa
-    `yourmt3_*`)."""
-    return {"combo": all(ready.values()),
-            "yourmt3": all(v for k, v in ready.items() if k.startswith("yourmt3_"))}
+    """Từ kết quả `melody_ready()`: mỗi biến thể (khóa của `VARIANTS`) đã đủ model để chạy chưa. `"yourmt3"` chỉ cần
+    các khóa `yourmt3_*`, `"combo"` thêm `muscriptor_*`, bản `*_vocals` thêm `separator_package`."""
+    def has(*prefixes: str) -> bool:
+        return all(v for k, v in ready.items() if k.startswith(prefixes))
+
+    return {key: has("yourmt3_", *(("muscriptor_",) if spec.base == "combo" else ()),
+                     *(("separator_",) if spec.vocals else ()))
+            for key, spec in VARIANTS.items()}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -414,7 +479,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("source", help="videoId, URL YouTube hoặc đường dẫn file audio")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--model", choices=tuple(VARIANTS), default=DEFAULT_VARIANT,
-                    help="biến thể: combo (YourMT3+ ghép MuScriptor small, mặc định) hoặc yourmt3 (chỉ YourMT3+)")
+                    help="biến thể: combo (YourMT3+ ghép MuScriptor small, mặc định), yourmt3 (chỉ YourMT3+), "
+                         "yourmt3_vocals / combo_vocals (đoạn có giọng lấy YourMT3+ trên stem giọng BS-Roformer)")
     args = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")

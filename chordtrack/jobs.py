@@ -1,7 +1,8 @@
 """Hàng đợi job phân tích, lưu bằng SQLite (`data/cache/jobs.sqlite`), và một worker thread duy nhất.
 
-- Ba loại job (`kind`): `"analyze"` (hợp âm, `pipeline.analyze`), `"melody"` (dò giai điệu bằng cách ghép,
-  `chordtrack.melody.pipeline.analyze_melody`) và `"melody_yourmt3"` (dò giai điệu chỉ bằng YourMT3+). Mỗi loại có
+- Các loại job (`kind`): `"analyze"` (hợp âm, `pipeline.analyze`), `"melody"` (dò giai điệu bằng cách ghép,
+  `chordtrack.melody.pipeline.analyze_melody`), `"melody_yourmt3"` (dò giai điệu chỉ bằng YourMT3+) và hai bản tách
+  giọng `"melody_yourmt3_vocals"`, `"melody_combo_vocals"` (`MELODY_KIND_OF`). Mỗi loại có
   danh sách bước, câu thông báo và thời gian mặc định riêng (`KINDS`), chung một hàng đợi theo thứ tự gửi.
 
 - Chỉ **một** worker xử lý lần lượt từng job vì GPU chỉ có 8 GB (mỗi bước model còn tự lấy
@@ -31,6 +32,7 @@ log = logging.getLogger(__name__)
 
 from chordtrack.melody.pipeline import STEPS as MELODY_STEPS
 from chordtrack.melody.pipeline import VARIANTS as MELODY_VARIANTS
+from chordtrack.melody.pipeline import variant_key as melody_variant_key   # (model, vocals) -> biến thể
 from chordtrack.pipeline import TIMING_KEYS
 
 STEPS = tuple(k for k in TIMING_KEYS if k != "total")   # các bước pipeline báo qua `progress`
@@ -74,11 +76,35 @@ MELODY_Y3_STEP_MESSAGES = {**{s: MELODY_STEP_MESSAGES[s] for s in MELODY_Y3_STEP
 MELODY_Y3_DEFAULT_STEP_SECONDS = {**{s: MELODY_DEFAULT_STEP_SECONDS[s] for s in MELODY_Y3_STEPS},
                                   "melody_voice": 40.0}
 
+# Tách giọng (cờ `vocals`): BS-Roformer tách stem giọng rồi YourMT3+ chạy trên stem cho đoạn có giọng. Thời gian đo
+# trên "Let It Be" (243 s, RTX 3060 Ti, 2026-11-11, cả bước, gồm nạp model): tách giọng 50 s, YourMT3+ trên stem 23 s.
+# Bản YourMT3+ còn chạy YourMT3+ trên mix (`melody_voice_mix`, 36 s nếu chưa có đầu ra thô), bản ghép chạy MuScriptor
+# small trên mix (`melody_fill`).
+MELODY_VOCALS_STEP_MESSAGES = {
+    "fetch": MELODY_STEP_MESSAGES["fetch"],
+    "melody_separate": "Đang tách giọng hát (BS-Roformer)",
+    "melody_voice": "Đang dò giọng hát trên stem giọng (YourMT3+)",
+    "melody_voice_mix": "Đang dò giai điệu bản mix (YourMT3+)",
+    "melody_fill": MELODY_STEP_MESSAGES["melody_fill"],
+    "melody_line": MELODY_STEP_MESSAGES["melody_line"],
+}
+MELODY_VOCALS_DEFAULT_STEP_SECONDS = {"fetch": 1.0, "melody_separate": 50.0, "melody_voice": 25.0,
+                                      "melody_voice_mix": 40.0, "melody_fill": 120.0, "melody_line": 1.0}
+
+
+def _vocals_kind(variant: str) -> Kind:
+    steps = MELODY_VARIANTS[variant].steps
+    return Kind(steps, {s: MELODY_VOCALS_STEP_MESSAGES[s] for s in steps},
+                {s: MELODY_VOCALS_DEFAULT_STEP_SECONDS[s] for s in steps}, "Lỗi khi dò giai điệu")
+
+
 KINDS = {
     "analyze": Kind(STEPS, STEP_MESSAGES, DEFAULT_STEP_SECONDS, "Lỗi khi phân tích"),
     "melody": Kind(MELODY_STEPS, MELODY_STEP_MESSAGES, MELODY_DEFAULT_STEP_SECONDS, "Lỗi khi dò giai điệu"),
     "melody_yourmt3": Kind(MELODY_Y3_STEPS, MELODY_Y3_STEP_MESSAGES, MELODY_Y3_DEFAULT_STEP_SECONDS,
                            "Lỗi khi dò giai điệu"),
+    "melody_yourmt3_vocals": _vocals_kind("yourmt3_vocals"),
+    "melody_combo_vocals": _vocals_kind("combo_vocals"),
 }
 # Biến thể dò giai điệu (`chordtrack.melody.pipeline.VARIANTS`) -> loại job: mặc định "melody" (như trước khi có
 # biến thể), biến thể khác "melody_<tên>" (phải có trong KINDS).
@@ -309,7 +335,8 @@ def job_status(store: JobStore, job: Job, now: float | None = None) -> dict[str,
     out: dict[str, Any] = {"job_id": job.id, "song_id": job.song_id, "kind": job.kind, "status": job.status,
                            "step": None, "progress": 0.0, "message": None, "eta_seconds": None, "error": None}
     if job.kind in MELODY_VARIANT_OF:
-        out["model"] = MELODY_VARIANT_OF[job.kind]
+        v = MELODY_VARIANTS[MELODY_VARIANT_OF[job.kind]]
+        out["model"], out["vocals"] = v.base, v.vocals
     if job.status == "done":
         out.update(progress=1.0, message="Xong", eta_seconds=0.0)
     elif job.status == "error":

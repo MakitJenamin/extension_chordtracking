@@ -15,8 +15,9 @@
  *
  * Giai điệu (docs/melody_api.md): job riêng, chỉ chạy khi người dùng bấm "Dò giai điệu" (CT.app.detectMelody).
  *   Khi hợp âm của bài đã hiện, GET /melody/{id}?model= một lần: đã dò rồi thì hiện luôn. Phát sự kiện "melody".
- *   Biến thể theo CT.settings.melodyModel ("combo" | "yourmt3"), mỗi biến thể một trạng thái; đổi biến thể thì
- *   hỏi GET cho biến thể mới (nếu chưa hỏi), không tự chạy job.
+ *   Biến thể theo CT.settings.melodyModel ("combo" | "yourmt3") và CT.settings.melodyVocals (tách giọng), khóa
+ *   CT.theory.melodyKey; mỗi biến thể một trạng thái; đổi lựa chọn thì hỏi GET cho biến thể mới (nếu chưa hỏi),
+ *   không tự chạy job.
  */
 (() => {
   const RETRY_MS = 5000;
@@ -42,11 +43,11 @@
   function stopRetry() { clearTimeout(retryTimer); retryTimer = 0; }
 
   /* ----- giai điệu ----- */
-  // Mỗi biến thể (CT.settings.melodyModel: "combo" | "yourmt3") một trạng thái riêng: job của biến thể này vẫn
+  // Mỗi biến thể (khóa CT.theory.melodyKey(melodyModel, melodyVocals)) một trạng thái riêng: job của biến thể này vẫn
   // chạy và được theo dõi khi người dùng chuyển sang biến thể kia; chỉ biến thể đang chọn được phát ra.
   const newMel = () => ({ status: "unknown", melody: null, stale: false, job: null, error: null, ctrl: null });
-  const newMels = () => Object.fromEntries(Object.keys(CT.theory.MELODY_MODELS).map((v) => [v, newMel()]));
-  const melVariant = () => CT.theory.melodyVariant(CT.settings.melodyModel);
+  const newMels = () => Object.fromEntries(CT.theory.MELODY_KEYS.map((v) => [v, newMel()]));
+  const melVariant = () => CT.theory.melodyKey(CT.settings.melodyModel, !!CT.settings.melodyVocals);
 
   function emitMelody(c) {
     if (c !== cur) return;
