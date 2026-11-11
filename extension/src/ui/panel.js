@@ -158,17 +158,18 @@
       const check = (key, text, tip) => h("label", { title: tip },
         h("input", { type: "checkbox", role: "switch", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), text);
       this.melBox = h("span", { class: "ct-melbox" });
-      // Chọn cách dò giai điệu (CT.settings.melodyModel): "Dò: Nhanh | Kỹ", nút phân đoạn cùng kiểu Gốc/Phím trắng/Bậc
+      // Chọn cách dò giai điệu (CT.settings.melodyModel): "Dò: Bình thường | Kỹ", nút phân đoạn cùng kiểu Gốc/Phím trắng/Bậc
       // La Mã. Dựng một lần, không nằm trong melBox (melBox dựng lại mỗi lần job báo tiến độ). Tách giọng và căn nốt
       // về phách luôn bật, không có công tắc (người dùng chốt 2026-11-11).
       const MM = T().MELODY_MODELS;
       this.melSel = h("div", { class: "ct-seg ct-seg-sm", role: "group", "aria-label": "Cách dò giai điệu" },
-        h("span", { class: "ct-seg-lbl" }, "Dò:"),
         ...Object.entries(MM).map(([k, v]) => h("button", { type: "button", "data-v": k, title: `${v.label}: ${v.tip}`,
           onclick: (e) => { if (e.currentTarget.getAttribute("aria-disabled") !== "true") CT.setSettings({ melodyModel: k }); } },
           v.short)));
       this.opts = h("div", { class: "ct-controls" },
-        this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox), h("span", { class: "ct-grow" }),
+        this.seg, this.stepper, h("span", { class: "ct-melgrp", role: "group", "aria-label": "Giai điệu" },
+          h("span", { class: "ct-melgrp-lbl", "aria-hidden": "true" }, "Giai điệu"),
+          this.melSel, this.melBox), h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
@@ -192,7 +193,7 @@
       this.applySettings(CT.settings);
     },
 
-    /** Nút "Nhanh | Kỹ": tô cách dò thật sự dùng (khác lựa chọn đã lưu khi server thiếu MuScriptor; lựa chọn đã lưu
+    /** Nút "Bình thường | Kỹ": tô cách dò thật sự dùng (khác lựa chọn đã lưu khi server thiếu MuScriptor; lựa chọn đã lưu
      * giữ nguyên để server có MuScriptor thì tự về "Kỹ"), làm mờ cách server chưa chạy được kèm tooltip hướng dẫn.
      * Dùng aria-disabled thay cho `disabled` để tooltip vẫn hiện khi rê chuột. */
     applyMelodyAvail() {
@@ -228,7 +229,7 @@
         ? " Server chưa cài phần tách giọng nên dò trên bản mix (cài: chạy lại scripts\\setup.ps1)." : "";
       const run = (force) => () => CT.app && CT.app.detectMelody(force);
       const btn = (kids, tip, onclick, cls = "ct-btn") => h("button", { type: "button", class: cls, title: tip, onclick }, ...kids);
-      // Job của cách dò kia vẫn chạy (người dùng đổi cách dò giữa chừng): chip nhỏ "Nhanh đang dò… 40%".
+      // Job của cách dò kia vẫn chạy (người dùng đổi cách dò giữa chừng): chip nhỏ "Bình thường đang dò… 40%".
       const others = (m.others || []).map((o) => {
         const op = T().melodyParts(o.model);
         // Cùng cách dò nhưng khác bản tách giọng (server vừa cài thêm gói tách giọng): không chọn lại được, chỉ báo.
@@ -272,7 +273,7 @@
         kids = [h("button", { type: "button", class: "ct-btn ct-dis", "aria-disabled": "true",
           title: "Server chưa cài dò giai điệu. " + T().MELODY_SETUP_HINT }, "♪ Dò giai điệu")];
       } else {
-        kids = [btn([`♪ Dò giai điệu (${name})`],
+        kids = [btn(["♪ Dò giai điệu"],
           `Dò dòng nốt giai điệu bằng AI trên máy, cách ${name}: ${info.tip}. Chỉ chạy cách này; kết quả hiện dưới dải hợp âm.${mixNote}`,
           run(false))];
       }

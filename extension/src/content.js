@@ -15,7 +15,7 @@
  *
  * Giai điệu (docs/melody_api.md): job riêng, chỉ chạy khi người dùng bấm "Dò giai điệu" (CT.app.detectMelody).
  *   Khi hợp âm của bài đã hiện, GET /melody/{id}?model= một lần: đã dò rồi thì hiện luôn. Phát sự kiện "melody".
- *   Biến thể = cách dò CT.settings.melodyModel ("yourmt3" = Nhanh | "combo" = Kỹ), luôn tách giọng, lùi theo
+ *   Biến thể = cách dò CT.settings.melodyModel ("yourmt3" = Bình thường | "combo" = Kỹ), luôn tách giọng, lùi theo
  *   `melody_models` của GET /health khi server thiếu model (CT.theory.melodyEffective; không đổi lựa chọn đã lưu).
  *   Mỗi biến thể một trạng thái; đổi lựa chọn thì chỉ hỏi GET cho biến thể mới (nếu chưa hỏi), không tự chạy job:
  *   POST /melody chỉ gửi khi người dùng bấm nút dò hoặc ↻.

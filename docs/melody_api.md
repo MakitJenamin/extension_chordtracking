@@ -18,7 +18,7 @@ YourMT3+ trên stem ~23 s).
 Thêm (2026-11-11, bản open source): **MuScriptor small là tùy chọn khi cài** (repo gated, CC BY-NC 4.0, cần tài khoản
 Hugging Face); YourMT3+ (Apache-2.0) cài mặc định cùng `setup.ps1`, không cần tài khoản. Server thiếu model của biến thể
 nào thì `melody_models` báo `false` cho biến thể đó và `POST /melody` trả **409** (xem dưới). Extension gọi hai cách dò
-là **"Nhanh"** (`model: "yourmt3"`, mặc định) và **"Kỹ"** (`model: "combo"`), **luôn gửi `vocals: true`** và **luôn căn
+là **"Bình thường"** (`model: "yourmt3"`, mặc định) và **"Kỹ"** (`model: "combo"`), **luôn gửi `vocals: true`** và **luôn căn
 nốt về phách** (không còn công tắc "Tách giọng", "Nốt khớp phách"; người dùng chốt 2026-11-11). Server giữ nguyên tham số
 (`model` mặc định `"combo"`, `vocals` mặc định `false`) để client cũ vẫn chạy.
 
@@ -90,7 +90,7 @@ stat), nên tải thêm model xong là thấy ngay.
 
 Extension (`CT.theory.melodyEffective`, `melodyAvail`) đọc `melody_models` khi hiện hợp âm một bài và trước khi dò:
 - Biến thể dùng = cách dò đã chọn + tách giọng. Server thiếu gói tách giọng thì bỏ tách giọng (không báo lỗi, chỉ ghi
-  chú trong tooltip nút dò); đang chọn "Kỹ" mà server thiếu MuScriptor thì **hiện và dò như "Nhanh"**, nút "Kỹ" mờ kèm
+  chú trong tooltip nút dò); đang chọn "Kỹ" mà server thiếu MuScriptor thì **hiện và dò như "Bình thường"**, nút "Kỹ" mờ kèm
   tooltip ba bước Hugging Face. Lựa chọn đã lưu **không bị ghi đè**: cài MuScriptor xong thì tự về "Kỹ". Chọn cách này
   thay vì báo lỗi vì nút mờ đã giải thích, còn thông báo lỗi sẽ hiện lại ở mọi video.
 - Không có cách dò nào (`melody` false): nút "Dò giai điệu" mờ, tooltip hướng dẫn chạy lại `setup.ps1`.
@@ -130,8 +130,8 @@ Extension (`CT.theory.melodyEffective`, `melodyAvail`) đọc `melody_models` kh
 - Nốt **luôn căn về phách**: đầu/cuối nốt về lưới phách `song.beats` của kết quả hợp âm (`theory.snapNotes`), chỉ ở
   extension, không gọi server. Mức chia mỗi phách (2 hoặc 4) tự chọn theo tempo và độ dày giai điệu
   (`theory.autoSnapDiv`). Bài không có lưới phách thì giữ nguyên. Cài đặt cũ `melodySnap` bị xóa.
-- Nút phân đoạn cạnh nút dò: "Dò: Nhanh | Kỹ" (không dùng tên model), cùng kiểu với Gốc/Phím trắng/Bậc La Mã (nhớ lựa
-  chọn, `CT.settings.melodyModel`, **mặc định `yourmt3`** = Nhanh). Extension luôn gửi `model`. Nút dò ghi rõ cách đang
-  chọn ("♪ Dò giai điệu (Kỹ)"), chip tiến độ cũng vậy ("Giai điệu (Nhanh) 45% · …"). Mỗi lần bấm chỉ gửi **một** POST
+- Nút phân đoạn cạnh nút dò: "Giai điệu: Bình thường | Kỹ" (không dùng tên model), cùng kiểu với Gốc/Phím trắng/Bậc La Mã (nhớ lựa
+  chọn, `CT.settings.melodyModel`, **mặc định `yourmt3`** = Bình thường). Extension luôn gửi `model`. Nút "♪ Dò giai điệu" màu tím cho nổi bật;
+  chip tiến độ ghi rõ cách đang dò ("Giai điệu (Bình thường) 45% · …"). Mỗi lần bấm chỉ gửi **một** POST
   cho cách đang chọn; đổi lựa chọn thì chỉ `GET` biến thể đó (đã có thì hiện, chưa có thì hiện nút dò), **không** tự
-  gửi job. Job của cách kia vẫn chạy ở nền thì hiện chip nhỏ "Nhanh đang dò… 40%".
+  gửi job. Job của cách kia vẫn chạy ở nền thì hiện chip nhỏ "Bình thường đang dò… 40%".
