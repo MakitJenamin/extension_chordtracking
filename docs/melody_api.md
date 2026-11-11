@@ -80,6 +80,7 @@ Thêm trường `"melody": true | false` (đã cài đủ model cho biến thể
 - Nốt `uncertain` hiện **mờ**.
 - Dịch giọng (`transpose` và chế độ hiển thị của hợp âm) áp dụng cho cả nốt giai điệu: tên nốt tính từ `pitch + transpose`.
 - Có nút **"Dò giai điệu"**: bấm mới gửi `POST /melody`, hiện tiến độ job; đã có kết quả thì tự tải bằng `GET /melody/{id}`.
-- Ô chọn biến thể cạnh nút: "Ghép" / "Chỉ YourMT3+" (nhớ lựa chọn, `CT.settings.melodyModel`). Nút dò và lần tự tải
-  dùng biến thể đang chọn; đổi lựa chọn thì tải biến thể đó nếu đã có, chưa có thì hiện trạng thái chưa dò (không tự
-  chạy job). Tên biến thể đang hiển thị hiện nhỏ cạnh công tắc "Giai điệu".
+- Nút phân đoạn cạnh nút dò: "♪ YourMT3+ | Ghép", cùng kiểu với Gốc/Phím trắng/Bậc La Mã (nhớ lựa chọn,
+  `CT.settings.melodyModel`, **mặc định `yourmt3`**, người dùng chốt 2026-11-11). Extension luôn gửi `model`. Nút dò và
+  lần tự tải dùng biến thể đang chọn; đổi lựa chọn thì tải biến thể đó nếu đã có, chưa có thì hiện trạng thái chưa dò
+  (không tự chạy job).

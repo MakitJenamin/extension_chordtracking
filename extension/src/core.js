@@ -63,8 +63,8 @@
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
-    melodyModel: "combo",     // biến thể dò giai điệu: "combo" (ghép YourMT3+ + MuScriptor) | "yourmt3" (chỉ YourMT3+)
-    settingsRev: 2,           // phiên bản cài đặt, dùng để chuyển đổi một lần
+    melodyModel: "yourmt3",   // biến thể dò giai điệu: "yourmt3" (chỉ YourMT3+, mặc định) | "combo" (ghép YourMT3+ + MuScriptor)
+    settingsRev: 3,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
   };
@@ -81,8 +81,12 @@
         const s = await chrome.storage.sync.get("settings");
         CT.settings = { ...DEFAULTS, ...(s.settings || {}) };
         // Một lần (settingsRev < 2): bật lại "Khớp phách" cho người đã lỡ tắt, theo yêu cầu mặc định ON.
-        if ((CT.settings.settingsRev || 0) < 2) {
-          CT.settings = { ...CT.settings, snapToBeats: true, settingsRev: 2 };
+        const rev = CT.settings.settingsRev || 0;
+        if (rev < 3) {
+          if (rev < 2) CT.settings = { ...CT.settings, snapToBeats: true };
+          // Một lần (settingsRev < 3): mặc định giai điệu đổi sang "yourmt3" (người dùng chốt 2026-11-11). setSettings
+          // lưu cả object nên người đã đổi cài đặt bất kỳ đều có sẵn "combo" cũ, ghi đè mặc định mới.
+          CT.settings = { ...CT.settings, melodyModel: "yourmt3", settingsRev: 3 };
           try { await chrome.storage.sync.set({ settings: CT.settings }); } catch {}
         }
       } catch { CT.settings = { ...DEFAULTS }; }

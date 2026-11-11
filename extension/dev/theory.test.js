@@ -282,22 +282,19 @@ test("Magia: dòng nốt giả ở chế độ Phím trắng hầu hết là ph�
   for (let i = 1; i < notes.length; i++) assert.ok(notes[i].start >= notes[i - 1].start);
 });
 
-test("biến thể dò giai điệu: melodyVariant, melodyModelOk, melodyModelName", () => {
+test("biến thể dò giai điệu: melodyVariant, melodyModelOk", () => {
   assert.equal(T.melodyVariant("yourmt3"), "yourmt3");
   assert.equal(T.melodyVariant("combo"), "combo");
-  for (const bad of [undefined, null, "", "khac", "toString", "__proto__"]) assert.equal(T.melodyVariant(bad), "combo");
+  for (const bad of [undefined, null, "", "khac", "toString", "__proto__"]) assert.equal(T.melodyVariant(bad), "yourmt3");
   const combo = { model: "yourmt3>muscriptor_small", notes: [] };
   const y3 = { model: "yourmt3", notes: [] };
   assert.ok(T.melodyModelOk("combo", combo));
   assert.ok(T.melodyModelOk("combo", { notes: [] }));          // kết quả cũ không có trường model
-  assert.ok(T.melodyModelOk(undefined, combo));
+  assert.ok(T.melodyModelOk(undefined, y3));                   // mặc định: chỉ YourMT3+
+  assert.ok(!T.melodyModelOk(undefined, combo));
   assert.ok(T.melodyModelOk("yourmt3", y3));
   assert.ok(!T.melodyModelOk("yourmt3", combo));               // server cũ bỏ qua ?model= và trả bản ghép
   assert.ok(!T.melodyModelOk("yourmt3", { notes: [] }));
   assert.ok(!T.melodyModelOk("combo", y3));
-  assert.equal(T.melodyModelName("yourmt3"), "YourMT3+");
-  assert.equal(T.melodyModelName("yourmt3>muscriptor_small"), "Ghép");
-  assert.equal(T.melodyModelName("model_moi"), "model_moi");
-  assert.equal(T.melodyModelName(undefined), "Ghép");
-  assert.deepEqual(Object.keys(T.MELODY_MODELS), ["combo", "yourmt3"]);
+  assert.deepEqual(Object.keys(T.MELODY_MODELS), ["yourmt3", "combo"]);
 });
