@@ -20,12 +20,7 @@
 
 <p align="center">
   <img src="docs/img/demo.gif" alt="Dải hợp âm và dòng giai điệu chạy theo video Magia của Kalafina">
-  <br><sub>🎬 "Magia" (Kalafina, Yuki Kajiura sáng tác): hợp âm và nốt giai điệu chạy theo video, vạch đỏ là chỗ đang phát</sub>
-</p>
-
-<p align="center">
-  <img src="docs/img/fullscreen.jpg" alt="ChordTrack khi xem toàn màn hình">
-  <br><sub>🖥️ Toàn màn hình: dải hợp âm đè lên video, ngay trên thanh điều khiển, chữ luôn rõ để vừa xem vừa đàn</sub>
+  <br><sub>🎬 "Magia" (Kalafina, Yuki Kajiura sáng tác): hợp âm và nốt giai điệu chạy theo video ở chế độ toàn màn hình</sub>
 </p>
 
 ## ✨ Có gì
@@ -38,33 +33,42 @@
 </tr>
 <tr>
 <td align="center">🎹<br><b>Phím trắng</b><br><sub>Tự transpose cho người chơi piano</sub></td>
+<td align="center">🎵<br><b>Dò giai điệu</b><br><sub>Tên nốt và ↑/↓ chạy dưới hợp âm</sub></td>
 <td align="center">🖥️<br><b>Toàn màn hình &amp; rạp phim</b><br><sub>Hợp âm hiện ở mọi chế độ xem</sub></td>
-<td align="center">🔒<br><b>Riêng tư</b><br><sub>AI chạy trên máy, không gửi gì đi</sub></td>
-</tr>
-<tr>
-<td align="center">🎵<br><b>Dòng giai điệu</b><br><sub>Bấm "Dò giai điệu": tên nốt và ↑/↓ chạy dưới hợp âm, dịch giọng như hợp âm. Hai cách dò: Bình thường (YourMT3+) và Kỹ (thêm MuScriptor)</sub></td>
-<td align="center">🎤<br><b>Tách giọng</b><br><sub>BS-Roformer tách giọng hát trước khi dò, ít lẫn nhạc đệm</sub></td>
-<td align="center">📏<br><b>Nốt khớp phách</b><br><sub>Nốt tự căn về lưới phách của bài, dễ đọc nhịp</sub></td>
 </tr>
 </table>
+
+🔒 Mọi phân tích chạy trên máy bạn, không gửi gì lên mạng.
 
 ## 📸 Giao diện
 
 ### Ba cách đọc hợp âm
 
-**🎹 Phím trắng** (mặc định): đổi hợp âm về giọng chỉ dùng phím trắng, kèm số nút transpose cần bấm trên đàn. Thanh vàng đếm ngược trước chỗ đổi giọng.
+**🎹 Phím trắng** (mặc định): đổi về giọng chỉ dùng phím trắng, kèm số nút transpose cần bấm. Thanh vàng đếm ngược trước chỗ đổi giọng.
 
 <img src="docs/img/chord-bar.png" alt="Chế độ Phím trắng">
 
-**Gốc**: hợp âm đúng như bản thu, nút Tông −/+ để dịch giọng tự do.
+**Gốc**: hợp âm đúng như bản thu, nút Tông −/+ để dịch giọng.
 
 <img src="docs/img/mode-goc.png" alt="Chế độ Gốc">
 
-**Bậc La Mã**: hợp âm theo bậc trong giọng (I, IV, V, vi…), hợp để học vòng hợp âm và chơi ở giọng bất kỳ.
+**Bậc La Mã**: hợp âm theo bậc trong giọng (I, IV, V, vi…), để học vòng hợp âm.
 
 <img src="docs/img/mode-la-ma.png" alt="Chế độ Bậc La Mã">
 
 > Vạch đỏ là chỗ đang phát · vạch vàng đứt là chỗ đổi giọng · ⚠ là hợp âm model chưa chắc · bấm vào hợp âm để tua tới đó.
+
+### Dò giai điệu
+
+<img src="docs/img/melody.png" alt="Dòng nốt giai điệu dưới dải hợp âm">
+
+Bấm **♪ Dò giai điệu** khi hợp âm đã hiện. Tên nốt chạy dưới hợp âm, ↑/↓ là cao hay thấp hơn nốt trước. Giọng hát
+được tách riêng trước khi dò; nốt tự khớp phách và dịch giọng theo hợp âm. Bài 4 phút mất khoảng 2–3 phút ở lần đầu.
+
+| Cách | Model | Hợp với |
+|---|---|---|
+| **Bình thường** (mặc định) | YourMT3+ | Bài có lời |
+| **Kỹ** (tùy chọn, [cách bật](#5-tùy-chọn-bật-cách-dò-kỹ)) | YourMT3+ và MuScriptor | Bài có đoạn nhạc cụ dài |
 
 ### Cấu trúc bài
 
@@ -73,13 +77,11 @@
 <td width="45%"><img src="docs/img/song-structure.png" alt="Cấu trúc bài ở cột phải"></td>
 <td>
 
-Cột phải liệt kê **từng đoạn** của bài: vòng hợp âm, bậc La Mã, giọng và nút transpose.
+Cột phải liệt kê **từng đoạn**: vòng hợp âm, bậc La Mã, giọng, nút transpose.
 
-🎨 Cùng màu là cùng một đoạn nhạc lặp lại.
+🎨 Cùng màu là cùng đoạn nhạc lặp lại. ⏩ Bấm vào đoạn để tua tới đó.
 
-⏩ Bấm vào đoạn để tua tới đó.
-
-🎬 Ở **chế độ rạp phim**, các đoạn xếp ngang ngay dưới dải hợp âm (ảnh dưới).
+🎬 Ở **chế độ rạp phim**, các đoạn xếp ngang dưới dải hợp âm (ảnh dưới).
 
 </td>
 </tr>
@@ -96,31 +98,19 @@ Cột phải liệt kê **từng đoạn** của bài: vòng hợp âm, bậc La
 | 💻 Hệ điều hành | Windows 10 64-bit | Windows 11 | Windows 11 Pro |
 | 🧠 RAM | 8 GB | 16 GB | 32 GB |
 | 🎮 GPU | Không bắt buộc (chạy CPU, chậm hơn nhiều) | NVIDIA ≥ 4 GB VRAM, driver hỗ trợ CUDA 12.6 | RTX 3060 Ti 8 GB |
-| ⚙️ CPU | 64-bit, 4 nhân | 6 nhân trở lên | i5-12400F (6 nhân, 12 luồng) |
-| 💾 Ổ đĩa trống | 10 GB | 20 GB (còn chỗ cho cache) | |
-| 🌐 Mạng | Tải khoảng 5 GB ở lần cài đầu | | ~12 MB/s, cài mất ~14 phút |
-| 🧭 Trình duyệt | Chrome hoặc trình duyệt nhân Chromium nạp được extension | Google Chrome | Google Chrome |
+| ⚙️ CPU | 64-bit, 4 nhân | 6 nhân trở lên | i5-12400F |
+| 💾 Ổ đĩa trống | 10 GB | 20 GB | |
+| 🧭 Trình duyệt | Chrome hoặc trình duyệt nhân Chromium | Google Chrome | Google Chrome |
 
-Python 3.11, git, ffmpeg và Deno: chưa có thì script tự cài bằng `winget`.
-
-Cột "Tối thiểu" là **ước tính từ số đo** trên máy đã thử, chưa chạy thật trên máy yếu như vậy. Số đo (2026-11-11, bài
-"Let It Be" dài 4 phút):
-
-| Việc | RAM đỉnh | VRAM đỉnh | Thời gian (GPU) |
-|---|---|---|---|
-| Phân tích hợp âm, nhịp, cấu trúc | 2,1 GB | 0,7 GB | ~16 giây |
-| Dò giai điệu cách Bình thường (tách giọng + YourMT3+) | 3,4 GB | 3,0 GB | ~2 phút |
-| Server lúc rảnh (giữ model hợp âm trên RAM) | 2,3 GB | 0 | |
-
-- **GPU dưới 4 GB VRAM**: hợp âm vẫn chạy trên GPU, dò giai điệu có thể hết VRAM. Khi đó cài lại với `setup.ps1 -Cpu`.
-- **Không có GPU**: hợp âm mất khoảng 1 phút mỗi bài. Dò giai điệu trên CPU chưa đo, chắc chắn chậm hơn nhiều.
-- **Cache**: mỗi bài 4 phút chiếm khoảng 45 MB audio và khoảng 125 MB cache nếu có dò giai điệu (`data\audio`,
-  `data\cache`). Xóa hai thư mục này để lấy lại chỗ, bài cũ sẽ phải phân tích lại.
-- **macOS, Linux**: chưa hỗ trợ. Script cài đặt chỉ có bản PowerShell, mã Python chưa thử trên hệ điều hành khác.
+- Cột "Tối thiểu" ước tính từ số đo, chưa thử trên máy yếu. Đo trên máy đã thử: phân tích hợp âm ~16 giây (RAM 2,1 GB,
+  VRAM 0,7 GB); dò giai điệu ~2 phút (RAM 3,4 GB, VRAM 3,0 GB).
+- GPU dưới 4 GB: dò giai điệu có thể hết VRAM, cài lại với `setup.ps1 -Cpu`.
+- Mỗi bài chiếm khoảng 170 MB trong `data\audio` và `data\cache`, xóa được khi cần chỗ.
+- Chưa hỗ trợ macOS, Linux.
 
 ### 1. Tải mã nguồn và cài
 
-Mở **PowerShell** ở thư mục muốn đặt dự án, chạy:
+Mở **PowerShell** ở thư mục muốn đặt dự án:
 
 ```powershell
 git clone https://github.com/MakitJenamin/extension_chordtracking.git
@@ -128,24 +118,10 @@ cd extension_chordtracking
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
-Script tự làm hết: Python 3.11 → `.venv` → PyTorch (bản CUDA nếu thấy GPU NVIDIA) → thư viện → model (kiểm SHA-256) →
-ffmpeg, Deno → chạy thử. Cuối cùng in **tóm tắt**: thời gian từng bước, có GPU không, và dò giai điệu bật được những gì.
-Chạy lại nhiều lần không sao, bước nào xong rồi sẽ bỏ qua.
+Script tự cài Python 3.11, PyTorch (bản CUDA nếu có GPU NVIDIA), thư viện, model (kiểm SHA-256), ffmpeg và Deno, rồi
+chạy thử và in tóm tắt. Tải khoảng 5 GB, mất khoảng 14 phút với mạng 12 MB/s. Chạy lại nhiều lần không sao.
 
-Đo thật (2026-11-11): clone mới, máy RTX 3060 Ti, mạng khoảng 12 MB/s, không dùng cache pip, không đăng nhập Hugging
-Face. **Tổng khoảng 14 phút.**
-
-| Phần | Tải về | Trên đĩa | Thời gian |
-|---|---|---|---|
-| PyTorch 2.14 bản CUDA | 2,6 GB | 4,0 GB | phần lớn của ~11 phút đầu (cùng thư viện và model hợp âm) |
-| Thư viện Python khác (gồm tách nguồn audio-separator) | ~0,4 GB | ~0,9 GB | |
-| Model hợp âm, nhịp (ChordMini, Chord-CNN-LSTM, ChordFormer, beat_this) | ~0,9 GB | 0,96 GB | |
-| Dò giai điệu: BS-Roformer (tách giọng) | 0,64 GB | 0,61 GB | ~1 phút |
-| Dò giai điệu: YourMT3+ (mã, checkpoint, transformers riêng) | 0,6 GB | 0,64 GB | ~1,5 phút |
-| Chạy thử (hợp âm C – G và một chuỗi nốt qua YourMT3+) | | | ~40 giây |
-
-Tùy chọn: `-Cpu` (cài PyTorch bản CPU), `-NoMelody` (bỏ dò giai điệu), `-Full` (thêm thư viện đánh giá cho dev),
-`-NoTools` (không tự cài ffmpeg, Deno).
+Tùy chọn: `-Cpu` (PyTorch bản CPU), `-NoMelody` (bỏ dò giai điệu), `-NoTools` (không tự cài ffmpeg, Deno), `-Full` (cho dev).
 
 ### 2. Bật server
 
@@ -153,41 +129,22 @@ Tùy chọn: `-Cpu` (cài PyTorch bản CPU), `-NoMelody` (bỏ dò giai điệu
 powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background
 ```
 
-Server chạy ẩn ở `http://127.0.0.1:8765` (chỉ máy bạn gọi được), log ở `data\cache\server.log`. Mỗi lần mở máy chạy lại
-lệnh này. Bỏ `-Background` để xem log ngay trong cửa sổ (Ctrl+C để tắt).
+Server chạy ẩn ở `http://127.0.0.1:8765`, chỉ máy bạn gọi được. Mỗi lần mở máy chạy lại lệnh này. Bỏ `-Background` để
+xem log trong cửa sổ.
 
 ### 3. Nạp extension vào Chrome (một lần)
 
-1. Mở `chrome://extensions`, bật **Developer mode** (góc trên bên phải).
+1. Mở `chrome://extensions`, bật **Developer mode**.
 2. Bấm **Load unpacked**, chọn thư mục `extension` trong thư mục dự án.
-3. Ghim biểu tượng ChordTrack lên thanh công cụ nếu muốn: bấm vào là thấy server có chạy không.
 
 ### 4. Dùng
 
-Mở một video YouTube, bấm nút **ChordTrack** trên thanh điều khiển của player (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>).
-Lần đầu mỗi bài server tải audio và phân tích khoảng 10–20 giây trên GPU (CPU khoảng 1 phút), lần sau có ngay.
+Mở video YouTube, bấm nút **ChordTrack** trên thanh điều khiển player (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>).
+Lần đầu mỗi bài mất 10–20 giây trên GPU, lần sau có ngay. Các nút và phím tắt: [extension/README.md](extension/README.md).
 
-Các nút trong extension: [extension/README.md](extension/README.md).
+### 5. (Tùy chọn) Bật cách dò Kỹ
 
-**🔄 Cập nhật:** `git pull` → chạy lại `setup.ps1` → khởi động lại server → bấm ↻ ở extension trong `chrome://extensions`.
-**🗑️ Gỡ:** xóa extension và thư mục dự án.
-
-> [!WARNING]
-> Script tải mã và weights của bên thứ ba ([THIRD_PARTY.md](THIRD_PARTY.md)). Weights đã ghim commit và kiểm SHA-256, đừng thay bằng file lạ.
-
-## 🎵 Dò giai điệu
-
-<img src="docs/img/melody.png" alt="Dòng nốt giai điệu dưới dải hợp âm">
-
-Bấm **♪ Dò giai điệu** khi hợp âm đã hiện. Tên nốt chạy dưới hợp âm: ↑/↓ là nốt cao hơn hay thấp hơn nốt trước,
-nốt tự căn về phách, dịch giọng theo hợp âm. Lần đầu mỗi bài 4 phút mất khoảng 2–3 phút.
-
-| Cách | Model | Hợp với | Cài |
-|---|---|---|---|
-| **Bình thường** (mặc định) | YourMT3+ | Bài có lời | Có sẵn sau `setup.ps1` |
-| **Kỹ** | YourMT3+ + MuScriptor small | Bài có đoạn nhạc cụ dài | Cần tài khoản Hugging Face (miễn phí) |
-
-**Bật cách Kỹ** (weights CC BY-NC 4.0, chỉ dùng phi thương mại):
+Weights MuScriptor theo license CC BY-NC 4.0 (chỉ dùng phi thương mại) và cần tài khoản Hugging Face miễn phí.
 
 1. Tạo token **Read** ở [Hugging Face](https://huggingface.co/settings/tokens), bấm đồng ý điều khoản ở trang
    [MuScriptor/muscriptor-small](https://huggingface.co/MuScriptor/muscriptor-small).
@@ -197,21 +154,22 @@ nốt tự căn về phách, dịch giọng theo hợp âm. Lần đầu mỗi b
    .venv\Scripts\python.exe scripts\fetch_models.py --muscriptor
    ```
 
+**🔄 Cập nhật:** `git pull` → chạy lại `setup.ps1` → khởi động lại server → bấm ↻ ở extension trong `chrome://extensions`.
+**🗑️ Gỡ:** xóa extension và thư mục dự án.
+
 ## 🛠️ Lỗi thường gặp
 
 <details>
-<summary><b>Extension báo "Chưa kết nối được server" / bấm không có gì</b></summary>
+<summary><b>Extension báo "Chưa kết nối được server"</b></summary>
 
-Server chưa chạy. Chạy lại `scripts\start_server.ps1 -Background`, rồi bấm biểu tượng ChordTrack trên thanh công cụ
-Chrome để kiểm tra (phải thấy "Đang chạy"). Vẫn lỗi thì xem `data\cache\server.log`. Vừa cập nhật extension thì tải lại
-trang YouTube (F5).
+Chạy lại `scripts\start_server.ps1 -Background`. Vẫn lỗi thì xem `data\cache\server.log`. Vừa cập nhật extension thì
+tải lại trang YouTube (F5).
 </details>
 
 <details>
 <summary><b>YouTube báo "not a bot" / "Sign in to confirm"</b></summary>
 
-YouTube đòi cookie đăng nhập. Xuất cookie ra `cookies.txt` (extension *Get cookies.txt LOCALLY*), để **ngoài** thư mục
-dự án, rồi chạy server kèm file đó:
+Xuất cookie YouTube ra `cookies.txt` (extension *Get cookies.txt LOCALLY*), để **ngoài** thư mục dự án, rồi chạy:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background -Cookies C:\duong\dan\cookies.txt
@@ -224,58 +182,91 @@ powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background -C
 <details>
 <summary><b>Thiếu ffmpeg hoặc Deno</b></summary>
 
-`setup.ps1` cài bằng winget; máy không có winget thì cài tay: `winget install Gyan.FFmpeg` và
-`winget install DenoLand.Deno` (hoặc tải từ trang chủ), rồi **mở PowerShell mới** và chạy lại server. Popup của extension
-có chip ffmpeg / Deno cho biết server có thấy hai công cụ này không.
+Cài tay: `winget install Gyan.FFmpeg` và `winget install DenoLand.Deno`, rồi **mở PowerShell mới** và chạy lại server.
 </details>
 
 <details>
 <summary><b>Hết VRAM (CUDA out of memory)</b></summary>
 
-GPU 8 GB là đủ khi chỉ ChordTrack dùng GPU. Đóng game, trình chỉnh video hay app AI khác đang giữ VRAM rồi bấm Thử lại.
-Server chạy từng job một nên không tự tranh VRAM với chính nó. Máy GPU nhỏ hơn: cài lại với `setup.ps1 -Cpu` (chậm hơn).
+Đóng game hay app AI khác đang giữ VRAM rồi bấm Thử lại. GPU nhỏ: cài lại với `setup.ps1 -Cpu`.
 </details>
 
 <details>
-<summary><b>Nút "Kỹ" mờ / setup báo "chưa có MuScriptor small"</b></summary>
+<summary><b>Nút "Dò giai điệu" hoặc "Kỹ" bị mờ</b></summary>
 
-Đây là chuyện bình thường khi chưa có tài khoản Hugging Face: cách Bình thường vẫn dùng được. Muốn bật Kỹ, làm ba bước ở mục
-[Dò giai điệu](#-dò-giai-điệu). `fetch_models.py --muscriptor` báo 401/403 nghĩa là chưa đăng nhập (`hf auth login`)
-hoặc chưa bấm đồng ý điều khoản trên trang model.
+- "Dò giai điệu" mờ: chưa cài dò giai điệu. Chạy lại `setup.ps1`, xem tóm tắt cuối, khởi động lại server.
+- "Kỹ" mờ: chưa bật MuScriptor, xem [bước 5](#5-tùy-chọn-bật-cách-dò-kỹ). Báo 401/403 nghĩa là chưa đăng nhập
+  (`hf auth login`) hoặc chưa đồng ý điều khoản trên trang model.
 </details>
 
 <details>
-<summary><b>Setup báo "Filename too long" / lỗi khi tải YourMT3+</b></summary>
+<summary><b>Setup báo "Filename too long"</b></summary>
 
-Windows giới hạn đường dẫn 260 ký tự. Script đã bật `core.longpaths` cho git, nhưng nếu vẫn lỗi thì clone lại vào thư
-mục ngắn (ví dụ `C:\chordtrack`) hoặc bật *Enable Win32 long paths* (Group Policy) / `LongPathsEnabled` rồi chạy lại
-`setup.ps1`.
+Clone lại vào thư mục ngắn (ví dụ `C:\chordtrack`) hoặc bật `LongPathsEnabled` của Windows rồi chạy lại `setup.ps1`.
 </details>
 
+## 🧑‍💻 Phát triển và đóng góp
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Full   # thêm thư viện và model để chấm điểm
+```
+
+Luôn gọi `.venv\Scripts\python.exe` bằng đường dẫn đầy đủ: lệnh `python` trên Windows có thể là bản giả của Microsoft Store.
+
+### Cấu trúc thư mục
+
+| Thư mục | Nội dung |
+|---|---|
+| `chordtrack/` | Backend: tải audio, tách nguồn, bắt nhịp, nhận hợp âm (`chords/`), trộn kết quả (`fusion.py`), giọng và cấu trúc (`analysis.py`), dò giai điệu (`melody/`), hàng đợi job, server FastAPI |
+| `chordtrack/types.py` | Kiểu dữ liệu dùng chung (`Stems`, `BeatGrid`, `ChordSegment`, `ChordModelOutput`…) |
+| `extension/` | Extension Chrome (Manifest V3). `extension/dev/` có harness thử giao diện không cần YouTube |
+| `eval/` | Bộ đánh giá hợp âm ([README](eval/README.md)) và giai điệu ([README](eval/melody/README.md)) |
+| `scripts/` | Cài đặt, tải model, chạy server, chạy thử |
+| `requirements/` | Thư viện theo module; `constraints.txt` ghim phiên bản chung |
+| `tests/` | Test pytest |
+| `third_party_src/`, `data/` | Model bên thứ ba, weights, audio, cache. **Không nằm trong git** |
+
+### Chạy test
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q -m "not gpu"        # nhanh, không cần GPU
+.venv\Scripts\python.exe -m pytest -q -m gpu              # chạy model thật
+node --test extension\dev\theory.test.js                  # logic hợp âm của extension
+.venv\Scripts\python.exe scripts\smoke_test.py --melody   # kiểm tra cài đặt
+```
+
+Thử giao diện không cần YouTube: chạy `.venv\Scripts\python.exe extension\dev\serve.py`, mở
+`http://127.0.0.1:8770/watch?v=QDYfEBY9NM4`.
+
+### Quy ước
+
+- **Python 3.11, numpy 1.x.** Không nâng numpy lên 2.x: scipy 1.13, ChordMini, Chord-CNN-LSTM và audio-separator cần numpy 1.26.
+- Thư viện mới ghi vào `requirements/<module>.txt` của module đó.
+- Code chạy model trên GPU nằm trong `with chordtrack.gpu.gpu_lock():`; test cần GPU gắn `@pytest.mark.gpu`.
+- Dùng kiểu trong `chordtrack/types.py`, không định nghĩa kiểu trùng.
+- Đổi model hay tham số trộn thì chấm lại bằng `eval/` và ghi số trước/sau vào PR.
+- **Repo public:** không commit audio, weights, cookie hay dữ liệu có bản quyền.
+
+### Gửi đóng góp
+
+Thay đổi lớn thì mở issue trước. Tạo nhánh từ `main`, chạy test, mở pull request kèm mô tả thay đổi và kết quả test
+(tiếng Việt hay tiếng Anh đều được). Báo lỗi qua [GitHub Issues](https://github.com/MakitJenamin/extension_chordtracking/issues),
+kèm videoId và `data\cache\server.log`.
+
 <details>
-<summary><b>Nút "Dò giai điệu" mờ</b></summary>
+<summary><b>📡 API backend</b></summary>
 
-Server chưa cài dò giai điệu (cài với `-NoMelody` hoặc bước Model bị lỗi). Chạy lại `setup.ps1`, xem tóm tắt cuối, rồi
-khởi động lại server.
-</details>
-
-> [!CAUTION]
-> Server dùng [yt-dlp](https://github.com/yt-dlp/yt-dlp) tải audio về `data/audio/`, việc này có thể trái [điều khoản YouTube](https://www.youtube.com/t/terms). Chỉ dùng cho cá nhân, bạn tự chịu trách nhiệm, đừng chia sẻ lại các file đó.
-
-<details>
-<summary><b>📡 API backend</b> (cho dev)</summary>
-
-Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ cho `chrome-extension://*` và `https://www.youtube.com`. Một worker xử lý lần lượt, hàng đợi ở `data/cache/jobs.sqlite`, log ở `data/cache/server.log`.
+Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ cho `chrome-extension://*` và `https://www.youtube.com`. Một worker xử lý lần lượt, hàng đợi ở `data/cache/jobs.sqlite`.
 
 | Endpoint | Mô tả |
 |---|---|
-| `GET /health` | Trạng thái server, GPU, hàng đợi, ffmpeg, Deno, cookies; `melody` (có cách dò giai điệu nào chạy được) và `melody_models` (từng biến thể) |
+| `GET /health` | Trạng thái server, GPU, hàng đợi, ffmpeg, Deno, cookies, các cách dò giai điệu chạy được |
 | `POST /analyze` | `{"source": "<videoId hoặc URL>", "force": false}` → kết quả nếu đã cache, không thì `job_id` |
 | `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
 | `GET /songs` | Danh sách bài đã phân tích |
-| `POST /melody` | Dò giai điệu, giống `/analyze`; `"model": "combo"` (Kỹ, mặc định của API) hoặc `"yourmt3"` (Bình thường), `"vocals": true` để tách giọng BS-Roformer trước (extension luôn gửi). Biến thể chưa đủ model (vd thiếu MuScriptor): 409 kèm hướng dẫn. Hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
-| `GET /melody/{song_id}?model=combo\|yourmt3&vocals=0\|1` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
+| `POST /melody` | Dò giai điệu; `"model": "combo"` (Kỹ) hoặc `"yourmt3"` (Bình thường), `"vocals": true` để tách giọng trước. Chi tiết: [docs/melody_api.md](docs/melody_api.md) |
+| `GET /melody/{song_id}?model=combo\|yourmt3&vocals=0\|1` | Dòng nốt (`start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType application/json -Body '{"source": "QDYfEBY9NM4"}'
@@ -283,68 +274,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType applic
 
 </details>
 
-## 🧑‍💻 Phát triển và đóng góp
-
-### Cài cho dev
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Full
-```
-
-`-Full` cài thêm thư viện đánh giá (`requirements\eval.txt`) và model chỉ dùng khi chấm điểm. Luôn gọi Python của venv
-bằng đường dẫn đầy đủ (`.venv\Scripts\python.exe`), vì lệnh `python` trên Windows có thể trỏ tới bản giả của Microsoft Store.
-
-### Cấu trúc thư mục
-
-| Thư mục | Nội dung |
-|---|---|
-| `chordtrack/` | Backend: tải audio (`audio.py`), tách nguồn, bắt nhịp, nhận hợp âm (`chords/`), trộn kết quả (`fusion.py`), giọng và cấu trúc bài (`analysis.py`), dò giai điệu (`melody/`), hàng đợi job (`jobs.py`), server FastAPI (`server.py`) |
-| `chordtrack/types.py` | Kiểu dữ liệu dùng chung giữa các module (`Stems`, `BeatGrid`, `ChordSegment`, `ChordModelOutput`…) |
-| `extension/` | Extension Chrome (Manifest V3). `extension/dev/` có harness thử giao diện không cần YouTube |
-| `eval/` | Bộ đánh giá hợp âm ([eval/README.md](eval/README.md)) và giai điệu ([eval/melody/README.md](eval/melody/README.md)) |
-| `scripts/` | Cài đặt, tải model (kiểm SHA-256), chạy server, chạy thử sau khi cài |
-| `requirements/` | Thư viện theo từng module; `constraints.txt` ghim phiên bản chung |
-| `tests/` | Test pytest |
-| `third_party_src/`, `data/` | Mã model bên thứ ba, weights, audio, cache. **Không nằm trong git** |
-
-### Chạy test
-
-```powershell
-.venv\Scripts\python.exe -m pytest -q -m "not gpu"   # test nhanh, không cần GPU
-.venv\Scripts\python.exe -m pytest -q -m gpu         # test chạy model thật (chậm, cần weights)
-node --test extension\dev\theory.test.js             # logic hợp âm, transpose của extension
-.venv\Scripts\python.exe scripts\smoke_test.py --melody   # kiểm tra cài đặt từ đầu tới cuối
-```
-
-Thử giao diện extension không cần tab YouTube: chạy `.venv\Scripts\python.exe extension\dev\serve.py`, rồi mở
-`http://127.0.0.1:8770/watch?v=QDYfEBY9NM4`. Trong `serve.py` có danh sách videoId giả để thử các trạng thái: job
-chạy chậm, YouTube đòi cookie, server tắt.
-
-### Quy ước
-
-- **Python 3.11, numpy 1.x.** Đừng nâng numpy lên 2.x: scipy 1.13, ChordMini, Chord-CNN-LSTM và audio-separator
-  đều cần numpy 1.26 (`requirements/constraints.txt`).
-- Thư viện mới ghi vào `requirements/<module>.txt` của module đó.
-- Code chạy model trên GPU phải nằm trong `with chordtrack.gpu.gpu_lock():` để các job không tranh VRAM. Test cần GPU
-  thì gắn `@pytest.mark.gpu`.
-- Dùng kiểu trong `chordtrack/types.py`, đừng định nghĩa kiểu trùng.
-- Muốn đổi model hay tham số trộn thì phải chấm lại bằng bộ đánh giá ở `eval/` và ghi số trước/sau vào PR. Không
-  chọn theo cảm giác nghe.
-- **Repo public:** không commit audio, weights, cookie hay dữ liệu có bản quyền.
-
-### Gửi đóng góp
-
-1. Với thay đổi lớn, mở issue trước để bàn hướng làm.
-2. Tạo nhánh từ `main`, sửa, chạy test ở trên.
-3. Mở pull request vào `main`. Mô tả nêu: thay đổi gì, vì sao, kết quả test và điểm đánh giá nếu có. Viết tiếng Việt
-   hay tiếng Anh đều được.
-
-Báo lỗi qua [GitHub Issues](https://github.com/MakitJenamin/extension_chordtracking/issues), kèm videoId, log ở
-`data\cache\server.log` và ảnh chụp nếu lỗi ở giao diện.
-
 ## 🙏 Cảm ơn
-
-ChordTrack đứng trên vai các dự án sau. Commit đã ghim và chi tiết license ở [THIRD_PARTY.md](THIRD_PARTY.md).
 
 - **Nhận hợp âm:** [ChordMini](https://github.com/ptnghia-j/ChordMini) (Nghia Phan và cộng sự),
   [Chord-CNN-LSTM](https://github.com/ptnghia-j/chord-cnn-lstm-model) (Junyan Jiang và cộng sự, Music X Lab),
@@ -353,15 +283,15 @@ ChordTrack đứng trên vai các dự án sau. Commit đã ghim và chi tiết 
 - **Dò giai điệu:** [YourMT3+](https://huggingface.co/spaces/mimbres/YourMT3) (Chang, Dixon, Benetos),
   [MuScriptor](https://github.com/muscriptor/muscriptor) (Kyutai và Mirelo).
 - **Tách nguồn:** BS-Roformer và HTDemucs qua [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
-- **Tải audio:** [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-- **Đánh giá:** nhãn hợp âm The Beatles của [Isophonics](http://isophonics.net/).
+- **Tải audio:** [yt-dlp](https://github.com/yt-dlp/yt-dlp). **Đánh giá:** nhãn hợp âm của [Isophonics](http://isophonics.net/).
 
 ## 📜 License
 
-Mã dự án: [MIT](LICENSE). Model hợp âm, bắt nhịp và dò giai điệu thuộc tác giả gốc, xem [THIRD_PARTY.md](THIRD_PARTY.md).
-YourMT3+ (dò giai điệu, cách Bình thường): Apache-2.0. BS-Roformer (tách giọng): qua gói audio-separator (MIT).
-⚠️ Weights MuScriptor (cách dò Kỹ, tùy chọn) theo CC BY-NC 4.0: chỉ dùng phi thương mại.
-⚠️ ChordFormer không có license, THIRD_PARTY.md hướng dẫn cách tắt.
-⚠️ Tải audio bằng yt-dlp chỉ nên dùng cho cá nhân (xem cảnh báo ở mục Lỗi thường gặp).
+Mã dự án: [MIT](LICENSE). Model bên thứ ba giữ license của tác giả, xem [THIRD_PARTY.md](THIRD_PARTY.md).
+
+- ⚠️ Weights MuScriptor (cách dò Kỹ): CC BY-NC 4.0, chỉ dùng phi thương mại.
+- ⚠️ ChordFormer không có license, THIRD_PARTY.md hướng dẫn cách tắt.
+- ⚠️ Server dùng yt-dlp tải audio từ YouTube, việc này có thể trái [điều khoản YouTube](https://www.youtube.com/t/terms).
+  Chỉ dùng cho cá nhân và đừng chia sẻ lại các file đó.
 
 <div align="center"><sub>Kế hoạch, quyết định và số đo chất lượng: <a href="PLAN.md">PLAN.md</a></sub></div>
