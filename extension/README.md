@@ -33,10 +33,8 @@ extension, không đọc hay gửi dữ liệu gì. Lần đầu (bản đang n�
 | Tông − / + | Dịch tông ở chế độ Gốc (−6..+6) | Alt+Shift+↓ / ↑ |
 | Ô "Đặt transpose đàn" | Giá trị nút transpose của đàn cho vùng giọng đang phát; chuyển vàng và đếm ngược 8 giây trước chỗ đổi giọng | |
 | Metronome + thanh âm lượng | Tiếng phách theo `beats` của bài (src/metronome.js) | Alt+Shift+M |
-| ♪ Dò giai điệu | Dò dòng nốt giai điệu (`POST /melody`, job riêng, chỉ chạy khi bấm; hiện tiến độ, bước, thời gian còn lại). Bài đã dò thì tự tải khi bật ChordTrack (`GET /melody/{id}`) | |
-| Nút "♪ YourMT3+ \| Ghép" cạnh nút dò | Chọn cách dò, mặc định YourMT3+ (nhớ lựa chọn, `CT.settings.melodyModel`). Đổi lựa chọn thì hiện bản đã dò của cách đó, chưa có thì hiện nút dò (không tự chạy). Nút đang sáng là cách đang chọn (dòng nốt hiện ra luôn là của cách đó) | |
-| Công tắc "Tách giọng" | Dò bản tách giọng của cách đang chọn (BS-Roformer tách stem giọng, YourMT3+ dò trên stem ở đoạn có giọng; chậm hơn ~75 giây mỗi bài 4 phút). Mặc định tắt, nhớ lựa chọn (`CT.settings.melodyVocals`); như đổi cách dò: đã có thì hiện, chưa có thì hiện nút dò | |
-| Công tắc "Nốt khớp phách" | Căn đầu/cuối nốt giai điệu về lưới phách của bài, chỉ đổi cách hiện. Mức chia (1/8 hay 1/16) tự chọn theo tempo và độ dày giai điệu (`theory.autoSnapDiv`). Mặc định tắt (`CT.settings.melodySnap`) | |
+| ♪ Dò giai điệu (Nhanh/Kỹ) | Dò dòng nốt giai điệu bằng cách đang chọn (`POST /melody`, job riêng, mỗi lần bấm một job, chỉ chạy khi bấm; hiện tiến độ ghi rõ cách đang dò, bước, thời gian còn lại). Bài đã dò thì tự tải khi bật ChordTrack (`GET /melody/{id}`). Luôn tách giọng trước khi dò (BS-Roformer) và luôn căn nốt về phách (mức chia tự chọn, `theory.autoSnapDiv`), không có công tắc. Server chưa cài dò giai điệu thì nút mờ kèm hướng dẫn chạy `setup.ps1` | |
+| Nút "Dò: Nhanh \| Kỹ" cạnh nút dò | Chọn cách dò, mặc định Nhanh (YourMT3+; nhớ lựa chọn, `CT.settings.melodyModel`). Kỹ dùng thêm MuScriptor small, chậm hơn, tốt hơn ở đoạn không lời. Đổi lựa chọn chỉ hiện bản đã dò của cách đó, chưa có thì hiện nút dò (không tự gửi job); job của cách kia vẫn chạy thì có chip nhỏ "Nhanh đang dò…". Server chưa có MuScriptor thì nút Kỹ mờ kèm tooltip hướng dẫn đăng nhập Hugging Face, và đang chọn Kỹ thì hiện/dò như Nhanh (lựa chọn đã lưu giữ nguyên) | |
 | Công tắc "Giai điệu" / ↻ | Ẩn/hiện dòng nốt (nhớ lựa chọn, `CT.settings.showMelody`); ↻ dò lại (bỏ kết quả đã lưu) | Alt+Shift+G |
 | ▴ / ▾ | Thu gọn khung (chỉ còn hợp âm hiện tại và chấm phách) | Alt+Shift+H |
 | Bấm hợp âm / đoạn | Tua video tới đó | |

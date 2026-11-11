@@ -458,11 +458,12 @@
    * người dùng là "Nhanh" / "Kỹ" (không dùng tên model, người dùng chốt 2026-11-11); khóa giữ nguyên. */
   // Thứ tự khóa = thứ tự nút trên panel. Mặc định "yourmt3" (người dùng chốt 2026-11-11: nghe thấy tốt hơn).
   const MELODY_MODELS = {
-    // `time`: thời gian dò lần đầu một bài 4 phút (gồm tách giọng), đo trên RTX 3060 Ti, xem README.
-    yourmt3: { model: "yourmt3", short: "Nhanh", label: "Nhanh", time: "__NHANH__",
-      tip: "Khoảng __NHANH__ cho bài 4 phút. Tốt nhất với bài có lời" },
-    combo: { model: "yourmt3>muscriptor_small", short: "Kỹ", label: "Kỹ", time: "__KY__",
-      tip: "Chậm hơn, khoảng __KY__ cho bài 4 phút. Bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn (dùng thêm MuScriptor, cần đăng nhập Hugging Face)" },
+    // `time`: thời gian dò lần đầu một bài 4 phút (gồm tách giọng), đo trên RTX 3060 Ti: Let It Be 243 s, Nhanh 117 s,
+    // Kỹ 182 s (2026-11-11, xem README).
+    yourmt3: { model: "yourmt3", short: "Nhanh", label: "Nhanh", time: "khoảng 2 phút",
+      tip: "Khoảng 2 phút cho bài 4 phút (lần đầu, gồm tách giọng). Tốt nhất với bài có lời" },
+    combo: { model: "yourmt3>muscriptor_small", short: "Kỹ", label: "Kỹ", time: "khoảng 3 phút",
+      tip: "Chậm hơn khoảng 1 phút (khoảng 3 phút cho bài 4 phút). Bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn (dùng thêm MuScriptor, cần đăng nhập Hugging Face)" },
   };
   const MELODY_DEFAULT = "yourmt3";
   // Biến thể của kết quả cũ không có trường `model` (trước khi có tùy chọn, server chỉ có bản ghép).

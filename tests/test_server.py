@@ -302,9 +302,49 @@ def test_health_melody_flag(fake, tmp_path):
     with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
         h = c.get("/health").json()
         assert h["melody"] is True and h["melody_models"] == {"combo": True, "yourmt3": True}
+        # Thiếu MuScriptor small: "melody" vẫn true vì YourMT3+ (cách dò "Nhanh") chạy được.
         mel.ready = False
         h = c.get("/health").json()
-        assert h["melody"] is False and h["melody_models"] == {"combo": False, "yourmt3": True}
+        assert h["melody"] is True and h["melody_models"] == {"combo": False, "yourmt3": True}
+
+
+def test_health_melody_false_without_yourmt3(fake, tmp_path):
+    mel = FakeMelody()
+    none = {"combo": False, "yourmt3": False, "yourmt3_vocals": False, "combo_vocals": False}
+    app = server.create_app(db_path=tmp_path / "jobs.sqlite", analyze=fake.analyze, cached_result=fake.cached,
+                            melody=mel.run, cached_melody=mel.cached, stale_melody=mel.stale_of,
+                            melody_ready=lambda: dict(none), start_worker=False)
+    with TestClient(app, base_url="http://127.0.0.1") as c:
+        h = c.get("/health").json()
+        assert h["melody"] is False and h["melody_models"] == none
+        r = c.post("/melody", json={"source": VID, "model": "yourmt3", "vocals": True})
+        assert r.status_code == 409 and "setup.ps1" in r.json()["detail"]
+        assert c.post("/melody", json={"source": VID, "model": "yourmt3"}).status_code == 409
+
+
+def test_melody_variant_not_ready_409(fake, tmp_path):
+    """Biến thể chưa đủ model: 409 kèm câu tiếng Việt chỉ cách bật, không tạo job, không gọi model."""
+    mel = FakeMelody()
+    mel.ready = False           # thiếu MuScriptor small
+    with make_melody_client(fake, mel, tmp_path) as c:
+        r = c.post("/melody", json={"source": VID, "model": "combo"})
+        assert r.status_code == 409
+        msg = r.json()["detail"]
+        assert "Kỹ" in msg and "huggingface.co/MuScriptor/muscriptor-small" in msg and "hf.exe auth login" in msg
+        assert "--muscriptor" in msg
+        assert c.post("/melody", json={"source": VID}).status_code == 409        # không có model = ghép
+        # Cách dò "Nhanh" vẫn chạy; khóa không có trong melody_ready (server giả cũ) không bị chặn.
+        y3 = c.post("/melody", json={"source": VID, "model": "yourmt3"})
+        assert y3.status_code == 200 and y3.json()["status"] in ("queued", "running", "done")
+        assert c.post("/melody", json={"source": VID, "model": "yourmt3", "vocals": True}).status_code == 200
+    assert all(len(call) == 3 for call in mel.calls)    # bản ghép (gọi dạng (vid, force)) không chạy
+
+
+def test_melody_missing_message():
+    ok = {"yourmt3": True, "yourmt3_vocals": True, "combo": False, "combo_vocals": False}
+    assert "MuScriptor" in server.melody_missing_message("combo_vocals", ok)
+    assert "tách giọng" in server.melody_missing_message("yourmt3_vocals", {"yourmt3": True, "yourmt3_vocals": False})
+    assert "chưa cài dò giai điệu" in server.melody_missing_message("yourmt3", {"yourmt3": False})
 
 
 def test_melody_job_progress_and_result(fake, tmp_path):

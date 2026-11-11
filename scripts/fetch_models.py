@@ -137,7 +137,7 @@ YOURMT3_PYDEPS = ["transformers==4.45.1", "huggingface_hub==0.36.2", "tokenizers
 
 
 MUSCRIPTOR_REPO_URL = "https://huggingface.co/MuScriptor/muscriptor-small"
-MUSCRIPTOR_STEPS = rf"""   MuScriptor small chỉ cần cho cách dò "Kỹ" (Ghép). Cách dò "Nhanh" (YourMT3+) đã dùng được, không cần làm gì thêm.
+MUSCRIPTOR_STEPS = rf"""   MuScriptor small chỉ cần cho cách dò "Kỹ". Cách dò "Nhanh" (YourMT3+) không cần bước này.
    Muốn bật "Kỹ" (weights CC BY-NC 4.0, chỉ dùng phi thương mại):
      1. Tạo tài khoản Hugging Face, tạo access token loại Read ở https://huggingface.co/settings/tokens
      2. Mở {MUSCRIPTOR_REPO_URL}, đăng nhập và bấm đồng ý điều khoản (Agree and access repository)
@@ -160,9 +160,11 @@ def fetch_yourmt3(check: bool) -> list[str]:
                     raise RuntimeError(f"{src} có sẵn nhưng không phải repo git. Xóa thư mục này rồi chạy lại.")
                 env = dict(os.environ, GIT_LFS_SKIP_SMUDGE="1")   # checkpoint tải riêng bên dưới, không kéo file LFS
                 if not src.exists():
-                    subprocess.run(["git", "clone", "--no-checkout", f"https://huggingface.co/spaces/{YOURMT3_SPACE}",
-                                    str(src)], check=True, env=env)
-                subprocess.run(["git", "checkout", "--quiet", "--force", YOURMT3_COMMIT], cwd=src, check=True, env=env)
+                    subprocess.run(["git", "-c", "core.longpaths=true", "clone", "--no-checkout",
+                                    f"https://huggingface.co/spaces/{YOURMT3_SPACE}", str(src)], check=True, env=env)
+                # core.longpaths: Space có thư mục `amt/logs/2024/<tên ~70 ký tự>/`, vượt 260 ký tự khi repo nằm sâu.
+                subprocess.run(["git", "-c", "core.longpaths=true", "checkout", "--quiet", "--force", YOURMT3_COMMIT],
+                               cwd=src, check=True, env=env)
             ckpt = yourmt3.CHECKPOINT
             if not ckpt.exists() or sha256(ckpt) != yourmt3.CHECKPOINT_SHA256:
                 download_yourmt3_checkpoint(ckpt)
@@ -184,19 +186,33 @@ def fetch_yourmt3(check: bool) -> list[str]:
 
 
 def download_yourmt3_checkpoint(ckpt: Path) -> None:
-    """Tải checkpoint thẳng vào thư mục model (`local_dir`), không để thêm một bản ~540 MB trong cache Hugging Face."""
-    from huggingface_hub import hf_hub_download
+    """Tải checkpoint (~540 MB, Space công khai, không cần tài khoản) thẳng về `ckpt` qua URL `resolve` của Hugging
+    Face. Không dùng `hf_hub_download`: nó đặt file theo đường dẫn trong Space (`amt/logs/2024/<tên rất dài>/...`),
+    dễ vượt giới hạn 260 ký tự của Windows khi thư mục repo nằm sâu, và còn để thêm một bản trong cache."""
+    import urllib.request
 
-    tmp = ckpt.parent / "_download"
-    ckpt.parent.mkdir(parents=True, exist_ok=True)
-    got = Path(hf_hub_download(YOURMT3_SPACE, YOURMT3_CKPT_IN_SPACE, repo_type="space", revision=YOURMT3_COMMIT,
-                               local_dir=tmp))
+    from huggingface_hub import hf_hub_url
+
     from chordtrack.melody import yourmt3
 
-    if sha256(got) != yourmt3.CHECKPOINT_SHA256:
-        raise RuntimeError(f"checkpoint tải về sai SHA-256 ({got})")
-    os.replace(got, ckpt)
-    shutil.rmtree(tmp, ignore_errors=True)
+    url = hf_hub_url(YOURMT3_SPACE, YOURMT3_CKPT_IN_SPACE, repo_type="space", revision=YOURMT3_COMMIT)
+    ckpt.parent.mkdir(parents=True, exist_ok=True)
+    part = ckpt.with_name(ckpt.name + ".part")
+    req = urllib.request.Request(url, headers={"User-Agent": "chordtrack-fetch-models"})
+    with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        done, shown = 0, -1
+        for chunk in iter(lambda: r.read(1 << 20), b""):
+            f.write(chunk)
+            done += len(chunk)
+            pct = done * 10 // total if total else -1
+            if pct != shown:
+                shown = pct
+                print(f"   checkpoint YourMT3+: {done >> 20} / {total >> 20} MB", flush=True)
+    if sha256(part) != yourmt3.CHECKPOINT_SHA256:
+        part.unlink(missing_ok=True)
+        raise RuntimeError("checkpoint YourMT3+ tải về sai SHA-256")
+    os.replace(part, ckpt)
 
 
 def fetch_roformer(check: bool) -> bool:
