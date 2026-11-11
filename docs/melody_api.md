@@ -64,7 +64,7 @@ trước). Giống `POST /analyze`:
   không tạo job. Thiếu MuScriptor small (biến thể `combo*`): ba bước Hugging Face (token Read, đồng ý license ở
   https://huggingface.co/MuScriptor/muscriptor-small, `.venv\Scripts\hf.exe auth login`) rồi
   `scripts\fetch_models.py --muscriptor` và khởi động lại server; thiếu YourMT3+ hoặc gói tách giọng: chạy lại
-  `scripts\setup.ps1`. Kiểm tra trước cả khi đã có kết quả cũ trong cache (đọc kết quả cũ bằng `GET /melody`).
+  `scripts\setup.ps1`. Bài đã dò bằng biến thể đó từ trước (lúc còn đủ model) thì POST không `force` vẫn trả `done` kèm kết quả đã lưu.
 - Đã có kết quả (đúng `code_revision`) và không `force`: `{"status": "done", "song_id": "...", "melody": <Melody>}`.
 - Ngược lại tạo (hoặc trả lại) job: `{"status": "queued" | "running", "job_id": "...", "song_id": "..."}`.
 
@@ -95,6 +95,8 @@ Extension (`CT.theory.melodyEffective`, `melodyAvail`) đọc `melody_models` kh
   thay vì báo lỗi vì nút mờ đã giải thích, còn thông báo lỗi sẽ hiện lại ở mọi video.
 - Không có cách dò nào (`melody` false): nút "Dò giai điệu" mờ, tooltip hướng dẫn chạy lại `setup.ps1`.
 - Không đọc được `melody_models` (server cũ, server tắt): coi như có đủ, gửi như trước để server báo lỗi.
+- Chưa có bản tách giọng nhưng có bản dò trên mix (dò trước khi tách giọng luôn bật): hiện tạm bản đó kèm chip "bản cũ",
+  ↻ dò bản tách giọng.
 
 ## `<Melody>`
 
