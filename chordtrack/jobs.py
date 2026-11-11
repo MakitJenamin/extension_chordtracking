@@ -447,7 +447,7 @@ def _short(exc: BaseException, limit: int = 300) -> str:
 class JobWorker:
     """Một worker thread lấy job theo thứ tự tạo và gọi hàm của loại job đó: `analyze(source, force=...,
     progress=...)` với job `"analyze"`, `melody(..., variant=...)` (cùng chữ ký, thêm biến thể theo
-    `MELODY_VARIANT_OF`) với job `"melody"` và `"melody_yourmt3"`."""
+    `MELODY_VARIANT_OF`) với mọi job dò giai điệu (`"melody"`, `"melody_yourmt3"`, `"melody_*_vocals"`)."""
 
     def __init__(self, store: JobStore, analyze: AnalyzeFn, poll_interval: float = 2.0, *,
                  melody: AnalyzeFn | None = None):

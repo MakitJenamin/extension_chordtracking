@@ -59,7 +59,8 @@
         const n = e.target.closest(".ct-note");
         if (n && this.song) {
           this.viewOff = 0;
-          CT.seekTo(this.notes[+n.dataset.i].start + 0.01);
+          const note = this.notes[+n.dataset.i];
+          CT.seekTo((note.start0 ?? note.start) + 0.01);   // nốt đã căn phách: tua tới đầu nốt thật
           return;
         }
         const c = e.target.closest(".ct-chord");

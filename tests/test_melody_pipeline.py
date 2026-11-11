@@ -312,7 +312,7 @@ def test_build_line_yourmt3_vocals():
 
 def test_vocals_variants_reuse_raw_and_stem(fake_models):
     """Bản tách giọng: tách stem một lần (dùng lại vocals.wav), YourMT3+ trên stem dùng chung giữa hai bản, dùng lại
-    YourMT3+ mix / MuScriptor đã có; file và model riêng; force không tách lại stem."""
+    YourMT3+ mix / MuScriptor đã có; file và model riêng; force tách lại cả stem."""
     mp.analyze_melody(VID, variant="yourmt3")                         # đã có YourMT3+ trên mix
     assert fake_models == {"yourmt3": 1, "muscriptor": 0}
     events = []
@@ -332,13 +332,26 @@ def test_vocals_variants_reuse_raw_and_stem(fake_models):
     assert set(combo["timing"]) >= {"melody_separate", "melody_voice", "melody_fill"}
     assert "melody_voice_mix" not in combo["timing"]
 
-    # force bản YourMT3+ tách giọng: chạy lại YourMT3+ trên stem và trên mix, không tách lại; các bản dùng chung đầu
-    # ra thô bị chạy lại thành cũ.
+    # force bản YourMT3+ tách giọng: tách lại, chạy lại YourMT3+ trên stem và trên mix; các bản dùng chung đầu ra thô
+    # bị chạy lại thành cũ.
     mp.analyze_melody(VID, variant="yourmt3_vocals", force=True)
-    assert fake_models == {"yourmt3": 2, "muscriptor": 1, "separate": 1, "yourmt3_vocals": 2}
+    assert fake_models == {"yourmt3": 2, "muscriptor": 1, "separate": 2, "yourmt3_vocals": 2}
     assert mp.stale_melody(VID, "combo_vocals")["code_revision"] == mp.RAW_CHANGED
     assert mp.stale_melody(VID, "yourmt3")["code_revision"] == mp.RAW_CHANGED
     assert mp.cached_melody(VID, "yourmt3_vocals") is not None
+
+
+def test_vocals_raw_tied_to_stem_file(fake_models):
+    """Đầu ra thô YourMT3+ trên stem gắn với đúng vocals.wav: stem bị tách lại (vd pipeline hợp âm) thì chạy lại."""
+    mp.analyze_melody(VID, variant="yourmt3_vocals")
+    assert fake_models["yourmt3_vocals"] == 1
+    mp.result_path(VID, "yourmt3_vocals").unlink()
+    mp.analyze_melody(VID, variant="yourmt3_vocals")              # stem không đổi: dùng lại
+    assert fake_models["yourmt3_vocals"] == 1 and fake_models["separate"] == 1
+    mp.result_path(VID, "yourmt3_vocals").unlink()
+    sf.write(paths.CACHE_DIR / VID / "vocals.wav", np.zeros(44100 * 2, dtype=np.float32), 44100)
+    mp.analyze_melody(VID, variant="yourmt3_vocals")              # stem khác: chạy lại YourMT3+ trên stem
+    assert fake_models["yourmt3_vocals"] == 2 and fake_models["separate"] == 1 and fake_models["yourmt3"] == 1
 
 
 @pytest.mark.gpu

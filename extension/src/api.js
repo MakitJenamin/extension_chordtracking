@@ -154,7 +154,9 @@
         if (hr.ok && hr.data && typeof hr.data === "object") {
           const mm = hr.data.melody_models;
           if (!mm || typeof mm !== "object" || !(model in mm)) throw unsupportedModel();
-          if (mm[model] === false) throw new ApiError("job_error", "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`)");
+          if (mm[model] === false) throw new ApiError("job_error", parts.vocals
+            ? "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`; tách giọng cần thêm gói audio-separator: `pip install -r requirements/separation.txt`)"
+            : "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`)");
         }
       }
       const res = await request("/melody", { method: "POST",

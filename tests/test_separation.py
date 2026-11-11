@@ -186,3 +186,30 @@ def test_separate_first_20s_of_sample(tmp_path, monkeypatch):
     v = audio["vocals"]
     intro, sung = _rms(v[: 8 * sr]), _rms(v[12 * sr: 20 * sr])
     assert sung > 10 * intro, (intro, sung)
+
+
+def test_separate_vocals_only_roformer_and_invalidates_bass(tmp_path, monkeypatch):
+    """`separate_vocals` (dò giai điệu bản tách giọng): chỉ chạy Roformer trên mix.wav, xóa bass làm từ instrumental
+    cũ, thêm mục `roformer` vào thống kê mà giữ `source`."""
+    import json
+
+    for name in ("mix.wav", "bass.wav", "no_bass.wav"):
+        (tmp_path / name).write_bytes(b"x")
+    (tmp_path / separation.STATS_FILE).write_text(json.dumps({"source": {"path": "a"}, "demucs": {"seconds": 1}}),
+                                                  encoding="utf-8")
+    seen = []
+
+    def fake_roformer(mix, vocals, instrumental):
+        seen.append(mix)
+        vocals.write_bytes(b"v")
+        instrumental.write_bytes(b"i")
+        return {"seconds": 2.0, "peak_vram_mb": 1600.0}
+
+    monkeypatch.setattr(separation, "_run_roformer", fake_roformer)
+    monkeypatch.setattr(separation, "_run_demucs", lambda *a: pytest.fail("không được chạy Demucs"))
+    stats = separation.separate_vocals(tmp_path)
+    assert seen == [tmp_path / "mix.wav"] and stats["peak_vram_mb"] == 1600.0
+    assert (tmp_path / "vocals.wav").exists() and (tmp_path / "instrumental.wav").exists()
+    assert not (tmp_path / "bass.wav").exists() and not (tmp_path / "no_bass.wav").exists()
+    st = json.loads((tmp_path / separation.STATS_FILE).read_text(encoding="utf-8"))
+    assert st == {"source": {"path": "a"}, "roformer": stats}

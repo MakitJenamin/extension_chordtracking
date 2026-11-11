@@ -123,7 +123,7 @@ MELODY_READY_TTL = 60.0             # giây; /health bị poll thường xuyên,
 
 
 def default_melody_ready() -> dict[str, bool]:
-    """Mỗi biến thể dò giai điệu đã đủ model chưa: `{"combo": bool, "yourmt3": bool}`."""
+    """Mỗi biến thể dò giai điệu (khóa của `pipeline.VARIANTS`) đã đủ model chưa: `{"combo": bool, ...}`."""
     import time
 
     from chordtrack.melody import pipeline as melody_pipeline
@@ -135,7 +135,7 @@ def default_melody_ready() -> dict[str, bool]:
         ok = melody_pipeline.variant_ready(melody_pipeline.melody_ready())
     except Exception:
         log.exception("Không kiểm tra được model dò giai điệu")
-        ok = {"combo": False, "yourmt3": False}
+        ok = {k: False for k in melody_pipeline.VARIANTS}
     _MELODY_READY[:] = [now, ok]
     return dict(ok)
 

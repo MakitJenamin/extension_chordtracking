@@ -26,7 +26,9 @@ YourMT3+ trên stem ~23 s).
 
 Ở bản tách giọng, `melody_voice` là YourMT3+ trên stem giọng, `melody_voice_mix` là YourMT3+ trên mix. Đầu ra thô
 dùng lại tối đa giữa các biến thể: `melody_raw/yourmt3.npz` (YourMT3+ mix), `yourmt3_vocals.npz` (YourMT3+ stem),
-`muscriptor_small.npz`, và `vocals.wav`. `force` chạy lại các model của biến thể được gửi nhưng không tách giọng lại;
+`muscriptor_small.npz`, và `vocals.wav` (đầu ra thô trên stem ghi dấu file `vocals.wav`; stem bị tách lại thì chạy
+lại). `force` chạy lại các model của biến thể được gửi, bản tách giọng tách lại cả stem (bass của pipeline hợp âm làm
+từ instrumental cũ bị xóa để lần phân tích sau tách lại);
 đầu ra thô nào chạy lại thì kết quả các biến thể khác dùng nó bị đánh dấu cũ (`"raw-changed"`).
 
 - Mỗi biến thể có cache và job riêng: job theo (song_id, biến thể), nên hai biến thể không chặn nhau; gửi trùng cùng

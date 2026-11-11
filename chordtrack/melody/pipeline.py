@@ -249,7 +249,8 @@ def _raw_path(cache_dir: Path, model: str) -> Path:
     return cache_dir / "melody_raw" / f"{model}.npz"
 
 
-def _load_raw(path: Path, model: str) -> MelodyModelOutput | None:
+def _load_raw(path: Path, model: str, source_sig: str | None = None) -> MelodyModelOutput | None:
+    """Đầu ra thô đã lưu nếu đúng mã wrapper (và, khi có `source_sig`, làm từ đúng file đầu vào), ngược lại None."""
     from chordtrack.melody.io import load_output
 
     if not path.exists():
@@ -260,13 +261,19 @@ def _load_raw(path: Path, model: str) -> MelodyModelOutput | None:
         log.warning("Không đọc được %s: %s", path, e)
         return None
     rev = out.extras.get("wrapper_rev")
-    return out if rev is not None and str(rev) == _wrapper_revision(model) else None
+    if rev is None or str(rev) != _wrapper_revision(model):
+        return None
+    if source_sig is not None and str(out.extras.get("source_sig")) != source_sig:
+        return None
+    return out
 
 
-def _save_raw(out: MelodyModelOutput, path: Path, model: str) -> None:
+def _save_raw(out: MelodyModelOutput, path: Path, model: str, source_sig: str | None = None) -> None:
     from chordtrack.melody.io import save_output
 
     out.extras["wrapper_rev"] = np.array(_wrapper_revision(model))
+    if source_sig is not None:
+        out.extras["source_sig"] = np.array(source_sig)
     save_output(out, path)
 
 
@@ -338,15 +345,19 @@ def _prepare_audio(source: str) -> tuple[str, Path]:
 
 
 def run_separation(mix: Path, cache_dir: Path) -> dict:
-    """Tách stem giọng bằng BS-Roformer (`separation._run_roformer`, tự giữ `gpu_lock()`), ghi `vocals.wav` và
+    """Tách stem giọng bằng BS-Roformer (`separation.separate_vocals`, tự giữ `gpu_lock()`): ghi `vocals.wav` và
     `instrumental.wav` vào `cache_dir` như bước tách nguồn của pipeline hợp âm (pipeline đó sẽ dùng lại). Trả thống
     kê thời gian / VRAM đỉnh (MB)."""
     from chordtrack import separation
 
-    stats = separation._run_roformer(mix, cache_dir / "vocals.wav", cache_dir / "instrumental.wav")
-    p = cache_dir / separation.STATS_FILE        # thêm vào thống kê chung với pipeline hợp âm, giữ mục cũ
-    write_json(p, {**(read_json(p) or {}), "roformer": stats})
-    return stats
+    assert mix == cache_dir / "mix.wav", mix
+    return separation.separate_vocals(cache_dir)
+
+
+def _file_sig(path: Path) -> str:
+    """Dấu của một file (kích thước + thời điểm sửa) để biết đầu ra thô có làm từ đúng file này không."""
+    st = path.stat()
+    return f"{st.st_size}:{st.st_mtime_ns}"
 
 
 def analyze_melody(source: str, *, force: bool = False,
@@ -356,7 +367,7 @@ def analyze_melody(source: str, *, force: bool = False,
 
     `progress(step, fraction)` được gọi ở đầu (0.0) và cuối (1.0) mỗi bước trong `VARIANTS[variant].steps`. Có
     cache thì không gọi. `force=True` chạy lại các model của biến thể này (biến thể `"yourmt3"` chỉ chạy lại
-    YourMT3+); stem giọng `vocals.wav` đã có thì luôn dùng lại (tách giọng cho cùng một kết quả).
+    YourMT3+; bản tách giọng tách lại cả stem giọng `vocals.wav`).
     """
     spec = variant_of(variant)
     report = progress or (lambda step, fraction: None)
@@ -383,14 +394,15 @@ def analyze_melody(source: str, *, force: bool = False,
 
     # Bước dùng lại đầu ra thô có sẵn chỉ báo xong (không báo bắt đầu), để thời gian gần 0 của nó không được ghi
     # vào thống kê ước tính thời gian của job.
-    def raw_step(step: str, raw: str, run: Callable[[], MelodyModelOutput]) -> MelodyModelOutput:
+    def raw_step(step: str, raw: str, run: Callable[[], MelodyModelOutput],
+                 source_sig: str | None = None) -> MelodyModelOutput:
         t0 = time.perf_counter()
         path = _raw_path(cache_dir, raw)
-        out = None if force else _load_raw(path, raw)
+        out = None if force else _load_raw(path, raw, source_sig)
         if out is None:
             report(step, 0.0)
             out = run()
-            _save_raw(out, path, raw)
+            _save_raw(out, path, raw, source_sig)
             # Đầu ra thô dùng chung giữa các biến thể: kết quả biến thể khác dựng từ bản cũ thì thành cũ.
             _mark_others_stale(song_id, variant, raw)
         timing[step] = time.perf_counter() - t0
@@ -400,16 +412,18 @@ def analyze_melody(source: str, *, force: bool = False,
 
     mix_voice = fill = None
     if spec.vocals:
-        # Stem giọng: dùng lại vocals.wav nếu đã có (pipeline hợp âm hoặc lần dò trước), kể cả khi `force`.
+        # Stem giọng: dùng lại vocals.wav nếu đã có (pipeline hợp âm hoặc lần dò trước); `force` tách lại.
         t0 = time.perf_counter()
         vocals_wav = cache_dir / "vocals.wav"
-        if not vocals_wav.exists():
+        if force or not vocals_wav.exists():
             report("melody_separate", 0.0)
             vram["roformer"] = _num(run_separation(mix, cache_dir).get("peak_vram_mb"))
         timing["melody_separate"] = time.perf_counter() - t0
         report("melody_separate", 1.0)
+        # Đầu ra thô trên stem gắn với đúng vocals.wav: stem bị tách lại (vd pipeline hợp âm) thì chạy lại.
         voice = raw_step("melody_voice", "yourmt3_vocals",
-                         lambda: run_yourmt3(vocals_wav, _raw_path(cache_dir, "yourmt3_vocals")))
+                         lambda: run_yourmt3(vocals_wav, _raw_path(cache_dir, "yourmt3_vocals")),
+                         _file_sig(vocals_wav))
         if "melody_voice_mix" in spec.steps:
             mix_voice = raw_step("melody_voice_mix", "yourmt3", lambda: run_yourmt3(mix, _raw_path(cache_dir, "yourmt3")))
     else:

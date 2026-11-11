@@ -77,6 +77,22 @@ def separate(audio_path: Path, out_dir: Path) -> Stems:
     return stems
 
 
+def separate_vocals(out_dir: Path) -> dict:
+    """Chỉ chạy bước BS-Roformer trên `out_dir/mix.wav` (đã chuẩn hóa), ghi `vocals.wav` và `instrumental.wav` như
+    `separate()` để lần phân tích hợp âm sau dùng lại. Dùng cho dò giai điệu bản tách giọng. Như `separate()`: bass
+    tách từ instrumental cũ bị xóa, thống kê thêm mục `roformer` vào `separation_stats.json` (giữ các mục khác,
+    kể cả `source`). Trả thống kê của bước Roformer."""
+    out_dir = Path(out_dir)
+    mix = out_dir / "mix.wav"
+    _remove([out_dir / "bass.wav", out_dir / "no_bass.wav"])
+    stats = _run_roformer(mix, out_dir / "vocals.wav", out_dir / "instrumental.wav")
+    all_stats = _load_stats(out_dir)
+    all_stats.pop("demucs", None)
+    all_stats["roformer"] = stats
+    (out_dir / STATS_FILE).write_text(json.dumps(all_stats, indent=2), encoding="utf-8")
+    return stats
+
+
 def normalize_audio(src: Path, dst: Path) -> None:
     """Đưa audio về WAV 44.1 kHz stereo 16-bit bằng ffmpeg."""
     ffmpeg = shutil.which("ffmpeg")
