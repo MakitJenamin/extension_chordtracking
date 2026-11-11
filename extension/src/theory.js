@@ -455,12 +455,12 @@
   }
 
   /* Cách dò giai điệu (`model` của POST /melody, docs/melody_api.md). `model`: giá trị <Melody>.model. Tên hiện cho
-   * người dùng là "Nhanh" / "Kỹ" (không dùng tên model, người dùng chốt 2026-11-11); khóa giữ nguyên. */
+   * người dùng là "Bình thường" / "Kỹ" (không dùng tên model, người dùng chốt 2026-11-11); khóa giữ nguyên. */
   // Thứ tự khóa = thứ tự nút trên panel. Mặc định "yourmt3" (người dùng chốt 2026-11-11: nghe thấy tốt hơn).
   const MELODY_MODELS = {
-    // `time`: thời gian dò lần đầu một bài 4 phút (gồm tách giọng), đo trên RTX 3060 Ti: Let It Be 243 s, Nhanh 117 s,
+    // `time`: thời gian dò lần đầu một bài 4 phút (gồm tách giọng), đo trên RTX 3060 Ti: Let It Be 243 s, Bình thường 117 s,
     // Kỹ 182 s (2026-11-11, xem README).
-    yourmt3: { model: "yourmt3", short: "Nhanh", label: "Nhanh", time: "khoảng 2 phút",
+    yourmt3: { model: "yourmt3", short: "Bình thường", label: "Bình thường", time: "khoảng 2 phút",
       tip: "Khoảng 2 phút cho bài 4 phút (lần đầu, gồm tách giọng). Tốt nhất với bài có lời" },
     combo: { model: "yourmt3>muscriptor_small", short: "Kỹ", label: "Kỹ", time: "khoảng 3 phút",
       tip: "Chậm hơn khoảng 1 phút (khoảng 3 phút cho bài 4 phút). Bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn (dùng thêm MuScriptor, cần đăng nhập Hugging Face)" },
@@ -516,7 +516,7 @@
 
   /** Khóa biến thể sẽ dò/hiện: cách dò người dùng chọn (`choice` = CT.settings.melodyModel), luôn tách giọng. Server
    * thiếu thì lùi mà không đổi lựa chọn đã lưu: thiếu gói tách giọng thì bỏ tách giọng, thiếu MuScriptor ("Kỹ") thì
-   * dùng "Nhanh". Chưa biết server có gì, hoặc server không có cách nào: giữ đúng lựa chọn (nút dò bị tắt ở panel). */
+   * dùng "Bình thường". Chưa biết server có gì, hoặc server không có cách nào: giữ đúng lựa chọn (nút dò bị tắt ở panel). */
   function melodyEffective(choice, models) {
     const want = melodyVariant(choice);
     if (!knownModels(models)) return want + "_vocals";

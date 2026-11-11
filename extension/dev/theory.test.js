@@ -374,8 +374,8 @@ test("melodyAvail / melodyEffective: cách dò theo melody_models của /health"
   assert.deepEqual(T.melodyAvail(all), { known: true, any: true, yourmt3: true, combo: true, vocals: true });
   assert.equal(T.melodyEffective("yourmt3", all), "yourmt3_vocals");
   assert.equal(T.melodyEffective("combo", all), "combo_vocals");
-  assert.equal(T.melodyEffective(undefined, all), "yourmt3_vocals");   // cài đặt lạ: mặc định Nhanh
-  // Thiếu MuScriptor: "Kỹ" tắt, đang chọn Kỹ thì dùng Nhanh (vẫn tách giọng).
+  assert.equal(T.melodyEffective(undefined, all), "yourmt3_vocals");   // cài đặt lạ: mặc định Bình thường
+  // Thiếu MuScriptor: "Kỹ" tắt, đang chọn Kỹ thì dùng Bình thường (vẫn tách giọng).
   assert.equal(T.melodyAvail(noMus).combo, false);
   assert.equal(T.melodyEffective("combo", noMus), "yourmt3_vocals");
   // Thiếu gói tách giọng: bỏ tách giọng, giữ cách dò đã chọn.
@@ -390,9 +390,9 @@ test("melodyAvail / melodyEffective: cách dò theo melody_models của /health"
   assert.equal(T.melodyAvail({}).any, false);
 });
 
-test("tên cách dò cho người dùng: Nhanh | Kỹ, không dùng tên model", () => {
+test("tên cách dò cho người dùng: Bình thường | Kỹ, không dùng tên model", () => {
   assert.deepEqual(Object.keys(T.MELODY_MODELS), ["yourmt3", "combo"]);
-  assert.equal(T.MELODY_MODELS.yourmt3.short, "Nhanh");
+  assert.equal(T.MELODY_MODELS.yourmt3.short, "Bình thường");
   assert.equal(T.MELODY_MODELS.combo.short, "Kỹ");
   for (const v of Object.values(T.MELODY_MODELS)) assert.ok(!/__/.test(v.tip), v.tip);
 });

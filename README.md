@@ -37,7 +37,7 @@
 <td align="center">🔒<br><b>Riêng tư</b><br><sub>AI chạy trên máy, không gửi gì đi</sub></td>
 </tr>
 <tr>
-<td align="center">🎵<br><b>Dòng giai điệu</b><br><sub>Bấm "Dò giai điệu": tên nốt và ↑/↓ chạy dưới hợp âm, dịch giọng như hợp âm. Hai cách dò: Nhanh (YourMT3+) và Kỹ (thêm MuScriptor)</sub></td>
+<td align="center">🎵<br><b>Dòng giai điệu</b><br><sub>Bấm "Dò giai điệu": tên nốt và ↑/↓ chạy dưới hợp âm, dịch giọng như hợp âm. Hai cách dò: Bình thường (YourMT3+) và Kỹ (thêm MuScriptor)</sub></td>
 <td align="center">🎤<br><b>Tách giọng</b><br><sub>BS-Roformer tách giọng hát trước khi dò, ít lẫn nhạc đệm</sub></td>
 <td align="center">📏<br><b>Nốt khớp phách</b><br><sub>Nốt tự căn về lưới phách của bài, dễ đọc nhịp</sub></td>
 </tr>
@@ -156,14 +156,14 @@ Các nút trong extension: [extension/README.md](extension/README.md).
 ## 🎵 Dò giai điệu
 
 Bấm **♪ Dò giai điệu** trong khung ChordTrack (sau khi hợp âm đã hiện): tên nốt và mũi tên ↑/↓ chạy dưới dải hợp âm.
-Có hai cách dò, chọn ở nút **Dò: Nhanh | Kỹ** (nhớ lựa chọn):
+Có hai cách dò, chọn ở nút **Giai điệu: Bình thường | Kỹ** (nhớ lựa chọn):
 
 | Cách | Model | Bài 4 phút, lần đầu | Cần tài khoản? |
 |---|---|---|---|
-| **Nhanh** (mặc định) | YourMT3+ | khoảng 2 phút | Không, `setup.ps1` cài sẵn |
+| **Bình thường** (mặc định) | YourMT3+ | khoảng 2 phút | Không, `setup.ps1` cài sẵn |
 | **Kỹ** | YourMT3+ ở đoạn hát, MuScriptor small ở phần còn lại | khoảng 3 phút | Có, tài khoản Hugging Face (miễn phí) |
 
-Nhanh tốt nhất với bài có lời; Kỹ bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn. Cả hai luôn **tách giọng** hát bằng
+Bình thường tốt nhất với bài có lời; Kỹ bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn. Cả hai luôn **tách giọng** hát bằng
 BS-Roformer trước khi dò và **căn nốt về phách** của bài cho dễ đọc nhịp. Mỗi lần bấm chỉ chạy cách đang chọn.
 
 **Bật cách Kỹ** (tùy chọn). Weights MuScriptor theo license **CC BY-NC 4.0, chỉ dùng phi thương mại**, và để ở repo
@@ -222,7 +222,7 @@ Server chạy từng job một nên không tự tranh VRAM với chính nó. Má
 <details>
 <summary><b>Nút "Kỹ" mờ / setup báo "chưa có MuScriptor small"</b></summary>
 
-Bình thường nếu chưa có tài khoản Hugging Face: cách Nhanh vẫn dùng được. Muốn bật Kỹ, làm ba bước ở mục
+Đây là chuyện bình thường khi chưa có tài khoản Hugging Face: cách Bình thường vẫn dùng được. Muốn bật Kỹ, làm ba bước ở mục
 [Dò giai điệu](#-dò-giai-điệu). `fetch_models.py --muscriptor` báo 401/403 nghĩa là chưa đăng nhập (`hf auth login`)
 hoặc chưa bấm đồng ý điều khoản trên trang model.
 </details>
@@ -257,7 +257,7 @@ Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ 
 | `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
 | `GET /songs` | Danh sách bài đã phân tích |
-| `POST /melody` | Dò giai điệu, giống `/analyze`; `"model": "combo"` (Kỹ, mặc định của API) hoặc `"yourmt3"` (Nhanh), `"vocals": true` để tách giọng BS-Roformer trước (extension luôn gửi). Biến thể chưa đủ model (vd thiếu MuScriptor): 409 kèm hướng dẫn. Hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
+| `POST /melody` | Dò giai điệu, giống `/analyze`; `"model": "combo"` (Kỹ, mặc định của API) hoặc `"yourmt3"` (Bình thường), `"vocals": true` để tách giọng BS-Roformer trước (extension luôn gửi). Biến thể chưa đủ model (vd thiếu MuScriptor): 409 kèm hướng dẫn. Hợp đồng ở [docs/melody_api.md](docs/melody_api.md) |
 | `GET /melody/{song_id}?model=combo\|yourmt3&vocals=0\|1` | Dòng nốt giai điệu (`notes`: `start`, `end`, `pitch` MIDI, `confidence`, `uncertain`, `source`) |
 
 ```powershell
@@ -269,7 +269,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType applic
 ## 📜 License
 
 Mã dự án: [MIT](LICENSE). Model hợp âm, bắt nhịp và dò giai điệu thuộc tác giả gốc, xem [THIRD_PARTY.md](THIRD_PARTY.md).
-YourMT3+ (dò giai điệu, cách Nhanh): Apache-2.0. BS-Roformer (tách giọng): qua gói audio-separator (MIT).
+YourMT3+ (dò giai điệu, cách Bình thường): Apache-2.0. BS-Roformer (tách giọng): qua gói audio-separator (MIT).
 ⚠️ Weights MuScriptor (cách dò Kỹ, tùy chọn) theo CC BY-NC 4.0: chỉ dùng phi thương mại.
 ⚠️ ChordFormer không có license, THIRD_PARTY.md hướng dẫn cách tắt.
 ⚠️ Tải audio bằng yt-dlp chỉ nên dùng cho cá nhân (xem cảnh báo ở mục Gặp lỗi thường gặp).
