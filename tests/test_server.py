@@ -340,6 +340,18 @@ def test_melody_variant_not_ready_409(fake, tmp_path):
     assert all(len(call) == 3 for call in mel.calls)    # bản ghép (gọi dạng (vid, force)) không chạy
 
 
+def test_melody_variant_not_ready_returns_cached(fake, tmp_path):
+    """Đã dò bằng "Kỹ" từ trước rồi mới thiếu MuScriptor: POST không `force` vẫn trả kết quả đã lưu; `force` thì 409."""
+    mel = FakeMelody()
+    mel.ready = False
+    mel.results[(VID, "combo")] = {"song_id": VID, "model": "yourmt3>muscriptor_small", "notes": []}
+    with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
+        r = c.post("/melody", json={"source": VID, "model": "combo"}).json()
+        assert r["status"] == "done" and r["melody"]["model"] == "yourmt3>muscriptor_small"
+        assert c.post("/melody", json={"source": VID, "model": "combo", "force": True}).status_code == 409
+    assert mel.calls == []
+
+
 def test_melody_missing_message():
     ok = {"yourmt3": True, "yourmt3_vocals": True, "combo": False, "combo_vocals": False}
     assert "MuScriptor" in server.melody_missing_message("combo_vocals", ok)

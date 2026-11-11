@@ -173,6 +173,8 @@ def fetch_yourmt3(check: bool) -> list[str]:
                                 str(yourmt3.PYDEPS_DIR), *YOURMT3_PYDEPS], check=True)
         except Exception as e:     # mạng, git, pip: vẫn kiểm tra bên dưới để báo thiếu gì
             errors.append(f"lỗi khi tải: {e}")
+            if isinstance(e, subprocess.CalledProcessError) and "git" in str(e.cmd):
+                errors.append(f"nếu lần clone trước bị ngắt giữa chừng: xóa thư mục {src} rồi chạy lại")
     if not (src / "model_helper.py").exists():
         errors.append(f"thiếu mã YourMT3 ở {src}")
     if not yourmt3.CHECKPOINT.exists():

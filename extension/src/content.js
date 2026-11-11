@@ -88,7 +88,15 @@
     if (m.status !== "unknown" || m.probing) return;
     m.probing = true;
     let r;
-    try { r = await CT.api.getMelody(c.id, model); } finally { m.probing = false; }
+    try {
+      r = await CT.api.getMelody(c.id, model);
+      // Chưa có bản tách giọng nhưng có bản dò trên mix từ trước khi tách giọng luôn bật: hiện tạm, đánh dấu "bản cũ"
+      // (↻ dò bản tách giọng), để khỏi mất kết quả đã dò.
+      if (!r.melody && r.status === 404 && model.endsWith("_vocals")) {
+        const old = await CT.api.getMelody(c.id, model.slice(0, -7));
+        if (old.melody) r = { melody: old.melody, stale: "mix" };
+      }
+    } finally { m.probing = false; }
     if (cur !== c || m.status !== "unknown") return;    // người dùng đã bấm dò trong lúc chờ
     if (r.melody) Object.assign(m, { status: "ready", melody: r.melody, stale: r.stale });
     else if (r.status === 0) return;
@@ -100,8 +108,12 @@
     await refreshHealth(5000);     // server vừa cài thêm model / khởi động lại: dùng đúng biến thể server có
     if (cur !== c) return;
     const model = melVariant();
-    if (!CT.theory.melodyAvail(CT.state.melodyModels).any) { emitMelody(c); return; }   // nút dò đang tắt
     const m = c.mels[model];
+    if (!CT.theory.melodyAvail(CT.state.melodyModels).any) {     // server không có cách dò nào: hiện nút dò mờ
+      if (m.status !== "loading" && m.status !== "ready") Object.assign(m, { status: "none", error: null });
+      emitMelody(c);
+      return;
+    }
     if (m.status === "loading" && !force) return;
     m.ctrl?.abort();
     const my = (m.ctrl = new AbortController());
@@ -109,7 +121,7 @@
       job: { status: "queued", progress: 0, step: null, message: "Đang gửi yêu cầu dò giai điệu", eta_seconds: null } });
     emitMelody(c);
     try {
-      const melody = await CT.api.loadMelody(c.id, { force, model, signal: my.signal, onProgress: (job) => {
+      const melody = await CT.api.loadMelody(c.id, { force, model, models: CT.state.melodyModels, signal: my.signal, onProgress: (job) => {
         if (m.ctrl !== my) return;
         m.job = job;
         emitMelody(c);      // biến thể khác đang hiện: cập nhật chip "… đang dò" của nó

@@ -120,6 +120,7 @@ def default_stale_melody(song_id: str, variant: str = "combo") -> dict | None:
 
 _MELODY_READY: list = [0.0, {}]     # (thời điểm kiểm tra, kết quả)
 MELODY_READY_TTL = 60.0             # giây; /health bị poll thường xuyên, chỉ kiểm tra file lại sau khoảng này
+MELODY_MISSING_TTL = 5.0            # khi còn thiếu model: kiểm tra lại sớm để thấy ngay model vừa tải thêm
 
 # Hướng dẫn khi biến thể chưa đủ model (lỗi 409 của POST /melody). Tên cách dò cho người dùng: "Nhanh" (yourmt3),
 # "Kỹ" (combo), cùng câu với `MELODY_*_HINT` ở extension/src/theory.js.
@@ -150,7 +151,8 @@ def default_melody_ready() -> dict[str, bool]:
     from chordtrack.melody import pipeline as melody_pipeline
 
     now = time.monotonic()
-    if _MELODY_READY[0] and now - _MELODY_READY[0] < MELODY_READY_TTL:
+    ttl = MELODY_READY_TTL if _MELODY_READY[1] and all(_MELODY_READY[1].values()) else MELODY_MISSING_TTL
+    if _MELODY_READY[0] and now - _MELODY_READY[0] < ttl:
         return dict(_MELODY_READY[1])
     try:
         importlib.invalidate_caches()     # gói vừa cài thêm (muscriptor, audio-separator) khi server đang chạy
@@ -158,9 +160,9 @@ def default_melody_ready() -> dict[str, bool]:
     except Exception:
         log.exception("Không kiểm tra được model dò giai điệu")
         ok = {k: False for k in melody_pipeline.VARIANTS}
-    # Chỉ nhớ khi đủ hết: còn thiếu thì lần sau kiểm tra lại (vài lệnh stat), để người dùng vừa tải thêm model (ví dụ
-    # `fetch_models.py --muscriptor`) thấy ngay mà không phải chờ hết TTL.
-    _MELODY_READY[:] = [now if all(ok.values()) else 0.0, ok]
+    # Còn thiếu model (bản cài mặc định không có MuScriptor) thì chỉ nhớ MELODY_MISSING_TTL giây, để người dùng vừa
+    # tải thêm (`fetch_models.py --muscriptor`) thấy ngay mà /health vẫn không quét lại mỗi lần poll.
+    _MELODY_READY[:] = [now, ok]
     return dict(ok)
 
 
@@ -323,7 +325,11 @@ def create_app(
         ready = melody_ready()
         if ready.get(key) is False:
             # Biến thể chưa đủ model (thường là "Kỹ" khi chưa tải MuScriptor small): báo cách bật, không tạo job.
-            # Kết quả đã dò từ trước (lúc còn đủ model) vẫn trả được bằng GET /melody.
+            # Kết quả đã dò từ trước (lúc còn đủ model) vẫn trả như thường nếu không `force`.
+            vid = audio_mod.parse_video_id(body.source)
+            done = cached_melody(vid, key) if vid and not body.force else None
+            if done is not None:
+                return {"status": "done", "song_id": vid, "melody": done}
             raise HTTPException(409, melody_missing_message(key, ready))
         return submit(body, jobs.MELODY_KIND_OF[key], lambda sid: cached_melody(sid, key), "melody")
 

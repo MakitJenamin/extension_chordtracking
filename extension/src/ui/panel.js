@@ -230,9 +230,12 @@
       const btn = (kids, tip, onclick, cls = "ct-btn") => h("button", { type: "button", class: cls, title: tip, onclick }, ...kids);
       // Job của cách dò kia vẫn chạy (người dùng đổi cách dò giữa chừng): chip nhỏ "Nhanh đang dò… 40%".
       const others = (m.others || []).map((o) => {
-        const n = T().MELODY_MODELS[T().melodyParts(o.model).model].short;
+        const op = T().melodyParts(o.model);
+        // Cùng cách dò nhưng khác bản tách giọng (server vừa cài thêm gói tách giọng): không chọn lại được, chỉ báo.
+        const same = op.model === parts.model;
+        const n = T().MELODY_MODELS[op.model].short + (same ? (op.vocals ? ", tách giọng" : ", bản mix") : "");
         return h("span", { class: "ct-chip ct-mel-other", role: "status",
-          title: `Cách dò ${n} vẫn đang chạy ở nền (job riêng, đổi cách dò không gửi thêm job). Chọn lại ${n} để xem tiến độ`,
+          title: `Cách dò ${n} vẫn đang chạy ở nền (job riêng, đổi cách dò không gửi thêm job).${same ? "" : ` Chọn lại ${T().MELODY_MODELS[op.model].short} để xem tiến độ`}`,
           text: `${n} đang dò… ${Math.round((o.progress || 0) * 100)}%` });
       });
       let kids;
@@ -258,10 +261,12 @@
           "Hiện nốt"),
         // Bản cũ: gửi không `force`, server dựng lại từ đầu ra thô của model đã lưu (thường khoảng 1 giây), chỉ
         // chạy lại model nếu đầu ra thô không còn dùng được. Bản mới: ↻ là dò lại thật (`force`, chạy lại model).
-        btn(["↻"], m.stale ? `Giai điệu (${name}) dò bằng mã cũ: cập nhật (dùng lại kết quả model đã lưu nếu được, thường vài giây)`
+        btn(["↻"], m.stale === "mix" ? `Đang hiện bản dò trên mix (trước khi luôn tách giọng). Bấm để dò bản tách giọng bằng cách ${name} (mất ${info.time})`
+          : m.stale ? `Giai điệu (${name}) dò bằng mã cũ: cập nhật (dùng lại kết quả model đã lưu nếu được, thường vài giây)`
           : `Dò lại giai điệu bằng cách ${name} (bỏ kết quả đã lưu, chạy lại model, mất ${info.time})`,
           run(!m.stale), "ct-btn ct-icon ct-mel-redo")];
-        if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để cập nhật", text: "bản cũ" }));
+        if (m.stale) kids.push(h("span", { class: "ct-chip", text: "bản cũ",
+          title: m.stale === "mix" ? "Bản dò trên mix, chưa tách giọng. Bấm ↻ để dò bản tách giọng" : "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để cập nhật" }));
       } else if (!avail.any) {
         // Server chưa cài dò giai điệu: nút mờ (aria-disabled để tooltip vẫn hiện) kèm hướng dẫn.
         kids = [h("button", { type: "button", class: "ct-btn ct-dis", "aria-disabled": "true",
