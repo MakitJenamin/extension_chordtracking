@@ -103,9 +103,9 @@ khóa biến thể có trong `melody_models` (server cũ không có thì báo c�
 - Có nút **"Dò giai điệu"**: bấm mới gửi `POST /melody`, hiện tiến độ job; đã có kết quả thì tự tải bằng `GET /melody/{id}`.
 - Công tắc "Tách giọng" (`CT.settings.melodyVocals`, mặc định tắt, nhớ lựa chọn) cạnh nút phân đoạn: chọn bản tách
   giọng của model đang chọn; như đổi model, đã có thì hiện, chưa có thì hiện nút dò (không tự chạy job).
-- Công tắc "Nốt khớp phách" (`CT.settings.melodySnap`, mặc định tắt) và ô mức chia 1/16 | 1/8
-  (`melodySnapDiv` 4 | 2): căn đầu/cuối nốt về lưới phách `song.beats` của kết quả hợp âm (`theory.snapNotes`), chỉ ở
-  extension, không gọi server.
+- Công tắc "Nốt khớp phách" (`CT.settings.melodySnap`, mặc định tắt): căn đầu/cuối nốt về lưới phách `song.beats` của
+  kết quả hợp âm (`theory.snapNotes`), chỉ ở extension, không gọi server. Mức chia mỗi phách (2 hoặc 4) **tự chọn**
+  theo tempo và độ dày giai điệu (`theory.autoSnapDiv`), người dùng không phải chọn.
 - Nút phân đoạn cạnh nút dò: "♪ YourMT3+ | Ghép", cùng kiểu với Gốc/Phím trắng/Bậc La Mã (nhớ lựa chọn,
   `CT.settings.melodyModel`, **mặc định `yourmt3`**, người dùng chốt 2026-11-11). Extension luôn gửi `model`. Nút dò và
   lần tự tải dùng biến thể đang chọn; đổi lựa chọn thì tải biến thể đó nếu đã có, chưa có thì hiện trạng thái chưa dò
