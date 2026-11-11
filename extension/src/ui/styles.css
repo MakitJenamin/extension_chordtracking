@@ -423,10 +423,10 @@ html[dark] .ct-strip-wrap { --ct-mel: #b69cff; }
 }
 .ct-seg-sm { align-items: center; }
 .ct-seg-sm button { height: 30px; padding: 0 12px; font-size: 13px; }
-/* Nút "Dò giai điệu": màu tím của làn nốt để nổi bật, là hành động chính của nhóm. */
+/* Nút "Dò giai điệu": màu đỏ (--ct-red, cùng màu vạch đang phát và chấm phách 1) để nổi bật, là hành động chính của nhóm. */
 .ct-melbox > .ct-btn:not(.ct-icon):not(.ct-dis) {
-  background: var(--ct-mel-accent, #6a3fe0); color: #fff; font-weight: 600; padding: 0 16px;
-  box-shadow: 0 1px 6px color-mix(in srgb, var(--ct-mel-accent, #6a3fe0) 45%, transparent);
+  background: var(--ct-red); color: #fff; font-weight: 600; padding: 0 16px;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--ct-red) 40%, transparent);
 }
 .ct-melbox > .ct-btn:not(.ct-icon):not(.ct-dis):hover { filter: brightness(1.12); }
 /* Cách dò / nút dò server chưa chạy được: mờ, không bấm được, vẫn hiện tooltip (aria-disabled, không dùng disabled). */
