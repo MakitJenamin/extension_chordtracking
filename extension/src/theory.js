@@ -454,13 +454,15 @@
     return "bare";
   }
 
-  /* Biến thể dò giai điệu (`model` của POST /melody, docs/melody_api.md). `model`: giá trị <Melody>.model. */
+  /* Cách dò giai điệu (`model` của POST /melody, docs/melody_api.md). `model`: giá trị <Melody>.model. Tên hiện cho
+   * người dùng là "Nhanh" / "Kỹ" (không dùng tên model, người dùng chốt 2026-11-11); khóa giữ nguyên. */
   // Thứ tự khóa = thứ tự nút trên panel. Mặc định "yourmt3" (người dùng chốt 2026-11-11: nghe thấy tốt hơn).
   const MELODY_MODELS = {
-    yourmt3: { model: "yourmt3", short: "YourMT3+", label: "Chỉ YourMT3+ (nhanh hơn)",
-      tip: "Chỉ dùng YourMT3+: dưới 1 phút cho bài 4 phút, bắt giọng hát tốt" },
-    combo: { model: "yourmt3>muscriptor_small", short: "Ghép", label: "Ghép YourMT3+ và MuScriptor",
-      tip: "YourMT3+ ở đoạn có giọng hát, MuScriptor small ở phần còn lại. Chậm hơn (khoảng 2–3 phút cho bài 4 phút) nhưng bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn" },
+    // `time`: thời gian dò lần đầu một bài 4 phút (gồm tách giọng), đo trên RTX 3060 Ti, xem README.
+    yourmt3: { model: "yourmt3", short: "Nhanh", label: "Nhanh", time: "__NHANH__",
+      tip: "Khoảng __NHANH__ cho bài 4 phút. Tốt nhất với bài có lời" },
+    combo: { model: "yourmt3>muscriptor_small", short: "Kỹ", label: "Kỹ", time: "__KY__",
+      tip: "Chậm hơn, khoảng __KY__ cho bài 4 phút. Bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn (dùng thêm MuScriptor, cần đăng nhập Hugging Face)" },
   };
   const MELODY_DEFAULT = "yourmt3";
   // Biến thể của kết quả cũ không có trường `model` (trước khi có tùy chọn, server chỉ có bản ghép).
@@ -469,10 +471,10 @@
   /** Biến thể hợp lệ từ cài đặt (giá trị lạ hoặc thiếu: mặc định "yourmt3"). */
   function melodyVariant(v) { return Object.prototype.hasOwnProperty.call(MELODY_MODELS, v) ? v : MELODY_DEFAULT; }
 
-  /* Tách giọng (cờ `vocals` của POST /melody, CT.settings.melodyVocals): mỗi model nút bấm có thêm bản tách giọng.
-   * Khóa đầy đủ của một biến thể = khóa trạng thái trong content.js = khóa `melody_models` của /health. */
+  /* Tách giọng (cờ `vocals` của POST /melody): mỗi cách dò có thêm bản tách giọng; extension luôn dùng bản tách giọng
+   * khi server có (melodyEffective). Khóa đầy đủ của một biến thể = khóa trạng thái trong content.js = khóa
+   * `melody_models` của /health. */
   const MELODY_VOCALS_RESULT = { yourmt3: "yourmt3[vocals]", combo: "yourmt3[vocals]>muscriptor_small" };
-  const MELODY_VOCALS_TIP = "Tách giọng hát bằng BS-Roformer trước khi dò: đoạn có giọng lấy YourMT3+ chạy trên stem giọng (ít lẫn nhạc đệm), đoạn không giọng giữ như cũ.";
   /** Khóa biến thể từ (model, vocals): "yourmt3" | "combo" | "yourmt3_vocals" | "combo_vocals". */
   function melodyKey(model, vocals) { return melodyVariant(model) + (vocals ? "_vocals" : ""); }
   /** {model, vocals} của một khóa biến thể (khóa lạ: model mặc định, không tách giọng). */
@@ -483,6 +485,47 @@
     return Object.prototype.hasOwnProperty.call(MELODY_MODELS, model) ? { model, vocals } : { model: MELODY_DEFAULT, vocals: false };
   }
   const MELODY_KEYS = Object.keys(MELODY_MODELS).flatMap((m) => [m, m + "_vocals"]);
+
+  /** `melody_models` của GET /health có dùng được không (object). null/khác: chưa biết (server tắt, server cũ). */
+  const knownModels = (models) => !!models && typeof models === "object" && !Array.isArray(models);
+
+  /** Cách dò nào server chạy được, theo `melody_models` của GET /health. Chưa biết (`models` null) thì coi như có đủ
+   * (giữ cách cũ: gửi rồi để server báo lỗi). {known, any, yourmt3, combo, vocals}; `yourmt3`/`combo`: có bản nào
+   * (tách giọng hoặc không) của cách đó; `vocals`: có bản tách giọng nào. */
+  function melodyAvail(models) {
+    if (!knownModels(models)) return { known: false, any: true, yourmt3: true, combo: true, vocals: true };
+    const has = (k) => models[k] === true;
+    const base = (m) => has(m) || has(m + "_vocals");
+    const yourmt3 = base("yourmt3"), combo = base("combo");
+    return { known: true, any: yourmt3 || combo, yourmt3, combo, vocals: has("yourmt3_vocals") || has("combo_vocals") };
+  }
+
+  /** Câu hướng dẫn (tiếng Việt) khi server chưa chạy được biến thể `key` (theo `melody_models`). Cùng ý với lỗi 409
+   * của POST /melody (chordtrack/server.py). */
+  const MELODY_SETUP_HINT = "Chạy lại cài đặt: powershell -ExecutionPolicy Bypass -File scripts\\setup.ps1, rồi khởi động lại server.";
+  const MELODY_KY_HINT = "Cách dò Kỹ cần MuScriptor small (tài khoản Hugging Face, chỉ dùng phi thương mại): tạo token Read ở huggingface.co/settings/tokens, bấm đồng ý điều khoản ở huggingface.co/MuScriptor/muscriptor-small, chạy .venv\\Scripts\\hf.exe auth login rồi .venv\\Scripts\\python.exe scripts\\fetch_models.py --muscriptor và khởi động lại server. Xem README, mục Dò giai điệu.";
+  function melodyMissingText(key, models) {
+    const a = melodyAvail(models);
+    const p = melodyParts(key);
+    if (!a.yourmt3) return "Server chưa cài dò giai điệu. " + MELODY_SETUP_HINT;
+    if (p.model === "combo" && !a.combo) return MELODY_KY_HINT;
+    if (p.vocals) return "Server chưa cài phần tách giọng. " + MELODY_SETUP_HINT;
+    return "Server chưa cài đủ model cho cách dò này. " + MELODY_SETUP_HINT;
+  }
+
+  /** Khóa biến thể sẽ dò/hiện: cách dò người dùng chọn (`choice` = CT.settings.melodyModel), luôn tách giọng. Server
+   * thiếu thì lùi mà không đổi lựa chọn đã lưu: thiếu gói tách giọng thì bỏ tách giọng, thiếu MuScriptor ("Kỹ") thì
+   * dùng "Nhanh". Chưa biết server có gì, hoặc server không có cách nào: giữ đúng lựa chọn (nút dò bị tắt ở panel). */
+  function melodyEffective(choice, models) {
+    const want = melodyVariant(choice);
+    if (!knownModels(models)) return want + "_vocals";
+    const order = want === "combo" ? ["combo", "yourmt3"] : ["yourmt3"];
+    for (const b of order) {
+      if (models[b + "_vocals"] === true) return b + "_vocals";
+      if (models[b] === true) return b;
+    }
+    return want + "_vocals";
+  }
 
   /** <Melody> có đúng là của biến thể `variant` (khóa đầy đủ) không. Server cũ bỏ qua `?model=`/`vocals` và trả bản
    * ghép, nên các bản khác phải có đúng model; bản ghép nhận cả kết quả cũ không có trường model. */
@@ -499,7 +542,7 @@
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
     DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
-    MELODY_VOCALS_RESULT, MELODY_VOCALS_TIP,
+    MELODY_VOCALS_RESULT, melodyAvail, melodyEffective, melodyMissingText, MELODY_KY_HINT, MELODY_SETUP_HINT,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = theory;
   else window.CT.theory = theory;

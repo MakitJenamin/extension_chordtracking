@@ -121,9 +121,30 @@ def default_stale_melody(song_id: str, variant: str = "combo") -> dict | None:
 _MELODY_READY: list = [0.0, {}]     # (thời điểm kiểm tra, kết quả)
 MELODY_READY_TTL = 60.0             # giây; /health bị poll thường xuyên, chỉ kiểm tra file lại sau khoảng này
 
+# Hướng dẫn khi biến thể chưa đủ model (lỗi 409 của POST /melody). Tên cách dò cho người dùng: "Nhanh" (yourmt3),
+# "Kỹ" (combo), cùng câu với `MELODY_*_HINT` ở extension/src/theory.js.
+MELODY_SETUP_HINT = (r"Chạy lại cài đặt: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1, rồi khởi động "
+                     "lại server.")
+MELODY_KY_HINT = ("Cách dò Kỹ cần MuScriptor small (tài khoản Hugging Face, chỉ dùng phi thương mại): tạo token Read ở "
+                  "huggingface.co/settings/tokens, bấm đồng ý điều khoản ở huggingface.co/MuScriptor/muscriptor-small, "
+                  r"chạy .venv\Scripts\hf.exe auth login rồi .venv\Scripts\python.exe scripts\fetch_models.py "
+                  "--muscriptor và khởi động lại server. Xem README, mục Dò giai điệu.")
+
+
+def melody_missing_message(key: str, ready: dict[str, bool]) -> str:
+    """Câu tiếng Việt chỉ cách bật biến thể `key` khi server chưa đủ model."""
+    if not (ready.get("yourmt3") or ready.get("yourmt3_vocals")):
+        return "Server chưa cài dò giai điệu. " + MELODY_SETUP_HINT
+    if key.startswith("combo") and not (ready.get("combo") or ready.get("combo_vocals")):
+        return MELODY_KY_HINT
+    if key.endswith("_vocals"):
+        return "Server chưa cài phần tách giọng (gói audio-separator). " + MELODY_SETUP_HINT
+    return "Server chưa cài đủ model cho cách dò này. " + MELODY_SETUP_HINT
+
 
 def default_melody_ready() -> dict[str, bool]:
     """Mỗi biến thể dò giai điệu (khóa của `pipeline.VARIANTS`) đã đủ model chưa: `{"combo": bool, ...}`."""
+    import importlib
     import time
 
     from chordtrack.melody import pipeline as melody_pipeline
@@ -132,11 +153,14 @@ def default_melody_ready() -> dict[str, bool]:
     if _MELODY_READY[0] and now - _MELODY_READY[0] < MELODY_READY_TTL:
         return dict(_MELODY_READY[1])
     try:
+        importlib.invalidate_caches()     # gói vừa cài thêm (muscriptor, audio-separator) khi server đang chạy
         ok = melody_pipeline.variant_ready(melody_pipeline.melody_ready())
     except Exception:
         log.exception("Không kiểm tra được model dò giai điệu")
         ok = {k: False for k in melody_pipeline.VARIANTS}
-    _MELODY_READY[:] = [now, ok]
+    # Chỉ nhớ khi đủ hết: còn thiếu thì lần sau kiểm tra lại (vài lệnh stat), để người dùng vừa tải thêm model (ví dụ
+    # `fetch_models.py --muscriptor`) thấy ngay mà không phải chờ hết TTL.
+    _MELODY_READY[:] = [now if all(ok.values()) else 0.0, ok]
     return dict(ok)
 
 
@@ -261,8 +285,9 @@ def create_app(
             "deno": jobs.deno_path() is not None,
             "ffmpeg": shutil.which("ffmpeg") is not None,
             "cookies": _cookies_ok(),
-            # "melody": biến thể mặc định (ghép) chạy được; "melody_models": từng biến thể.
-            "melody": bool(ready.get("combo")),
+            # "melody": có ít nhất một cách dò chạy được (YourMT3+, không cần tài khoản); "melody_models": từng biến
+            # thể (combo / combo_vocals false khi thiếu MuScriptor small, *_vocals false khi thiếu audio-separator).
+            "melody": bool(ready.get("yourmt3") or ready.get("yourmt3_vocals")),
             "melody_models": {k: bool(v) for k, v in ready.items()},
         }
 
@@ -295,6 +320,11 @@ def create_app(
     def melody_endpoint(body: MelodyRequest) -> dict:
         # Mỗi biến thể (model, vocals) một loại job và một file cache: các biến thể không chặn nhau.
         key = jobs.melody_variant_key(body.model, body.vocals)
+        ready = melody_ready()
+        if ready.get(key) is False:
+            # Biến thể chưa đủ model (thường là "Kỹ" khi chưa tải MuScriptor small): báo cách bật, không tạo job.
+            # Kết quả đã dò từ trước (lúc còn đủ model) vẫn trả được bằng GET /melody.
+            raise HTTPException(409, melody_missing_message(key, ready))
         return submit(body, jobs.MELODY_KIND_OF[key], lambda sid: cached_melody(sid, key), "melody")
 
     @app.get("/melody/{song_id}")

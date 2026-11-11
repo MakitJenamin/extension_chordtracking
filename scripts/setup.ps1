@@ -11,17 +11,24 @@
     2. Tạo .venv ở thư mục repo.
     3. Cài PyTorch: bản CUDA 12.6 nếu máy có GPU NVIDIA (nvidia-smi), không thì bản CPU.
     4. Cài thư viện trong requirements\runtime.txt (giữ numpy 1.26).
-    5. Tải mã nguồn và weights các model (scripts\fetch_models.py), kiểm tra SHA-256.
+    5. Tải mã nguồn và weights các model (scripts\fetch_models.py --melody), kiểm tra SHA-256.
+       Dò giai điệu cài mặc định: YourMT3+ (cách dò "Nhanh", không cần tài khoản). MuScriptor small (cách dò "Kỹ")
+       là tùy chọn: repo gated trên Hugging Face, chưa đăng nhập thì chỉ cảnh báo, setup vẫn chạy tiếp.
     6. Kiểm tra ffmpeg và Deno (yt-dlp cần để tải YouTube), thiếu thì cài bằng winget.
-    7. Chạy thử (scripts\smoke_test.py): tạo audio hợp âm C – G, chạy đủ các model, kiểm tra nhận đúng.
+    7. Chạy thử (scripts\smoke_test.py): tạo audio hợp âm C – G, chạy đủ các model, kiểm tra nhận đúng; chạy thử
+       YourMT3+ trên một đoạn giai điệu tổng hợp.
+  Cuối cùng in tóm tắt: thời gian từng bước, cách dò giai điệu nào dùng được và cách bật phần còn thiếu.
 
 .PARAMETER Cpu
   Cài PyTorch bản CPU kể cả khi có GPU NVIDIA.
 .PARAMETER Full
-  Cài thêm thư viện tách nguồn (--separation) và đánh giá, tải thêm consonance-ACE.
+  Cài thêm thư viện đánh giá, tải thêm consonance-ACE (thư viện tách nguồn đã cài cùng dò giai điệu).
+.PARAMETER NoMelody
+  Không cài dò giai điệu (gồm tách giọng). Mặc định có cài.
 .PARAMETER Melody
-  Cài thêm dò giai điệu (YourMT3+ và MuScriptor small, khoảng 1 GB). MuScriptor small cần tài khoản Hugging Face:
-  chạy `hf auth login` và bấm đồng ý license CC BY-NC 4.0 ở https://huggingface.co/MuScriptor/muscriptor-small trước.
+  Giữ để lệnh cũ vẫn chạy: dò giai điệu nay cài mặc định. Cách dò "Kỹ" cần MuScriptor small (tài khoản Hugging
+  Face): tạo token Read, bấm đồng ý license CC BY-NC 4.0 ở https://huggingface.co/MuScriptor/muscriptor-small,
+  chạy `.venv\Scripts\hf.exe auth login`, rồi `.venv\Scripts\python.exe scripts\fetch_models.py --muscriptor`.
 .PARAMETER NoTools
   Không tự cài ffmpeg, Deno bằng winget (chỉ báo thiếu).
 #>
@@ -29,8 +36,10 @@ param(
     [switch]$Cpu,
     [switch]$Full,
     [switch]$Melody,
+    [switch]$NoMelody,
     [switch]$NoTools
 )
+$WithMelody = -not $NoMelody
 
 # Không dùng "Stop": trên Windows PowerShell 5.1, chương trình ngoài (pip, python, git) chỉ cần ghi vào stderr
 # là bị coi như lỗi và dừng script, kể cả khi chạy thành công. Mọi lệnh ngoài được kiểm tra bằng $LASTEXITCODE.
@@ -40,7 +49,15 @@ Set-Location $RepoRoot
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = "utf-8"
 
-function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
+$Timing = [ordered]@{}
+$StepName = $null
+$StepWatch = $null
+function Step($msg) {
+    if ($script:StepName) { $Timing[$script:StepName] = $script:StepWatch.Elapsed }
+    $script:StepName = $msg
+    $script:StepWatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "`n==> $msg" -ForegroundColor Cyan
+}
 function Refresh-Path {
     $m = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $u = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -100,23 +117,28 @@ if ($LASTEXITCODE -eq 0 -and $have -eq "2.14.1$tag") {
 # 4. Thư viện ---------------------------------------------------------------------------------------
 Step "Thư viện Python"
 $reqs = @("-r", "requirements\runtime.txt")
-if ($Full) { $reqs += @("-r", "requirements\separation.txt", "-r", "requirements\eval.txt") }
+# Tách nguồn (audio-separator: BS-Roformer): dò giai điệu luôn tách giọng trước khi dò, nên cài cùng dò giai điệu.
+if ($Full -or $WithMelody) { $reqs += @("-r", "requirements\separation.txt") }
+if ($Full) { $reqs += @("-r", "requirements\eval.txt") }
 Run $Python (@("-m", "pip", "install", "--quiet") + $reqs + @("-c", "requirements\constraints.txt"))
 Run $Python @("-m", "pip", "install", "--quiet", "--no-deps", "-e", ".")
-if ($Melody) {
+if ($WithMelody) {
     Run $Python @("-m", "pip", "install", "--quiet", "-r", "requirements\melody_yourmt3.txt", "-c", "requirements\constraints.txt")
+    # Mã MuScriptor (MIT, tải không cần tài khoản; weights gated tải ở bước 5). Lỗi thì chỉ cảnh báo: chỉ cách dò "Kỹ" cần.
     # --no-deps: muscriptor khai báo numpy>=2 nhưng chạy được với numpy 1.26 (không được lên numpy 2)
-    Run $Python @("-m", "pip", "install", "--quiet", "--no-deps", "-r", "requirements\melody_muscriptor.txt", "-c", "requirements\constraints.txt")
+    & $Python -m pip install --quiet --no-deps -r requirements\melody_muscriptor.txt -c requirements\constraints.txt
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Không cài được gói muscriptor: cách dò `"Kỹ`" sẽ tắt, cách dò `"Nhanh`" vẫn dùng được." }
 }
 
 # 5. Model ------------------------------------------------------------------------------------------
-Step "Model hợp âm và bắt nhịp"
+Step "Model (hợp âm, nhịp, giai điệu)"
 if (-not (Have "git")) {
     if (-not (Winget-Install "Git.Git")) { throw "Cần git: winget install Git.Git, rồi chạy lại." }
 }
 $fetch = @("scripts\fetch_models.py")
 if ($Full) { $fetch += "--extra" }
-if ($Melody) { $fetch += "--melody" }
+# --melody: YourMT3+ bắt buộc; MuScriptor small thiếu quyền tải (chưa đăng nhập Hugging Face) chỉ cảnh báo, mã thoát 0.
+if ($WithMelody) { $fetch += "--melody" }
 Run $Python $fetch
 
 # 6. ffmpeg, Deno -----------------------------------------------------------------------------------
@@ -129,7 +151,35 @@ else { Write-Host "Có ffmpeg và Deno." }
 
 # 7. Chạy thử ---------------------------------------------------------------------------------------
 Step "Chạy thử"
-Run $Python @("scripts\smoke_test.py")
+$smoke = @("scripts\smoke_test.py")
+if ($WithMelody) { $smoke += "--melody" }
+Run $Python $smoke
+$Timing[$StepName] = $StepWatch.Elapsed
+
+# Tóm tắt -------------------------------------------------------------------------------------------
+Write-Host "`n==> Tóm tắt" -ForegroundColor Cyan
+foreach ($k in $Timing.Keys) { Write-Host ("  {0,-34} {1:mm\:ss}" -f $k, $Timing[$k]) }
+Write-Host ("  PyTorch: " + (& $Python -c "import torch; print(torch.__version__, '- GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'không có, chạy CPU (chậm hơn)')"))
+if ($WithMelody) {
+    $ready = @((& $Python -c "from chordtrack.melody import pipeline as p; r = p.variant_ready(p.melody_ready()); print(' '.join(k for k, v in r.items() if v))") -split " ")
+    Write-Host "  Dò giai điệu:"
+    if ($ready -contains "yourmt3") { Write-Host "    Nhanh (YourMT3+):   có" }
+    else { Write-Host "    Nhanh (YourMT3+):   THIẾU, xem lỗi ở bước Model rồi chạy lại setup" -ForegroundColor Red }
+    if ($ready -contains "combo") {
+        Write-Host "    Kỹ (+ MuScriptor):  có"
+    } else {
+        Write-Host "    Kỹ (+ MuScriptor):  chưa bật (tùy chọn, cần tài khoản Hugging Face, chỉ dùng phi thương mại). Muốn bật:" -ForegroundColor Yellow
+        Write-Host "      1. Tạo access token loại Read ở https://huggingface.co/settings/tokens"
+        Write-Host "      2. Mở https://huggingface.co/MuScriptor/muscriptor-small, đăng nhập, bấm đồng ý điều khoản"
+        Write-Host "      3. .venv\Scripts\hf.exe auth login        (dán token)"
+        Write-Host "         .venv\Scripts\python.exe scripts\fetch_models.py --muscriptor"
+        Write-Host "      rồi khởi động lại server."
+    }
+    if ($ready -contains "yourmt3_vocals") { Write-Host "    Tách giọng:         có" }
+    else { Write-Host "    Tách giọng:         chưa cài (gói audio-separator lỗi?), dò trên bản mix. Xem lỗi ở bước Thư viện Python" }
+} else {
+    Write-Host "  Dò giai điệu: không cài (-NoMelody). Muốn cài: chạy lại setup không có -NoMelody."
+}
 
 Write-Host "`nXong. Bước tiếp theo:" -ForegroundColor Green
 Write-Host "  1. Chạy server:   powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background"

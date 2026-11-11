@@ -415,6 +415,9 @@ html[dark] .ct-strip-wrap { --ct-mel: #b69cff; }
 .ct-melgrp { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .ct-seg-sm { align-items: center; }
 .ct-seg-sm button { height: 28px; padding: 0 10px; font-size: 12px; }
-.ct-seg-lbl { padding: 0 2px 0 8px; color: var(--ct-text2); font-size: 14px; line-height: 1; }
-/* Công tắc của dòng giai điệu: "Tách giọng", "Nốt khớp phách". */
-.ct-melopts { flex-wrap: nowrap; align-items: center; }
+.ct-seg-lbl { padding: 0 4px 0 8px; color: var(--ct-text2); font-size: 12px; line-height: 1; }
+/* Cách dò / nút dò server chưa chạy được: mờ, không bấm được, vẫn hiện tooltip (aria-disabled, không dùng disabled). */
+.ct-root .ct-dis { opacity: 0.45; cursor: not-allowed; }
+.ct-root .ct-seg .ct-dis:hover { background: transparent; }
+/* Job của cách dò kia vẫn chạy ở nền. */
+.ct-mel-other { font-size: 11px; opacity: 0.85; }

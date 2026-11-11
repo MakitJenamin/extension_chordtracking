@@ -146,18 +146,12 @@
       this.buildMelody(true);
     }
 
-    /** Nốt của <Melody> đang giữ, căn về lưới phách của bài nếu bật "Nốt khớp phách" (CT.theory.snapNotes). */
+    /** Nốt của <Melody> đang giữ, luôn căn về lưới phách của bài (CT.theory.snapNotes, mức chia tự chọn bằng
+     * autoSnapDiv; người dùng chốt luôn bật, 2026-11-11). Bài không có lưới phách thì giữ nguyên. */
     melodyLine() {
       const notes = T().melodyNotes(this.melody);
-      const s = CT.settings;
-      if (!s.melodySnap || !this.song) return notes;
+      if (!this.song) return notes;
       return T().snapNotes(notes, this.song.beats, T().autoSnapDiv(notes, this.song.beats));
-    }
-
-    /** Bật/tắt "Nốt khớp phách" hoặc đổi mức chia: tính lại nốt và dựng lại làn nốt. */
-    resnapMelody() {
-      this.notes = this.melodyLine();
-      this.buildMelody(true);
     }
 
     /** Làn nốt có hiện không: có bài, có nốt và người dùng bật "Giai điệu". */

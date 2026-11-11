@@ -15,9 +15,10 @@
  *
  * Giai điệu (docs/melody_api.md): job riêng, chỉ chạy khi người dùng bấm "Dò giai điệu" (CT.app.detectMelody).
  *   Khi hợp âm của bài đã hiện, GET /melody/{id}?model= một lần: đã dò rồi thì hiện luôn. Phát sự kiện "melody".
- *   Biến thể theo CT.settings.melodyModel ("combo" | "yourmt3") và CT.settings.melodyVocals (tách giọng), khóa
- *   CT.theory.melodyKey; mỗi biến thể một trạng thái; đổi lựa chọn thì hỏi GET cho biến thể mới (nếu chưa hỏi),
- *   không tự chạy job.
+ *   Biến thể = cách dò CT.settings.melodyModel ("yourmt3" = Nhanh | "combo" = Kỹ), luôn tách giọng, lùi theo
+ *   `melody_models` của GET /health khi server thiếu model (CT.theory.melodyEffective; không đổi lựa chọn đã lưu).
+ *   Mỗi biến thể một trạng thái; đổi lựa chọn thì chỉ hỏi GET cho biến thể mới (nếu chưa hỏi), không tự chạy job:
+ *   POST /melody chỉ gửi khi người dùng bấm nút dò hoặc ↻.
  */
 (() => {
   const RETRY_MS = 5000;
@@ -43,24 +44,45 @@
   function stopRetry() { clearTimeout(retryTimer); retryTimer = 0; }
 
   /* ----- giai điệu ----- */
-  // Mỗi biến thể (khóa CT.theory.melodyKey(melodyModel, melodyVocals)) một trạng thái riêng: job của biến thể này vẫn
-  // chạy và được theo dõi khi người dùng chuyển sang biến thể kia; chỉ biến thể đang chọn được phát ra.
+  // Mỗi biến thể (khóa CT.theory.melodyEffective) một trạng thái riêng: job của biến thể này vẫn chạy và được theo dõi
+  // khi người dùng chuyển sang biến thể kia; chỉ biến thể đang chọn được phát ra (kèm danh sách job khác đang chạy).
   const newMel = () => ({ status: "unknown", melody: null, stale: false, job: null, error: null, ctrl: null });
   const newMels = () => Object.fromEntries(CT.theory.MELODY_KEYS.map((v) => [v, newMel()]));
-  const melVariant = () => CT.theory.melodyKey(CT.settings.melodyModel, !!CT.settings.melodyVocals);
+  // `melody_models` của GET /health (undefined/null: chưa biết hoặc server cũ). Hỏi lại tối đa mỗi HEALTH_MS.
+  const HEALTH_MS = 30000;
+  let healthAt = 0;
+  const melVariant = () => CT.theory.melodyEffective(CT.settings.melodyModel, CT.state.melodyModels);
+
+  async function refreshHealth(maxAge = HEALTH_MS) {
+    if (Date.now() - healthAt < maxAge) return;
+    const r = await CT.api.request("/health");
+    if (!r.ok || !r.data || typeof r.data !== "object") return;    // server tắt: giữ như cũ, lần sau hỏi lại
+    healthAt = Date.now();
+    const mm = r.data.melody_models;
+    CT.state.melodyModels = mm && typeof mm === "object" ? mm : null;
+  }
 
   function emitMelody(c) {
     if (c !== cur) return;
     const model = melVariant();
     const m = c.mels[model];
+    // Job của biến thể khác vẫn đang chạy (người dùng vừa đổi cách dò): panel hiện chip nhỏ để biết.
+    const others = Object.entries(c.mels).filter(([k, o]) => k !== model && o.status === "loading")
+      .map(([k, o]) => ({ model: k, progress: (o.job && o.job.progress) || 0 }));
     // Đang dò lại hoặc dò lại lỗi: vẫn hiện dòng nốt cũ (nếu có) cho tới khi có kết quả mới.
     CT.state.melody = m.melody;
-    CT.bus.emit("melody", { videoId: c.id, model, status: m.status, melody: CT.state.melody, stale: m.stale, job: m.job, error: m.error });
+    CT.bus.emit("melody", { videoId: c.id, model, status: m.status, melody: CT.state.melody, stale: m.stale, job: m.job,
+      error: m.error, others, avail: CT.theory.melodyAvail(CT.state.melodyModels) });
   }
 
-  /** GET /melody/{id}?model=: chỉ đọc kết quả đã có của biến thể đang chọn. Server tắt thì để "unknown" để lần
-   * hợp âm hiện sau (hoặc lần đổi biến thể sau) hỏi lại. */
+  /** GET /melody/{id}?model=: chỉ đọc kết quả đã có của biến thể đang chọn (không bao giờ POST). Hỏi /health trước để
+   * biết server có những cách dò nào. Server tắt thì để "unknown" để lần hợp âm hiện sau (hoặc lần đổi biến thể sau)
+   * hỏi lại. */
   async function probeMelody(c) {
+    const before = melVariant();
+    await refreshHealth();
+    if (cur !== c) return;
+    if (melVariant() !== before || !c.healthShown) { c.healthShown = true; emitMelody(c); }
     const model = melVariant();
     const m = c.mels[model];
     if (m.status !== "unknown" || m.probing) return;
@@ -75,7 +97,10 @@
   }
 
   async function detectMelody(c, force = false) {
+    await refreshHealth(5000);     // server vừa cài thêm model / khởi động lại: dùng đúng biến thể server có
+    if (cur !== c) return;
     const model = melVariant();
+    if (!CT.theory.melodyAvail(CT.state.melodyModels).any) { emitMelody(c); return; }   // nút dò đang tắt
     const m = c.mels[model];
     if (m.status === "loading" && !force) return;
     m.ctrl?.abort();
@@ -87,7 +112,7 @@
       const melody = await CT.api.loadMelody(c.id, { force, model, signal: my.signal, onProgress: (job) => {
         if (m.ctrl !== my) return;
         m.job = job;
-        emitMelody(c);
+        emitMelody(c);      // biến thể khác đang hiện: cập nhật chip "… đang dò" của nó
       } });
       if (m.ctrl !== my) return;
       Object.assign(m, { ctrl: null, status: "ready", melody, stale: false, job: null });
