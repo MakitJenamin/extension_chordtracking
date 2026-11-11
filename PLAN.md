@@ -603,6 +603,31 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     giọng (YourMT3+)" → xong sau ~74 s (server: tách 52,6 s, stem 26,4 s, YourMT3+ mix dùng lại), 455 nốt. Bật "Nốt
     khớp phách": nốt căn vào lưới, ô 1/16 hiện; đổi 1/8 vẫn 455 nốt, không nốt nào chồng nhau hay rộng 0. ETA đầu
     job báo ~2 phút vì tính cả bước YourMT3+ mix (36 s) dù đã có sẵn.
+- [x] **Bản open source: MuScriptor tùy chọn, dò giai điệu cài mặc định, README cho người mới (2026-11-11).**
+  - `setup.ps1` cài dò giai điệu mặc định (`-NoMelody` để bỏ; `-Melody` giữ cho lệnh cũ), gồm `requirements/separation.txt`
+    (tách giọng). `fetch_models.py --melody`: YourMT3+ bắt buộc, tải trước BS-Roformer, MuScriptor small **tùy chọn**
+    (401/403 → cảnh báo kèm 3 bước Hugging Face, mã thoát 0); `--muscriptor` chỉ tải MuScriptor và báo lỗi nếu không
+    được. Cuối setup in tóm tắt thời gian từng bước và cách dò nào bật được. `smoke_test.py --melody` chạy YourMT3+ thật.
+  - Server: `/health` `melody` = có YourMT3+; `POST /melody` biến thể thiếu model → 409 kèm câu tiếng Việt chỉ cách bật.
+  - Extension: nút "Dò: Nhanh | Kỹ" (không dùng tên model), luôn tách giọng và căn nốt về phách (bỏ hai công tắc,
+    settingsRev 4). Theo `melody_models`: Kỹ mờ + tooltip khi thiếu MuScriptor (đang chọn Kỹ thì hiện/dò như Nhanh,
+    không ghi đè lựa chọn), thiếu gói tách giọng thì dò trên mix, không có gì thì nút dò mờ. Nút và chip tiến độ ghi rõ
+    cách đang dò; job của cách kia còn chạy thì có chip "Nhanh đang dò…". Đổi lựa chọn chỉ GET, không POST.
+  - **Lỗi thật tìm được khi thử như người mới:** clone vào thư mục sâu thì `git checkout` Space YourMT3 lỗi "Filename
+    too long" (thư mục `amt/logs/2024/<~70 ký tự>/`), và `hf_hub_download(local_dir=...)` cũng tạo đúng đường dẫn đó.
+    Sửa: `git -c core.longpaths=true`, tải checkpoint thẳng qua URL `resolve` về `data/models/yourmt3/` (kiểm SHA-256,
+    không để bản thứ hai trong cache HF). Máy có `LongPathsEnabled=0` vẫn có thể lỗi ở Python: README khuyên clone vào
+    thư mục ngắn.
+  - Thử như người mới (clone từ GitHub ra thư mục tạm, `HF_HOME` trống, không `HF_TOKEN`, không cache pip): lần 1 dừng ở
+    lỗi trên sau 701 s; sửa xong `git pull` + chạy lại `setup.ps1`: exit 0 sau 156 s, cảnh báo MuScriptor kèm 3 bước,
+    tóm tắt "Nhanh: có, Kỹ: chưa bật, Tách giọng: có". Cài xong 7,3 GB trên đĩa (torch 4,0 GB), tải ~5 GB, ~14 phút.
+    `fetch_models.py --muscriptor` exit 1, `--melody` exit 0. Server bản clone (cổng 8766): `melody: true`,
+    `melody_models` combo/combo_vocals false, `POST /melody` combo → 409 kèm hướng dẫn.
+  - Đo thời gian dò lần đầu (Let It Be 243 s, file cục bộ): Nhanh (tách giọng) 117 s = tách 50 + stem 24 + mix 37;
+    Kỹ (tách giọng) 182 s = tách 51 + stem 24 + MuScriptor 93.
+  - Chrome thật (harness của worktree → server bản clone): đang lưu "Kỹ" thì nút Kỹ mờ, Nhanh sáng, nút "♪ Dò giai điệu
+    (Nhanh)"; bấm Kỹ không đổi gì; dò thật: "Giai điệu (Nhanh) 14% · Đang tách giọng hát (BS-Roformer)" → xong, 455 nốt
+    `yourmt3[vocals]`, căn theo phách. Giả `/health` không có model: cả nhóm nút và nút dò mờ, tooltip chỉ `setup.ps1`.
 - [x] Dòng giai điệu trong extension, thử thật trên YouTube với backend `/melody` (2026-11-11, PR #65):
   - Let It Be: bật ChordTrack thì tự `GET /melody` (537 nốt, 30 nốt `uncertain` hiện mờ), nốt đang phát nổi ở vạch
     đỏ; Phím trắng (C trưởng) và Gốc +2 (G → A, C → D) đổi tên đúng; mũi tên ↑/↓ theo pitch gốc.

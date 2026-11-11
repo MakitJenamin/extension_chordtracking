@@ -38,8 +38,6 @@
     { code: "KeyG", key: "G", label: "Ẩn/hiện dòng giai điệu", run: () => CT.setSettings({ showMelody: CT.settings.showMelody === false }) },
   ];
   // Bước của job dò giai điệu (docs/melody_api.md).
-  // Tách giọng thêm vào mỗi bài (lần đầu): BS-Roformer ~50 s + YourMT3+ trên stem ~23 s, đo trên "Let It Be" 243 s.
-  const VOCALS_EXTRA = "75 giây";
   const MELODY_STEPS = { fetch: "Tải audio", melody_separate: "Tách giọng", melody_voice: "Dò giọng hát",
     melody_voice_mix: "Dò bản mix", melody_fill: "Dò nhạc cụ", melody_line: "Ghép dòng nốt" };
   const etaText = (eta) => (eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
@@ -160,19 +158,17 @@
       const check = (key, text, tip) => h("label", { title: tip },
         h("input", { type: "checkbox", role: "switch", "data-k": key, onchange: (e) => CT.setSettings({ [key]: e.target.checked }) }), text);
       this.melBox = h("span", { class: "ct-melbox" });
-      // Chọn biến thể dò giai điệu (CT.settings.melodyModel): nút phân đoạn cùng kiểu Gốc/Phím trắng/Bậc La Mã.
-      // Dựng một lần, không nằm trong melBox (melBox dựng lại mỗi lần job báo tiến độ).
+      // Chọn cách dò giai điệu (CT.settings.melodyModel): "Dò: Nhanh | Kỹ", nút phân đoạn cùng kiểu Gốc/Phím trắng/Bậc
+      // La Mã. Dựng một lần, không nằm trong melBox (melBox dựng lại mỗi lần job báo tiến độ). Tách giọng và căn nốt
+      // về phách luôn bật, không có công tắc (người dùng chốt 2026-11-11).
       const MM = T().MELODY_MODELS;
-      this.melSel = h("div", { class: "ct-seg ct-seg-sm", role: "group", "aria-label": "Model dò giai điệu" },
-        h("span", { class: "ct-seg-lbl", "aria-hidden": "true" }, "♪"),
-        ...Object.entries(MM).map(([k, v]) => h("button", { type: "button", "data-v": k, title: `${v.label}. ${v.tip}`,
-          onclick: () => CT.setSettings({ melodyModel: k }) }, v.short)));
-      // Hai công tắc của dòng giai điệu: tách giọng (biến thể khác, cần dò riêng) và căn nốt về phách (chỉ hiển thị).
-      this.melOpts = h("span", { class: "ct-opts ct-melopts" },
-        check("melodyVocals", "Tách giọng", `${T().MELODY_VOCALS_TIP} Chậm hơn khoảng ${VOCALS_EXTRA} cho bài 4 phút (lần đầu mỗi bài). Mỗi lựa chọn là một bản dò riêng: chưa dò thì bấm “Dò giai điệu”`),
-        check("melodySnap", "Nốt khớp phách", "Căn đầu/cuối nốt giai điệu về lưới phách của bài để dễ đọc nhịp. Mức chia (1/8 hay 1/16) tự chọn theo tempo và độ dày giai điệu. Chỉ đổi cách hiện, không dò lại"));
+      this.melSel = h("div", { class: "ct-seg ct-seg-sm", role: "group", "aria-label": "Cách dò giai điệu" },
+        h("span", { class: "ct-seg-lbl" }, "Dò:"),
+        ...Object.entries(MM).map(([k, v]) => h("button", { type: "button", "data-v": k, title: `${v.label}: ${v.tip}`,
+          onclick: (e) => { if (e.currentTarget.getAttribute("aria-disabled") !== "true") CT.setSettings({ melodyModel: k }); } },
+          v.short)));
       this.opts = h("div", { class: "ct-controls" },
-        this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox, this.melOpts), h("span", { class: "ct-grow" }),
+        this.seg, this.stepper, h("span", { class: "ct-melgrp" }, this.melSel, this.melBox), h("span", { class: "ct-grow" }),
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
@@ -196,24 +192,59 @@
       this.applySettings(CT.settings);
     },
 
+    /** Nút "Nhanh | Kỹ": tô cách dò thật sự dùng (khác lựa chọn đã lưu khi server thiếu MuScriptor; lựa chọn đã lưu
+     * giữ nguyên để server có MuScriptor thì tự về "Kỹ"), làm mờ cách server chưa chạy được kèm tooltip hướng dẫn.
+     * Dùng aria-disabled thay cho `disabled` để tooltip vẫn hiện khi rê chuột. */
+    applyMelodyAvail() {
+      if (!this.melSel) return;
+      const avail = T().melodyAvail(CT.state.melodyModels);
+      const eff = T().melodyParts(T().melodyEffective(CT.settings.melodyModel, CT.state.melodyModels)).model;
+      for (const b of this.melSel.querySelectorAll("button")) {
+        const k = b.dataset.v;
+        const v = T().MELODY_MODELS[k];
+        const off = avail.known && !avail[k];
+        const on = !off && k === eff;
+        b.classList.toggle("ct-on", on);
+        b.classList.toggle("ct-dis", off);
+        b.setAttribute("aria-pressed", String(on));
+        b.setAttribute("aria-disabled", String(off));
+        b.title = off ? `${v.label}: chưa bật trên server. ${k === "combo" ? T().MELODY_KY_HINT : T().MELODY_SETUP_HINT}`
+          : `${v.label}: ${v.tip}`;
+      }
+    },
+
     /** Nút "Dò giai điệu" / tiến độ job / lỗi / công tắc "Giai điệu" theo sự kiện "melody" mới nhất (this.mel). */
     renderMelody() {
       const box = this.melBox;
       if (!box) return;
+      this.applyMelodyAvail();
       const m = this.mel || { status: "unknown" };
-      const parts = T().melodyParts(m.model || T().melodyKey(CT.settings.melodyModel, !!CT.settings.melodyVocals));
-      const variant = parts.model;
-      const fast = variant === "yourmt3" && !parts.vocals;
-      const label = T().MELODY_MODELS[variant].label + (parts.vocals ? ", tách giọng" : "");
+      const parts = T().melodyParts(m.model || T().melodyEffective(CT.settings.melodyModel, CT.state.melodyModels));
+      const info = T().MELODY_MODELS[parts.model];
+      const name = info.short;
+      const avail = T().melodyAvail(CT.state.melodyModels);
+      // Server chưa có gói tách giọng: dò trên bản mix, không báo lỗi, chỉ ghi chú trong tooltip.
+      const mixNote = avail.known && !parts.vocals
+        ? " Server chưa cài phần tách giọng nên dò trên bản mix (cài: chạy lại scripts\\setup.ps1)." : "";
       const run = (force) => () => CT.app && CT.app.detectMelody(force);
       const btn = (kids, tip, onclick, cls = "ct-btn") => h("button", { type: "button", class: cls, title: tip, onclick }, ...kids);
+      // Job của cách dò kia vẫn chạy (người dùng đổi cách dò giữa chừng): chip nhỏ "Nhanh đang dò… 40%".
+      const others = (m.others || []).map((o) => {
+        const op = T().melodyParts(o.model);
+        // Cùng cách dò nhưng khác bản tách giọng (server vừa cài thêm gói tách giọng): không chọn lại được, chỉ báo.
+        const same = op.model === parts.model;
+        const n = T().MELODY_MODELS[op.model].short + (same ? (op.vocals ? ", tách giọng" : ", bản mix") : "");
+        return h("span", { class: "ct-chip ct-mel-other", role: "status",
+          title: `Cách dò ${n} vẫn đang chạy ở nền (job riêng, đổi cách dò không gửi thêm job).${same ? "" : ` Chọn lại ${T().MELODY_MODELS[op.model].short} để xem tiến độ`}`,
+          text: `${n} đang dò… ${Math.round((o.progress || 0) * 100)}%` });
+      });
       let kids;
       if (m.status === "loading") {
         const j = m.job || {};
         const pct = Math.round((j.progress || 0) * 100);
         const queued = j.status === "queued";
         const what = j.message || MELODY_STEPS[j.step] || (queued ? "Đang chờ tới lượt" : "Đang dò");
-        const text = queued ? `Giai điệu: ${what}` : `Giai điệu ${pct}% · ${what}`;
+        const text = queued ? `Giai điệu (${name}): ${what}` : `Giai điệu (${name}) ${pct}% · ${what}`;
         const eta = etaText(j.eta_seconds);
         kids = [h("span", { class: "ct-chip ct-mel-prog", title: [MELODY_STEPS[j.step], j.message, eta].filter(Boolean).join(" · "),
           role: "status" },
@@ -230,15 +261,22 @@
           "Hiện nốt"),
         // Bản cũ: gửi không `force`, server dựng lại từ đầu ra thô của model đã lưu (thường khoảng 1 giây), chỉ
         // chạy lại model nếu đầu ra thô không còn dùng được. Bản mới: ↻ là dò lại thật (`force`, chạy lại model).
-        btn(["↻"], m.stale ? "Giai điệu dò bằng mã cũ: cập nhật (dùng lại kết quả model đã lưu nếu được, thường vài giây)"
-          : `Dò lại giai điệu (bỏ kết quả đã lưu, chạy lại model, mất ${fast ? "khoảng 1 phút" : "vài phút"})`,
+        btn(["↻"], m.stale === "mix" ? `Đang hiện bản dò trên mix (trước khi luôn tách giọng). Bấm để dò bản tách giọng bằng cách ${name} (mất ${info.time})`
+          : m.stale ? `Giai điệu (${name}) dò bằng mã cũ: cập nhật (dùng lại kết quả model đã lưu nếu được, thường vài giây)`
+          : `Dò lại giai điệu bằng cách ${name} (bỏ kết quả đã lưu, chạy lại model, mất ${info.time})`,
           run(!m.stale), "ct-btn ct-icon ct-mel-redo")];
-        if (m.stale) kids.push(h("span", { class: "ct-chip", title: "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để cập nhật", text: "bản cũ" }));
+        if (m.stale) kids.push(h("span", { class: "ct-chip", text: "bản cũ",
+          title: m.stale === "mix" ? "Bản dò trên mix, chưa tách giọng. Bấm ↻ để dò bản tách giọng" : "Kết quả dò bằng phiên bản mã cũ, bấm ↻ để cập nhật" }));
+      } else if (!avail.any) {
+        // Server chưa cài dò giai điệu: nút mờ (aria-disabled để tooltip vẫn hiện) kèm hướng dẫn.
+        kids = [h("button", { type: "button", class: "ct-btn ct-dis", "aria-disabled": "true",
+          title: "Server chưa cài dò giai điệu. " + T().MELODY_SETUP_HINT }, "♪ Dò giai điệu")];
       } else {
-        kids = [btn(["♪ Dò giai điệu"],
-          `Dò dòng nốt giai điệu bằng AI trên máy (${label}; chạy riêng, mất ${fast ? "khoảng 1 phút" : "vài phút"}). Kết quả hiện dưới dải hợp âm`, run(false))];
+        kids = [btn([`♪ Dò giai điệu (${name})`],
+          `Dò dòng nốt giai điệu bằng AI trên máy, cách ${name}: ${info.tip}. Chỉ chạy cách này; kết quả hiện dưới dải hợp âm.${mixNote}`,
+          run(false))];
       }
-      box.replaceChildren(...kids);
+      box.replaceChildren(...kids, ...others);
     },
 
     toggleHelp(force) {
@@ -286,12 +324,7 @@
       if (this.state !== "hidden") this.show(this.state);
       this.last = {};
       if (this.melOn !== (s.showMelody !== false)) { this.melOn = s.showMelody !== false; this.renderMelody(); }
-      const mv = T().melodyVariant(s.melodyModel);
-      for (const b of this.melSel.querySelectorAll("button")) {
-        const on = b.dataset.v === mv;
-        b.classList.toggle("ct-on", on);
-        b.setAttribute("aria-pressed", String(on));
-      }
+      this.applyMelodyAvail();
       // Chỉ đổi chữ trên dải khi cài đặt ảnh hưởng tới nhãn (không phải mỗi lần đổi âm lượng).
       const sig = labelSig(s);
       if (this.song && sig !== this.labelSig) {
@@ -544,15 +577,6 @@
   });
   /** Dải cao/thấp đi khi làn nốt hiện/ẩn: lớp phủ toàn màn hình đặt lại vị trí phụ đề theo chiều cao mới. */
   function refitOverlay() { if (CT.ui.fullscreen && CT.ui.fullscreen.on) CT.ui.fullscreen.syncControls(); }
-  // "Nốt khớp phách" / mức chia: tính lại vị trí nốt trên dải (không gọi server).
-  const snapSig = (st) => `${!!st.melodySnap}`;
-  let lastMelSnap = snapSig(CT.settings);
-  CT.bus.on("settings", (st) => {
-    const sig = snapSig(st);
-    if (sig === lastMelSnap) return;
-    lastMelSnap = sig;
-    CT.ui.strip.resnapMelody();
-  });
   let lastShowMel = CT.settings.showMelody !== false;
   CT.bus.on("settings", (st) => {
     const on = st.showMelody !== false;

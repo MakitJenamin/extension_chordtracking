@@ -14,19 +14,21 @@ from the authors' repositories at the pinned commits. The MIT license of this pr
 | ChordFormer — Akram, Dettori, Colla, Buttazzo, IEEE TASLP 2026 | Nhận hợp âm, nốt bass | [mwaseemrandhawa/ChordFormer](https://github.com/mwaseemrandhawa/ChordFormer) | mã `77bec51`, weights `0d1071a` | ⚠️ không có license |
 | Beat This! — Foscarin, Schlüter, Widmer (CPJKU), ISMIR 2024 | Bắt nhịp, phách mạnh | [CPJKU/beat_this](https://github.com/CPJKU/beat_this) | `b95c8ab` | MIT |
 | consonance-ACE — Poltronieri, Serra, Rocamora, ISMIR 2025 | Chỉ dùng cho đánh giá (`--extra`) | [andreamust/consonance-ACE](https://github.com/andreamust/consonance-ACE) | `d17633a` | MIT |
-| YourMT3+ (`YPTF.MoE+Multi (noPS)`) — Chang, Dixon, Benetos, MLSP 2024 | Dò giai điệu: chép nốt, nhận giọng hát (`--melody`) | [HF Space mimbres/YourMT3](https://huggingface.co/spaces/mimbres/YourMT3); transformers 4.45.1 cài riêng ở `third_party_src/YourMT3_pydeps` | `5e66c1e` | Apache-2.0 (mã và checkpoint trong Space) |
-| MuScriptor small — Kyutai + Mirelo, 2026 | Dò giai điệu nhạc cụ ngoài đoạn hát (`--melody`) | mã [muscriptor/muscriptor](https://github.com/muscriptor/muscriptor), weights [HF MuScriptor/muscriptor-small](https://huggingface.co/MuScriptor/muscriptor-small) (gated) | mã `8a1ef88` | mã MIT; ⚠️ weights **CC BY-NC 4.0** |
-| BS-Roformer, HTDemucs (qua audio-separator, demucs) | Tách nguồn, tắt mặc định (`setup.ps1 -Full`) | PyPI / Hugging Face | | xem từng gói |
+| YourMT3+ (`YPTF.MoE+Multi (noPS)`) — Chang, Dixon, Benetos, MLSP 2024 | Dò giai điệu, cách "Nhanh" và phần hát của "Kỹ" (cài mặc định, không cần tài khoản) | [HF Space mimbres/YourMT3](https://huggingface.co/spaces/mimbres/YourMT3); transformers 4.45.1 cài riêng ở `third_party_src/YourMT3_pydeps` | `5e66c1e` | Apache-2.0 (mã và checkpoint trong Space) |
+| MuScriptor small — Kyutai + Mirelo, 2026 | Dò giai điệu nhạc cụ ngoài đoạn hát, chỉ cách "Kỹ" (tùy chọn, cần tài khoản Hugging Face) | mã [muscriptor/muscriptor](https://github.com/muscriptor/muscriptor), weights [HF MuScriptor/muscriptor-small](https://huggingface.co/MuScriptor/muscriptor-small) (gated) | mã `8a1ef88` | mã MIT; ⚠️ weights **CC BY-NC 4.0** |
+| BS-Roformer, HTDemucs (qua audio-separator, demucs) | BS-Roformer: tách giọng trước khi dò giai điệu (cài cùng dò giai điệu); tách nguồn cho hợp âm tắt mặc định | PyPI / Hugging Face | | xem từng gói |
 
 ## ⚠️ MuScriptor: CC BY-NC 4.0, cần đăng nhập Hugging Face
 
 Weights MuScriptor theo **CC BY-NC 4.0**: được dùng, chia sẻ, chỉnh sửa nếu ghi công tác giả và **không dùng vào mục
 đích thương mại**. Repo trên Hugging Face là gated: phải đăng nhập (`hf auth login`) và bấm đồng ý điều khoản ở trang
-model thì `fetch_models.py --melody` mới tải được. Không cài `--melody` thì phần hợp âm vẫn chạy bình thường, chỉ thiếu
-nút dò giai điệu (`/health` trả `"melody": false`).
+model thì mới tải được. MuScriptor là **tùy chọn**: `setup.ps1` / `fetch_models.py --melody` không tải được thì chỉ in
+cảnh báo kèm cách bật, dò giai điệu vẫn chạy bằng YourMT3+ (cách "Nhanh"), chỉ nút "Kỹ" bị mờ. Muốn bật: xem README,
+mục "Dò giai điệu", rồi `fetch_models.py --muscriptor`.
 
-MuScriptor weights are CC BY-NC 4.0 (non-commercial use only) and gated on Hugging Face: log in and accept the terms
-before running `fetch_models.py --melody`. Melody detection is optional.
+MuScriptor weights are CC BY-NC 4.0 (non-commercial use only) and gated on Hugging Face. They are optional: without
+them melody detection still works with YourMT3+ ("Nhanh"); log in, accept the terms and run
+`fetch_models.py --muscriptor` to enable the "Kỹ" mode.
 
 ## ⚠️ ChordFormer
 

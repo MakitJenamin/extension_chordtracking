@@ -37,8 +37,9 @@
  *                    | "ready" (có melody) | "error" (có error {code, message})
  *   CT.state.melody                  <Melody> đang hiện (hoặc null)
  *   CT.settings.showMelody           hiện dòng giai điệu dưới dải hợp âm (mặc định bật, nhớ lựa chọn)
- *   CT.settings.melodyVocals         dò giai điệu bản tách giọng (cờ `vocals` của POST /melody, mặc định tắt)
- *   CT.settings.melodySnap           căn nốt giai điệu về lưới phách khi hiển thị (mặc định tắt); mức chia tự chọn (theory.autoSnapDiv)
+ *   Tách giọng (`vocals: true` của POST /melody) và căn nốt về phách (theory.snapNotes + autoSnapDiv) luôn bật,
+ *   không có công tắc (người dùng chốt 2026-11-11). Server thiếu gói tách giọng thì tự dùng bản không tách giọng
+ *   (CT.theory.melodyEffective theo `melody_models` của GET /health).
  *   CT.app.detectMelody(force)       bấm "Dò giai điệu": POST /melody và theo dõi job
  */
 (() => {
@@ -65,10 +66,8 @@
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
-    melodyModel: "yourmt3",   // biến thể dò giai điệu: "yourmt3" (chỉ YourMT3+, mặc định) | "combo" (ghép YourMT3+ + MuScriptor)
-    melodyVocals: false,      // tách giọng (BS-Roformer) trước khi dò: đoạn có giọng lấy YourMT3+ trên stem giọng
-    melodySnap: false,        // căn đầu/cuối nốt giai điệu về lưới phách (CT.theory.snapNotes), chỉ để hiển thị
-    settingsRev: 3,           // phiên bản cài đặt, dùng để chuyển đổi một lần
+    melodyModel: "yourmt3",   // cách dò giai điệu: "yourmt3" ("Nhanh", mặc định) | "combo" ("Kỹ": YourMT3+ ghép MuScriptor)
+    settingsRev: 4,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
   };
@@ -86,11 +85,15 @@
         CT.settings = { ...DEFAULTS, ...(s.settings || {}) };
         // Một lần (settingsRev < 2): bật lại "Khớp phách" cho người đã lỡ tắt, theo yêu cầu mặc định ON.
         const rev = CT.settings.settingsRev || 0;
-        if (rev < 3) {
+        if (rev < 4) {
           if (rev < 2) CT.settings = { ...CT.settings, snapToBeats: true };
           // Một lần (settingsRev < 3): mặc định giai điệu đổi sang "yourmt3" (người dùng chốt 2026-11-11). setSettings
           // lưu cả object nên người đã đổi cài đặt bất kỳ đều có sẵn "combo" cũ, ghi đè mặc định mới.
-          CT.settings = { ...CT.settings, melodyModel: "yourmt3", settingsRev: 3 };
+          if (rev < 3) CT.settings = { ...CT.settings, melodyModel: "yourmt3" };
+          // settingsRev 4: tách giọng và nốt khớp phách luôn bật, bỏ hai cài đặt cũ.
+          CT.settings = { ...CT.settings, settingsRev: 4 };
+          delete CT.settings.melodyVocals;
+          delete CT.settings.melodySnap;
           try { await chrome.storage.sync.set({ settings: CT.settings }); } catch {}
         }
       } catch { CT.settings = { ...DEFAULTS }; }

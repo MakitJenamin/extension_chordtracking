@@ -6,7 +6,7 @@
  *   (onProgress(job) mỗi lần), xong thì GET /result/{song_id}.
  *   Lỗi ném ra là CT.api.ApiError với `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "aborted".
  * CT.api.getMelody(id, model) -> {melody, stale} | {melody: null, status}   GET /melody/{id}?model= (không tạo job)
- * CT.api.loadMelody(videoId, {onProgress, signal, force, model}) -> <Melody>
+ * CT.api.loadMelody(videoId, {onProgress, signal, force, model, models}) -> <Melody>
  *   POST /melody, theo dõi GET /jobs/{id}, xong thì GET /melody/{song_id}?model= (docs/melody_api.md).
  *   `model`: khóa biến thể (CT.theory.melodyKey): "combo" (ghép, mặc định) | "yourmt3" (chỉ YourMT3+), thêm hậu tố
  *   "_vocals" cho bản tách giọng (gửi `model` + `vocals: true`, GET thêm `&vocals=1`).
@@ -141,7 +141,7 @@
 
   /** POST /melody (biến thể `model`) rồi theo dõi job, xong thì GET /melody/{song_id}?model=. Ném ApiError
    * (message tiếng Việt). */
-  async function loadMelody(videoId, { onProgress, signal, force = false, model = "combo" } = {}) {
+  async function loadMelody(videoId, { onProgress, signal, force = false, model = "combo", models } = {}) {
     const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
     const ok = (m) => { if (!CT.theory.melodyModelOk(model, m)) throw unsupportedModel(); return m; };
     try {
@@ -149,14 +149,14 @@
       if (model !== "combo") {
         // Server cũ bỏ qua `model` / `vocals` và chạy cả job ghép (vài phút) rồi mới lộ ra sai biến thể: hỏi /health
         // trước (`melody_models` có đủ khóa biến thể, kể cả bản "_vocals", từ khi có tách giọng).
-        const hr = await request("/health");
+        // `models`: `melody_models` vừa đọc ở content.js (khỏi hỏi /health lần nữa); không có thì tự hỏi.
+        const known = models && typeof models === "object";
+        const hr = known ? { ok: true, data: { melody_models: models } } : await request("/health");
         check();
         if (hr.ok && hr.data && typeof hr.data === "object") {
           const mm = hr.data.melody_models;
           if (!mm || typeof mm !== "object" || !(model in mm)) throw unsupportedModel();
-          if (mm[model] === false) throw new ApiError("job_error", parts.vocals
-            ? "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`; tách giọng cần thêm gói audio-separator: `pip install -r requirements/separation.txt`)"
-            : "server chưa cài đủ model cho cách dò này (chạy `python scripts/fetch_models.py --melody`)");
+          if (mm[model] === false) throw new ApiError("job_error", CT.theory.melodyMissingText(model, mm));
         }
       }
       const res = await request("/melody", { method: "POST",

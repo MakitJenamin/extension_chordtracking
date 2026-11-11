@@ -357,3 +357,42 @@ test("autoSnapDiv: tự chọn mức chia phách theo tempo và độ dày giai 
   assert.equal(T.autoSnapDiv([], slow), 4);
   assert.equal(T.autoSnapDiv(eighths, []), 4);
 });
+
+test("melodyAvail / melodyEffective: cách dò theo melody_models của /health", () => {
+  const all = { combo: true, yourmt3: true, yourmt3_vocals: true, combo_vocals: true };
+  const noMus = { combo: false, yourmt3: true, yourmt3_vocals: true, combo_vocals: false };
+  const noSep = { combo: true, yourmt3: true, yourmt3_vocals: false, combo_vocals: false };
+  const bare = { combo: false, yourmt3: true, yourmt3_vocals: false, combo_vocals: false };
+  const none = { combo: false, yourmt3: false, yourmt3_vocals: false, combo_vocals: false };
+  const old = { combo: true, yourmt3: true };                    // server trước khi có tách giọng
+  // Chưa biết (server tắt / server cũ không có melody_models): coi như có đủ, luôn tách giọng.
+  for (const m of [null, undefined, "x", []]) {
+    assert.deepEqual(T.melodyAvail(m), { known: false, any: true, yourmt3: true, combo: true, vocals: true });
+    assert.equal(T.melodyEffective("yourmt3", m), "yourmt3_vocals");
+    assert.equal(T.melodyEffective("combo", m), "combo_vocals");
+  }
+  assert.deepEqual(T.melodyAvail(all), { known: true, any: true, yourmt3: true, combo: true, vocals: true });
+  assert.equal(T.melodyEffective("yourmt3", all), "yourmt3_vocals");
+  assert.equal(T.melodyEffective("combo", all), "combo_vocals");
+  assert.equal(T.melodyEffective(undefined, all), "yourmt3_vocals");   // cài đặt lạ: mặc định Nhanh
+  // Thiếu MuScriptor: "Kỹ" tắt, đang chọn Kỹ thì dùng Nhanh (vẫn tách giọng).
+  assert.equal(T.melodyAvail(noMus).combo, false);
+  assert.equal(T.melodyEffective("combo", noMus), "yourmt3_vocals");
+  // Thiếu gói tách giọng: bỏ tách giọng, giữ cách dò đã chọn.
+  assert.equal(T.melodyAvail(noSep).vocals, false);
+  assert.equal(T.melodyEffective("yourmt3", noSep), "yourmt3");
+  assert.equal(T.melodyEffective("combo", noSep), "combo");
+  assert.equal(T.melodyEffective("combo", bare), "yourmt3");
+  assert.equal(T.melodyEffective("combo", old), "combo");
+  // Không có gì: any = false, giữ lựa chọn (nút dò bị tắt).
+  assert.deepEqual(T.melodyAvail(none), { known: true, any: false, yourmt3: false, combo: false, vocals: false });
+  assert.equal(T.melodyEffective("combo", none), "combo_vocals");
+  assert.equal(T.melodyAvail({}).any, false);
+});
+
+test("tên cách dò cho người dùng: Nhanh | Kỹ, không dùng tên model", () => {
+  assert.deepEqual(Object.keys(T.MELODY_MODELS), ["yourmt3", "combo"]);
+  assert.equal(T.MELODY_MODELS.yourmt3.short, "Nhanh");
+  assert.equal(T.MELODY_MODELS.combo.short, "Kỹ");
+  for (const v of Object.values(T.MELODY_MODELS)) assert.ok(!/__/.test(v.tip), v.tip);
+});
