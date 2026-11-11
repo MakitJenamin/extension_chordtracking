@@ -19,8 +19,8 @@
 ---
 
 <p align="center">
-  <img src="docs/img/demo.gif" alt="Dải hợp âm và dòng giai điệu chạy theo video">
-  <br><sub>🎬 Hợp âm (kèm bậc La Mã) và dòng giai điệu trượt theo video, vạch đỏ là chỗ đang phát</sub>
+  <img src="docs/img/demo.gif" alt="Dải hợp âm và dòng giai điệu chạy theo video Magia của Kalafina">
+  <br><sub>🎬 "Magia" (Kalafina, Yuki Kajiura sáng tác): hợp âm và nốt giai điệu chạy theo video, vạch đỏ là chỗ đang phát</sub>
 </p>
 
 <p align="center">
@@ -177,30 +177,25 @@ Các nút trong extension: [extension/README.md](extension/README.md).
 
 ## 🎵 Dò giai điệu
 
-Bấm **♪ Dò giai điệu** trong khung ChordTrack (sau khi hợp âm đã hiện): tên nốt và mũi tên ↑/↓ chạy dưới dải hợp âm.
-Có hai cách dò, chọn ở nút **Giai điệu: Bình thường | Kỹ** (nhớ lựa chọn):
+<img src="docs/img/melody.png" alt="Dòng nốt giai điệu dưới dải hợp âm">
 
-| Cách | Model | Bài 4 phút, lần đầu | Cần tài khoản? |
+Bấm **♪ Dò giai điệu** khi hợp âm đã hiện. Tên nốt chạy dưới hợp âm: ↑/↓ là nốt cao hơn hay thấp hơn nốt trước,
+nốt tự căn về phách, dịch giọng theo hợp âm. Lần đầu mỗi bài 4 phút mất khoảng 2–3 phút.
+
+| Cách | Model | Hợp với | Cài |
 |---|---|---|---|
-| **Bình thường** (mặc định) | YourMT3+ | khoảng 2 phút | Không, `setup.ps1` cài sẵn |
-| **Kỹ** | YourMT3+ ở đoạn hát, MuScriptor small ở phần còn lại | khoảng 3 phút | Có, tài khoản Hugging Face (miễn phí) |
+| **Bình thường** (mặc định) | YourMT3+ | Bài có lời | Có sẵn sau `setup.ps1` |
+| **Kỹ** | YourMT3+ + MuScriptor small | Bài có đoạn nhạc cụ dài | Cần tài khoản Hugging Face (miễn phí) |
 
-Bình thường tốt nhất với bài có lời; Kỹ bắt giai điệu nhạc cụ ở đoạn không lời tốt hơn. Cả hai luôn **tách giọng** hát bằng
-BS-Roformer trước khi dò và **căn nốt về phách** của bài cho dễ đọc nhịp. Mỗi lần bấm chỉ chạy cách đang chọn.
+**Bật cách Kỹ** (weights CC BY-NC 4.0, chỉ dùng phi thương mại):
 
-**Bật cách Kỹ** (tùy chọn). Weights MuScriptor theo license **CC BY-NC 4.0, chỉ dùng phi thương mại**, và để ở repo
-gated, nên `setup.ps1` không tự tải được. Chưa làm thì nút Kỹ mờ đi, rê chuột vào để xem hướng dẫn. Ba bước:
-
-1. Tạo tài khoản ở [huggingface.co](https://huggingface.co), vào [Settings → Access Tokens](https://huggingface.co/settings/tokens) tạo token loại **Read**.
-2. Mở [huggingface.co/MuScriptor/muscriptor-small](https://huggingface.co/MuScriptor/muscriptor-small), bấm đồng ý điều khoản.
-3. Trong thư mục dự án:
+1. Tạo token **Read** ở [Hugging Face](https://huggingface.co/settings/tokens), bấm đồng ý điều khoản ở trang
+   [MuScriptor/muscriptor-small](https://huggingface.co/MuScriptor/muscriptor-small).
+2. Chạy rồi khởi động lại server:
    ```powershell
-   .venv\Scripts\hf.exe auth login                          # dán token ở bước 1
+   .venv\Scripts\hf.exe auth login
    .venv\Scripts\python.exe scripts\fetch_models.py --muscriptor
    ```
-   rồi khởi động lại server (tắt tiến trình cũ, chạy lại `start_server.ps1`).
-
-   Weights MuScriptor small tải thêm khoảng 0,4 GB.
 
 ## 🛠️ Lỗi thường gặp
 
