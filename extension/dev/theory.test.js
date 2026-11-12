@@ -269,6 +269,19 @@ test("melodyNotes, noteIndexAt, noteFit", () => {
   assert.equal(T.noteFit(5, 20, 10), "bare");
 });
 
+test("pitchRange, pitchY", () => {
+  assert.equal(T.pitchRange([]), null);
+  assert.deepEqual(T.pitchRange([{ pitch: 60 }, { pitch: 62 }]), { lo: 55, hi: 67 });   // hẹp: nới đủ 12 nửa cung
+  const wide = Array.from({ length: 100 }, (_, i) => ({ pitch: 50 + (i % 25) }));
+  wide.push({ pitch: 120 });                                                          // nốt lạc: không kéo giãn dải
+  const r = T.pitchRange(wide);
+  assert.ok(r.hi < 80 && r.lo >= 49, JSON.stringify(r));
+  assert.equal(T.pitchY(r.hi, r), 0);
+  assert.equal(T.pitchY(r.lo, r), 1);
+  assert.equal(T.pitchY(200, r), 0);                                                  // ngoài dải: kẹp mép
+  assert.equal(T.pitchY(60, null), 0.5);
+});
+
 const magiaMel = (() => {
   const p = path.join(DATA, "cache", "dev_melody", "devmagia_01.json");
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;

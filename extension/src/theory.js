@@ -454,6 +454,24 @@
     return "bare";
   }
 
+  /** Dải cao độ của làn piano-roll: phân vị 5%–95% của pitch (bỏ vài nốt lạc quá cao/thấp), nới mỗi bên 1 nửa cung,
+   * rộng tối thiểu `minSpan` nửa cung (giai điệu hẹp không bị kéo giãn thành dốc đứng). Nốt ngoài dải nằm sát mép.
+   * Trả { lo, hi } (MIDI), hoặc null nếu không có nốt. */
+  function pitchRange(notes, minSpan = 12) {
+    const ps = (notes || []).map((n) => n.pitch).filter(Number.isFinite).sort((a, b) => a - b);
+    if (!ps.length) return null;
+    const q = (f) => ps[Math.min(ps.length - 1, Math.max(0, Math.round(f * (ps.length - 1))))];
+    let lo = q(0.05) - 1, hi = q(0.95) + 1;
+    if (hi - lo < minSpan) { const mid = (lo + hi) / 2; lo = Math.floor(mid - minSpan / 2); hi = lo + minSpan; }
+    return { lo, hi };
+  }
+
+  /** Vị trí dọc của pitch trong dải: 0 = mép trên (cao nhất), 1 = mép dưới; ngoài dải thì kẹp vào mép. */
+  function pitchY(pitch, range) {
+    if (!range || range.hi <= range.lo) return 0.5;
+    return Math.max(0, Math.min(1, (range.hi - pitch) / (range.hi - range.lo)));
+  }
+
   /* Cách dò giai điệu (`model` của POST /melody, docs/melody_api.md). `model`: giá trị <Melody>.model. Tên hiện cho
    * người dùng là "Bình thường" / "Kỹ" (không dùng tên model, người dùng chốt 2026-11-11); khóa giữ nguyên. */
   // Thứ tự khóa = thứ tự nút trên panel. Mặc định "yourmt3" (người dùng chốt 2026-11-11: nghe thấy tốt hơn).
@@ -541,7 +559,7 @@
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
-    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, beatSubdivisions, snapNotes, autoSnapDiv,
+    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
     MELODY_VOCALS_RESULT, melodyAvail, melodyEffective, melodyMissingText, MELODY_KY_HINT, MELODY_SETUP_HINT,
   };

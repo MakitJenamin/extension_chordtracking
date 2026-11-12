@@ -6,9 +6,11 @@
  * transform của dải và đổi class khi chỉ số hợp âm hiện tại đổi.
  *
  * Dòng giai điệu (setMelody): một làn nốt nằm TRONG track, dưới các ô hợp âm, nên trượt cùng transform, cùng
- * px/giây và cùng vạch đỏ, và đi theo dải sang lớp phủ toàn màn hình. Nhãn: tên nốt theo chế độ
- * (CT.theory.melodyName) kèm ↑/↓ so với nốt trước; nốt uncertain mờ. Dòng dày: nhãn không vừa khe tới nốt kế
- * thì bỏ mũi tên, hẹp nữa thì chỉ còn thanh (tooltip vẫn đủ).
+ * px/giây và cùng vạch đỏ, và đi theo dải sang lớp phủ toàn màn hình. Kiểu piano-roll: mỗi nốt là một viên
+ * nằm ngang, chiều dài = thời lượng, độ cao = cao độ (CT.theory.pitchRange/pitchY), nên nhìn ra giai điệu lên/xuống
+ * mà không cần mũi tên. Tên nốt (CT.theory.melodyName, không số quãng tám) ghi ở đầu viên; không vừa khe tới
+ * nốt kế thì chỉ còn viên (tooltip vẫn đủ). Nốt uncertain: viên rỗng viền đứt. Nốt đang phát: viên đỏ, phát sáng,
+ * và ô "đang hát" ở mép trái dải ghi tên nốt hiện tại bằng chữ to kèm nốt kế tiếp.
  */
 (() => {
   const PLAYHEAD = 0.28;
@@ -40,7 +42,15 @@
       this.barNow = el("div", "ct-panbar-now");
       this.barTip = el("div", "ct-panbar-tip");
       this.bar.append(this.barView, this.barNow);
-      this.el.append(this.track, this.head, this.bar, this.barTip);
+      // Ô "đang hát": cố định ở mép trái làn nốt (không trượt theo dải), tên nốt hiện tại chữ to + nốt kế tiếp.
+      this.now = el("div", "ct-mel-now");
+      this.nowName = el("b");
+      this.nowNext = el("span");
+      this.now.append(this.nowName, this.nowNext);
+      this.nowKey = null;
+      this.labels = [];
+      this.range = null;
+      this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
       this.scale = Strip.BASE_SCALE;
       this.width = 0;
@@ -72,7 +82,8 @@
       this.ro = new ResizeObserver((entries) => {
         this.width = entries[0].contentRect.width;
         // Lần đầu dải hiện ra (trước đó bề rộng 0 nên chưa đo được chữ), hoặc đổi panel <-> toàn màn hình.
-        if (this.width && (!this.fitWidth || this.fitScale !== this.scale)) this.fitLabels();
+        // Làn nốt chưa đo được chữ (dựng lúc dải đang ẩn) cũng đo lại.
+        if (this.width && (!this.fitWidth || this.fitScale !== this.scale || (this.lane && !this.melFit))) this.fitLabels();
         this.lastX = null;
         this.update(this.t, true);
       });
@@ -164,17 +175,18 @@
       this.noteEls = [];
       this.nIdx = -1;
       this.nPast = 0;
+      this.nowKey = null;
       const on = this.melodyOn;
       this.el.classList.toggle("ct-has-melody", on);
       if (!on) return;
       const lane = (this.lane = el("div", "ct-mel-lane"));
       const frag = document.createDocumentFragment();
+      this.range = T().pitchRange(this.notes);
       this.notes.forEach((n, i) => {
         const e = el("div", "ct-note" + (n.uncertain ? " ct-nunc" : ""));
         e.dataset.i = i;
-        const lbl = el("span", "ct-nl");
-        lbl.append(el("b"), el("i"));         // tên nốt, mũi tên
-        e.append(lbl, el("span", "ct-nbar"));
+        e.style.setProperty("--y", T().pitchY(n.pitch, this.range).toFixed(3));
+        e.append(el("span", "ct-nbar"), el("span", "ct-nl"));
         frag.append(e);
         this.noteEls.push(e);
       });
@@ -198,12 +210,11 @@
 
     relabelMelody(fit = true) {
       if (!this.lane) return;
-      const L = T().melodyLabels(this.song, this.notes, CT.settings);
+      const L = (this.labels = T().melodyLabels(this.song, this.notes, CT.settings));
+      this.nowKey = null;   // tên nốt đổi theo chế độ: vẽ lại ô "đang hát"
       this.notes.forEach((n, i) => {
         const e = this.noteEls[i];
-        const lbl = e.firstChild;
-        lbl.firstChild.textContent = L[i].name;
-        lbl.lastChild.textContent = L[i].arrow;
+        e.lastChild.textContent = L[i].name;
         const conf = Number.isFinite(n.confidence) ? ` · độ tin cậy ${Math.round(n.confidence * 100)}%` : "";
         e.title = `${L[i].name}${L[i].arrow ? " " + L[i].arrow : ""} · ${fmt(n.start)}${conf}`
           + `${n.uncertain ? " (model không chắc)" : ""}. Bấm để tua tới đây`;
@@ -213,20 +224,41 @@
       this.update(this.t, true);
     }
 
-    /** Nhãn chỉ được dùng khe từ đầu nốt tới đầu nốt kế (nốt cuối: không giới hạn). Đo chữ thật một lượt.
-     * Dải đang ẩn (bề rộng 0) thì bỏ qua; fitLabels gọi lại khi dải hiện ra. */
+    /** Xếp nhãn tham lam từ trái sang: nhãn được đè lên các viên phía sau (nằm trên chúng), chỉ cần không chạm
+     * nhãn trước (khe 2 px). Nốt lặp lại cao độ của nốt ngay trước (nghỉ dưới 0,6 s) thì không ghi tên. Không xếp được thì chỉ còn viên
+     * (tooltip vẫn đủ). Đo chữ thật một lượt. Dải đang ẩn (bề rộng 0) thì bỏ qua; fitLabels gọi lại khi dải hiện ra. */
     fitMelody() {
+      this.melFit = false;
       if (!this.lane || !this.width) return;
       const els = this.noteEls;
-      for (const e of els) e.classList.remove("ct-nname", "ct-nbare");
-      const full = els.map((e) => e.firstChild.offsetWidth);
-      const name = els.map((e) => e.firstChild.firstChild.offsetWidth);
+      for (const e of els) e.classList.remove("ct-nbare");
+      const w = els.map((e) => e.lastChild.offsetWidth);
+      if (!w.some((x) => x > 0)) return;   // chữ chưa được vẽ (dải đang ẩn): đo lại khi dải hiện ra
+      this.melFit = true;
       const px = this.px, ns = this.notes;
+      let edge = -Infinity;
       els.forEach((e, i) => {
-        const room = i + 1 < ns.length ? (ns[i + 1].start - ns[i].start) * px - 1 : Infinity;
-        const f = T().noteFit(room, full[i], name[i]);
-        if (f !== "full") e.classList.add(f === "name" ? "ct-nname" : "ct-nbare");
+        const x = ns[i].start * px;
+        const repeat = i > 0 && ns[i - 1].pitch === ns[i].pitch && ns[i].start - ns[i - 1].end < 0.6;
+        if (!repeat && x >= edge + 2) edge = x + w[i];
+        else e.classList.add("ct-nbare");
       });
+    }
+
+    /** Ô "đang hát": tên nốt đang phát (đang nghỉ thì để trống) và nốt kế tiếp có cao độ khác. Chỉ đổi chữ khi nội dung đổi. */
+    showNow(j, past) {
+      const L = this.labels, ns = this.notes;
+      let nx = j >= 0 ? j + 1 : past;
+      if (j >= 0) while (nx < ns.length && ns[nx].pitch === ns[j].pitch) nx++;   // bỏ qua nốt lặp: hiện nốt đổi cao độ
+      const cur = j >= 0 && L[j] ? L[j].name : "";
+      const next = nx < ns.length && L[nx] ? L[nx].name : "";
+      const key = `${cur}|${next}|${j >= 0 && ns[j].uncertain ? 1 : 0}`;
+      if (key === this.nowKey) return;
+      this.nowKey = key;
+      this.nowName.textContent = cur || "–";
+      this.nowNext.textContent = next ? `→ ${next}` : "";
+      this.now.classList.toggle("ct-rest", !cur);
+      this.now.classList.toggle("ct-nunc", j >= 0 && !!ns[j].uncertain);
     }
 
     /** Nốt đang phát: lớp ct-cur; các nốt đã qua: ct-past (chỉ sửa đoạn giữa chỉ số cũ và mới). */
@@ -243,6 +275,7 @@
       this.nPast = past;
       if (j >= 0) els[j].classList.add("ct-cur");
       this.nIdx = j;
+      this.showNow(j, past);
     }
 
     layout() {
