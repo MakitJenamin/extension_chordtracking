@@ -288,8 +288,9 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
   font-size: 12px; line-height: var(--ct-pill-h); font-weight: 700; letter-spacing: -0.1px;
   color: var(--ct-mel-fg); background: var(--ct-mel);
 }
-.ct-note.ct-nbare .ct-nl { visibility: hidden; }
-.ct-note:not(.ct-nbare) { z-index: 1; }   /* nhãn nằm trên các viên phía sau */
+.ct-note.ct-nbare .ct-nl, .ct-note.ct-nrep .ct-nl { visibility: hidden; }
+.ct-note.ct-cur.ct-nrep .ct-nl { visibility: visible; }   /* nốt đang phát luôn có tên */
+.ct-note:not(.ct-nbare):not(.ct-nrep) { z-index: 1; }   /* nhãn nằm trên các viên phía sau */
 .ct-note:hover .ct-nbar, .ct-note:hover .ct-nl { filter: brightness(1.2); }
 .ct-note.ct-past { opacity: 0.32; }
 .ct-note.ct-nunc { opacity: 0.5; }

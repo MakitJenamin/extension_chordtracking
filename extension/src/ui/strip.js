@@ -186,6 +186,9 @@
         const e = el("div", "ct-note" + (n.uncertain ? " ct-nunc" : ""));
         e.dataset.i = i;
         e.style.setProperty("--y", T().pitchY(n.pitch, this.range).toFixed(3));
+        // Nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s): không ghi tên, chỉ còn viên (tooltip vẫn đủ).
+        const p = this.notes[i - 1];
+        if (p && p.pitch === n.pitch && n.start - p.end < 0.6) e.classList.add("ct-nrep");
         e.append(el("span", "ct-nbar"), el("span", "ct-nl"));
         frag.append(e);
         this.noteEls.push(e);
@@ -225,7 +228,7 @@
     }
 
     /** Xếp nhãn tham lam từ trái sang: nhãn được đè lên các viên phía sau (nằm trên chúng), chỉ cần không chạm
-     * nhãn trước (khe 2 px). Nốt lặp lại cao độ của nốt ngay trước (nghỉ dưới 0,6 s) thì không ghi tên. Không xếp được thì chỉ còn viên
+     * nhãn trước (khe 2 px). Nốt lặp (ct-nrep, gán lúc dựng) bỏ qua. Không xếp được thì chỉ còn viên
      * (tooltip vẫn đủ). Đo chữ thật một lượt. Dải đang ẩn (bề rộng 0) thì bỏ qua; fitLabels gọi lại khi dải hiện ra. */
     fitMelody() {
       this.melFit = false;
@@ -239,8 +242,8 @@
       let edge = -Infinity;
       els.forEach((e, i) => {
         const x = ns[i].start * px;
-        const repeat = i > 0 && ns[i - 1].pitch === ns[i].pitch && ns[i].start - ns[i - 1].end < 0.6;
-        if (!repeat && x >= edge + 2) edge = x + w[i];
+        if (e.classList.contains("ct-nrep")) return;
+        if (x >= edge + 2) edge = x + w[i];
         else e.classList.add("ct-nbare");
       });
     }
@@ -251,7 +254,8 @@
       let nx = j >= 0 ? j + 1 : past;
       if (j >= 0) while (nx < ns.length && ns[nx].pitch === ns[j].pitch) nx++;   // bỏ qua nốt lặp: hiện nốt đổi cao độ
       const cur = j >= 0 && L[j] ? L[j].name : "";
-      const next = nx < ns.length && L[nx] ? L[nx].name : "";
+      const arrow = j >= 0 && nx < ns.length ? T().melodyArrow(ns[j].pitch, ns[nx].pitch) : "";
+      const next = nx < ns.length && L[nx] ? L[nx].name + arrow : "";
       const key = `${cur}|${next}|${j >= 0 && ns[j].uncertain ? 1 : 0}`;
       if (key === this.nowKey) return;
       this.nowKey = key;
