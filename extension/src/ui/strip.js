@@ -185,9 +185,7 @@
       this.notes.forEach((n, i) => {
         const e = el("div", "ct-note" + (n.uncertain ? " ct-nunc" : ""));
         e.dataset.i = i;
-        const y = T().pitchY(n.pitch, this.range);
-        e.style.setProperty("--y", y.toFixed(3));
-        if (y > 0.55) e.classList.add("ct-nup");   // nhãn hàng phụ đặt phía trên viên (dưới không còn chỗ)
+        e.style.setProperty("--y", T().pitchY(n.pitch, this.range).toFixed(3));
         // Nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s): không ghi tên, chỉ còn viên (tooltip vẫn đủ).
         const p = this.notes[i - 1];
         if (p && p.pitch === n.pitch && n.start - p.end < 0.6) e.classList.add("ct-nrep");
@@ -219,7 +217,7 @@
       this.nowKey = null;   // tên nốt đổi theo chế độ: vẽ lại ô "đang hát"
       this.notes.forEach((n, i) => {
         const e = this.noteEls[i];
-        e.lastChild.textContent = L[i].name;
+        Strip.setNoteName(e.lastChild, L[i].name);
         const conf = Number.isFinite(n.confidence) ? ` · độ tin cậy ${Math.round(n.confidence * 100)}%` : "";
         e.title = `${L[i].name}${L[i].arrow ? " " + L[i].arrow : ""} · ${fmt(n.start)}${conf}`
           + `${n.uncertain ? " (model không chắc)" : ""}. Bấm để tua tới đây`;
@@ -229,28 +227,26 @@
       this.update(this.t, true);
     }
 
-    /** Xếp nhãn tham lam từ trái sang, hai hàng: hàng chính nằm trên viên (được đè lên các viên phía sau), hàng phụ
-     * (ct-nalt) nằm sát dưới viên, hoặc sát trên nếu viên ở nửa dưới làn (ct-nup). Nhãn chỉ cần không chạm nhãn
-     * trước trong cùng hàng (khe 1 px); hai hàng đều kín thì chỉ còn viên (ct-nbare, tooltip vẫn đủ). Tên có dấu
-     * như "Eb" rộng hơn khe của nốt móc đơn, nên hàng phụ giữ được tên cho nốt ngay sau. Nốt lặp (ct-nrep, gán lúc
-     * dựng) bỏ qua. Nốt đang phát luôn hiện tên (CSS). Đo chữ thật một lượt; dải đang ẩn thì đo lại khi hiện ra. */
+    /** Tên nốt luôn nằm gọn trong viên của chính nốt đó (không tràn sang viên khác). Viên hẹp thì chữ thu nhỏ
+     * dần: cỡ thường -> ct-nsm (chữ nhỏ, dấu thăng/giáng thu thành chỉ số trên) -> ct-nxs (nhỏ nhất, sát lề);
+     * vẫn không vừa thì chỉ còn viên (ct-nbare, tooltip vẫn đủ). Mỗi nấc đo chữ thật một lượt cho cả bài.
+     * Dải đang ẩn (chữ chưa vẽ) thì bỏ qua; ResizeObserver gọi lại khi dải hiện ra. */
     fitMelody() {
       this.melFit = false;
       if (!this.lane || !this.width) return;
-      const els = this.noteEls;
-      for (const e of els) e.classList.remove("ct-nbare", "ct-nalt");
-      const w = els.map((e) => e.lastChild.offsetWidth);
+      const els = this.noteEls, ns = this.notes, px = this.px;
+      for (const e of els) e.classList.remove("ct-nbare", "ct-nsm", "ct-nxs");
+      const room = ns.map((n) => (n.end - n.start) * px - 1);   // .ct-nbar chừa 1 px bên phải
+      let w = els.map((e) => e.lastChild.offsetWidth);
       if (!w.some((x) => x > 0)) return;   // chữ chưa được vẽ (dải đang ẩn): đo lại khi dải hiện ra
       this.melFit = true;
-      const px = this.px, ns = this.notes;
-      let main = -Infinity, alt = -Infinity;
-      els.forEach((e, i) => {
-        if (e.classList.contains("ct-nrep")) return;
-        const x = ns[i].start * px;
-        if (x >= main + 1) main = x + w[i];
-        else if (x >= alt + 1) { alt = x + w[i]; e.classList.add("ct-nalt"); }
-        else e.classList.add("ct-nbare");
-      });
+      for (const cls of ["ct-nsm", "ct-nxs"]) {
+        const over = els.filter((e, i) => w[i] > room[i]);
+        if (!over.length) return;
+        for (const e of over) e.classList.remove("ct-nsm"), e.classList.add(cls);
+        w = els.map((e, i) => (over.includes(e) ? e.lastChild.offsetWidth : w[i]));
+      }
+      els.forEach((e, i) => { if (w[i] > room[i]) e.classList.add("ct-nbare"); });
     }
 
     /** Ô "đang hát": tên nốt đang phát (đang nghỉ thì để trống) và nốt kế tiếp có cao độ khác. Chỉ đổi chữ khi nội dung đổi. */
@@ -539,6 +535,15 @@
 
   // Hệ số zoom so với CT.settings.pxPerSecond (46): 46 px/s làm hợp âm 1 giây của nhạc Kajiura bị cắt chữ.
   // Panel ~800 px x 1.5 thì thấy trước ~8 giây (2–4 ô nhịp); toàn màn hình dùng FS_SCALE.
+  /** Ghi tên nốt vào nhãn: chữ cái chính và dấu thăng/giáng (b, #, cả dạng bậc "b3") tách riêng để thu nhỏ được. */
+  Strip.setNoteName = (lbl, name) => {
+    const m = /^([b#]?)(.*?)([b#]?)$/.exec(name || "") || ["", "", name || "", ""];
+    lbl.textContent = "";
+    if (m[1]) lbl.append(el("sup", null, m[1]));
+    lbl.append(m[2]);
+    if (m[3]) lbl.append(el("sup", null, m[3]));
+  };
+
   Strip.BASE_SCALE = 1.5;
   Strip.FS_SCALE = 2;
   Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua

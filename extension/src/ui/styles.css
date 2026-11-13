@@ -289,13 +289,13 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
   color: var(--ct-mel-fg); background: var(--ct-mel);
 }
 .ct-note.ct-nbare .ct-nl, .ct-note.ct-nrep .ct-nl { visibility: hidden; }
-.ct-note.ct-cur .ct-nl { visibility: visible; }   /* nốt đang phát luôn có tên */
-/* Hàng nhãn phụ: sát dưới viên (sát trên nếu viên ở nửa dưới làn), nền nhạt để khác nhãn trên viên. */
-.ct-note.ct-nalt .ct-nl { top: calc(100% + 1px); height: auto; line-height: 13px;
-  background: color-mix(in srgb, var(--ct-mel) 28%, var(--ct-bg)); color: var(--ct-text); }
-.ct-note.ct-nalt.ct-nup .ct-nl { top: auto; bottom: calc(100% + 1px); }
-.ct-note:not(.ct-nbare):not(.ct-nrep) { z-index: 1; }   /* nhãn nằm trên các viên phía sau */
-.ct-note.ct-nalt { z-index: 2; }
+.ct-note.ct-cur.ct-nrep:not(.ct-nbare) .ct-nl { visibility: visible; }   /* nốt lặp đang phát vẫn có tên */
+/* Viên hẹp: chữ thu nhỏ dần, luôn nằm trong viên (strip.js đo chữ thật). Dấu thăng/giáng là chỉ số trên. */
+.ct-nl sup { font-size: 0.72em; line-height: 0; vertical-align: 0.38em; margin-left: 0.5px; }
+.ct-note.ct-nsm .ct-nl { font-size: 10.5px; padding: 0 2px; letter-spacing: -0.3px; }
+.ct-note.ct-nsm .ct-nl sup { font-size: 0.68em; margin-left: 0; }
+.ct-note.ct-nxs .ct-nl { font-size: 9px; padding: 0 1px; letter-spacing: -0.5px; }
+.ct-note.ct-nxs .ct-nl sup { font-size: 0.66em; margin-left: -0.5px; }
 .ct-note:hover .ct-nbar, .ct-note:hover .ct-nl { filter: brightness(1.2); }
 .ct-note.ct-past { opacity: 0.32; }
 .ct-note.ct-nunc { opacity: 0.5; }
@@ -369,7 +369,8 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
 .ct-root.ct-fs .ct-strip-wrap { --ct-mel: #9575ff; }
 .ct-fs .ct-strip-wrap.ct-has-melody { --ct-mel-h: 100px; --ct-pill-h: 19px; height: calc(128px + var(--ct-mel-h)); }
 .ct-fs .ct-nl { font-size: 14px; padding: 0 4px; }
-.ct-fs .ct-note.ct-nalt .ct-nl { line-height: 16px; }
+.ct-fs .ct-note.ct-nsm .ct-nl { font-size: 12px; padding: 0 2px; }
+.ct-fs .ct-note.ct-nxs .ct-nl { font-size: 10px; padding: 0 1px; }
 .ct-fs .ct-note.ct-past { opacity: 0.3; }
 .ct-fs .ct-mel-now { background: rgba(0, 0, 0, 0.55); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .ct-fs .ct-mel-now b { font-size: 36px; }
