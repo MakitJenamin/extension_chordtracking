@@ -243,7 +243,7 @@
       els.forEach((e, i) => {
         const x = ns[i].start * px;
         if (e.classList.contains("ct-nrep")) return;
-        if (x >= edge + 2) edge = x + w[i];
+        if (x >= edge + 1) edge = x + w[i];
         else e.classList.add("ct-nbare");
       });
     }

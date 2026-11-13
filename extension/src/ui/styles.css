@@ -284,7 +284,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
 }
 .ct-nbar { position: absolute; inset: 0 1px 0 0; border-radius: 5px; background: var(--ct-mel); }
 .ct-nl {
-  position: absolute; left: 0; top: 0; height: 100%; padding: 0 4px; border-radius: 5px; white-space: nowrap;
+  position: absolute; left: 0; top: 0; height: 100%; padding: 0 3px; border-radius: 5px; white-space: nowrap;
   font-size: 12px; line-height: var(--ct-pill-h); font-weight: 700; letter-spacing: -0.1px;
   color: var(--ct-mel-fg); background: var(--ct-mel);
 }
@@ -364,7 +364,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
 .ct-fs .ct-beat span { font-size: 11px; }
 .ct-root.ct-fs .ct-strip-wrap { --ct-mel: #9575ff; }
 .ct-fs .ct-strip-wrap.ct-has-melody { --ct-mel-h: 100px; --ct-pill-h: 19px; height: calc(128px + var(--ct-mel-h)); }
-.ct-fs .ct-nl { font-size: 14px; padding: 0 5px; }
+.ct-fs .ct-nl { font-size: 14px; padding: 0 4px; }
 .ct-fs .ct-note.ct-cur .ct-nl { font-size: 16px; }
 .ct-fs .ct-note.ct-past { opacity: 0.3; }
 .ct-fs .ct-mel-now { background: rgba(0, 0, 0, 0.55); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
