@@ -649,12 +649,14 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     Đã thay bằng `QwquipMpsiQ/melody_yourmt3_vocals.json` (bản cũ để ở `devmagia_01.old-combo.json`). So nốt giữa harness
     và YouTube thì kiểm tra trường `model` trước.
 
-- [ ] Phách mạnh lệch nhịp (2026-11-13, nhánh `beats-meter-lock`, chờ người dùng duyệt): beat_this "minimal" đoán từng
-  phách mạnh riêng lẻ nên nhạc đổi hợp âm mỗi 2 phách bị đếm 1-2-1-2, và có đoạn bắt gấp đôi tốc độ ("Cứ Thế Vội Vã",
-  `Vv-IcEjnN0M`: 22/103 ô nhịp 2 phách, 2:58–3:27 phách 0,45 s). Thêm `fix_double_time` + `drop_extra_beats` và
-  Viterbi `lock_meter` (phạt 6 mỗi ô nhịp khác `meter`). `python -m eval.beats_meter` (38 bài Beatles): F phách không
-  đổi, F phách mạnh 0,640 → 0,646 (cửa sổ 70 ms; 0,875 → 0,882 ở 150 ms vì đáp án lệch audio YouTube ~0,1 s), ô đúng
-  nhịp 0,918 → 0,994; Kajiura 0,807 → 0,964. Bài trên: 81/81 ô 4 phách.
+- [ ] Phách mạnh lệch nhịp (2026-11-13, nhánh `beats-meter-lock`, PR #85, chờ người dùng duyệt): beat_this "minimal"
+  đoán từng phách mạnh riêng lẻ nên nhạc đổi hợp âm mỗi 2 phách bị đếm 1-2-1-2, và có đoạn bắt gấp đôi tốc độ ("Cứ Thế
+  Vội Vã", `Vv-IcEjnN0M`: 22/103 ô nhịp 2 phách, 2:58–3:27 phách 0,45 s). Thêm `fix_double_time` + `drop_extra_beats`
+  và Viterbi `lock_meter` (phạt 8 mỗi ô nhịp khác `meter`; `meter` chọn trên phách đã sửa, trong 2/3/4).
+  `python -m eval.beats_meter` (38 bài Beatles, cửa sổ 150 ms vì đáp án lệch audio YouTube ~0,1 s): F phách 0,913
+  không đổi, F phách mạnh 0,875 → 0,886 (tốt hơn 15 bài, kém 3), ô đúng nhịp 0,918 → 0,994. Bài trên: 81/81 ô 4 phách.
+  - ⚠️ Đánh đổi: đoạn gấp đôi tốc độ thật (bridge Here Comes the Sun, đáp án ghi phách 0,22 s) cũng bị bỏ cách một
+    phách (F phách bài đó 0,973 → 0,948). Không phân biệt được với lỗi của model chỉ từ khoảng cách phách.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

@@ -62,6 +62,21 @@ def test_fix_double_time_run_and_extra_beats():
     assert np.allclose(fix_double_time(extra), normal)
     # không có gì sai thì giữ nguyên
     assert np.allclose(fix_double_time(normal), normal)
+    # bài ngắn cũng được bỏ phách thừa như bài dài
+    short = np.array([0, g, 2 * g, 2.5 * g, 3 * g, 4 * g])
+    assert np.allclose(fix_double_time(short), [0, g, 2 * g, 3 * g, 4 * g])
+
+
+def test_fix_double_time_keeps_real_short_intervals():
+    from chordtrack.beats import fix_double_time
+
+    g = 0.9
+    # đoạn nhanh hơn 1.5 lần (khoảng 0.67 g, như chùm ba) không bị coi là gấp đôi
+    fast = np.concatenate([np.arange(0, 20 * g, g), 19 * g + 0.67 * g * np.arange(1, 13)])
+    assert len(fix_double_time(fast)) == len(fast)
+    # một khoảng ngắn đứng riêng (nhịp lấy đà) cạnh khoảng bình thường: giữ
+    pickup = np.concatenate([[0.0, 0.55 * g], 0.55 * g + g * np.arange(1, 20)])
+    assert len(fix_double_time(pickup)) == len(pickup)
 
 
 def test_lock_meter_keeps_4_4_through_two_beat_accents():
@@ -71,7 +86,7 @@ def test_lock_meter_keeps_4_4_through_two_beat_accents():
     act = np.full(64, 0.05)
     act[0:32:4] = 0.9
     act[32::2] = 0.6
-    down = lock_meter(act, 4, switch_penalty=6.0)
+    down, _ = lock_meter(act, 4, switch_penalty=6.0)
     assert np.array_equal(down, np.arange(0, 64, 4))
 
 
@@ -82,8 +97,45 @@ def test_lock_meter_follows_strong_evidence_of_real_bar_change():
     act = np.full(42, 0.01)
     act[[0, 4, 8, 12, 16]] = 0.99
     act[[18, 22, 26, 30, 34, 38]] = 0.99
-    down = lock_meter(act, 4, switch_penalty=6.0)
+    down, _ = lock_meter(act, 4, switch_penalty=6.0)
     assert list(down) == [0, 4, 8, 12, 16, 18, 22, 26, 30, 34, 38]
+
+
+def test_lock_meter_long_bar_costs_one_penalty():
+    from chordtrack.beats import lock_meter
+
+    # một ô 5 phách thật (bằng chứng mạnh) giữa 4/4: giữ ô 5 phách, không tách thành 3 + 2
+    act = np.full(30, 0.01)
+    act[[0, 4, 8, 13, 17, 21, 25, 29]] = 0.99
+    down, _ = lock_meter(act, 4, switch_penalty=6.0)
+    assert list(down) == [0, 4, 8, 13, 17, 21, 25, 29]
+
+
+def test_choose_meter():
+    from chordtrack.beats import choose_meter
+
+    act = np.full(64, 0.05)
+    act[0::4] = 0.9
+    assert choose_meter(act, 8) == 4          # gợi ý ngoài METERS (ví dụ do đoạn gấp đôi): chọn theo điểm Viterbi
+    assert choose_meter(act, 3) == 3          # gợi ý hợp lệ thì giữ
+    act3 = np.full(60, 0.05)
+    act3[0::3] = 0.9
+    assert choose_meter(act3, 6) == 3
+
+
+def test_postprocess_meter_from_fixed_beats():
+    from chordtrack.beats import FPS, postprocess
+
+    g = 0.6
+    beats = np.arange(0, 48 * g, g)
+    frames = np.full(int(beats[-1] * FPS) + 10, 0.02, dtype=np.float32)
+    for t in beats[0::4]:
+        frames[int(round(t * FPS))] = 0.9
+    # phách mạnh thô: 4/4 ở 32 phách đầu, rồi cứ 2 phách một lần (đổi hợp âm mỗi 2 phách): giữ 4/4 cả bài
+    raw = np.concatenate([beats[0:32:4], beats[32::2]])
+    out_b, out_d = postprocess(beats, frames, raw)
+    assert np.allclose(out_b, beats)
+    assert np.allclose(out_d, beats[0::4])
 
 
 def test_meter_from_downbeats():

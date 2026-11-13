@@ -32,7 +32,7 @@ from chordtrack import analysis, fusion, paths
 from chordtrack import audio as audio_mod
 from chordtrack import separation, symbols, transpose
 from chordtrack.audio import read_json, write_json
-from chordtrack.beats import track_beats
+from chordtrack.beats import meter_from_downbeats, track_beats
 from chordtrack.chords.chordmini import run_chordmini
 from chordtrack.chords.chordformer import run_chordformer
 from chordtrack.chords.cnnlstm import run_cnnlstm
@@ -260,16 +260,7 @@ def estimate_meter(grid: BeatGrid | None) -> int:
     Hòa thì lấy số nhỏ hơn. Không có ít nhất hai phách mạnh thì trả `DEFAULT_METER`."""
     if grid is None or len(grid.downbeats) < 2 or len(grid.beats) == 0:
         return DEFAULT_METER
-    beats = np.sort(np.asarray(grid.beats, dtype=float))
-    downs = np.sort(np.asarray(grid.downbeats, dtype=float))
-    # Dung sai 1 ms: phách mạnh trùng phách nhưng lệch chút do làm tròn vẫn được tính là phách đó.
-    idx = np.searchsorted(beats, downs - 1e-3)
-    counts = np.diff(idx)
-    counts = counts[counts > 0]
-    if counts.size == 0:
-        return DEFAULT_METER
-    values, freq = np.unique(counts, return_counts=True)
-    return int(values[np.argmax(freq)])
+    return meter_from_downbeats(grid.beats, grid.downbeats, DEFAULT_METER)
 
 
 def _confidence(c: float | None) -> float | None:
