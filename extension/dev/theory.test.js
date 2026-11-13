@@ -266,6 +266,14 @@ test("melodyNotes, noteIndexAt", () => {
   assert.equal(T.noteIndexAt(notes, 9), -1);
 });
 
+test("octaveMark", () => {
+  assert.equal(T.octaveMark("G", 67, "G", 55), "↓");   // G rồi G thấp một quãng tám
+  assert.equal(T.octaveMark("G", 55, "G", 67), "↑");
+  assert.equal(T.octaveMark("G", 67, "G", 67), "");    // nốt lặp thật
+  assert.equal(T.octaveMark("G", 67, "A", 69), "");    // khác tên: không cần dấu
+  assert.equal(T.octaveMark(null, null, "G", 67), ""); // nốt đầu
+});
+
 test("pitchRange, pitchY", () => {
   assert.equal(T.pitchRange([]), null);
   assert.deepEqual(T.pitchRange([{ pitch: 60 }, { pitch: 62 }]), { lo: 55, hi: 67 });   // hẹp: nới đủ 12 nửa cung

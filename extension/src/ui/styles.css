@@ -291,6 +291,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-note.ct-nbare .ct-nl, .ct-note.ct-nrep .ct-nl { visibility: hidden; }
 .ct-note.ct-cur.ct-nrep:not(.ct-nbare) .ct-nl { visibility: visible; }   /* nốt lặp đang phát vẫn có tên */
 /* Viên hẹp: chữ thu nhỏ dần, luôn nằm trong viên (strip.js đo chữ thật). Dấu thăng/giáng là chỉ số trên. */
+.ct-nl .ct-noct { font-style: normal; font-weight: 700; margin-right: 1px; }
 .ct-nl sup { font-size: 0.72em; line-height: 0; vertical-align: 0.38em; margin-left: 0.5px; }
 .ct-note.ct-nsm .ct-nl { font-size: 10.5px; padding: 0 2px; letter-spacing: -0.3px; }
 .ct-note.ct-nsm .ct-nl sup { font-size: 0.68em; margin-left: 0; }

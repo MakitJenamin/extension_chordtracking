@@ -355,6 +355,13 @@
     return pitch > prev ? "↑" : pitch < prev ? "↓" : "";
   }
 
+  /** Dấu nhảy quãng tám trước tên nốt: nốt cùng tên hiển thị với nốt ngay trước nhưng khác cao độ (ví dụ G rồi G thấp
+   * hơn một quãng tám) thì "↑"/"↓", để khỏi tưởng là nốt lặp. Không dùng số quãng tám (người dùng chốt). */
+  function octaveMark(prevName, prevPitch, name, pitch) {
+    if (prevName == null || prevName !== name || prevPitch === pitch) return "";
+    return melodyArrow(prevPitch, pitch);
+  }
+
   /** Nhãn mọi nốt: [{name, arrow}], giọng của mỗi nốt là vùng giọng tại lúc nốt bắt đầu. */
   function melodyLabels(song, notes, s) {
     const out = new Array(notes.length);
@@ -551,7 +558,7 @@
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
-    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
+    DEGREES, melodyName, melodyArrow, octaveMark, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
     MELODY_VOCALS_RESULT, melodyAvail, melodyEffective, melodyMissingText, MELODY_KY_HINT, MELODY_SETUP_HINT,
   };

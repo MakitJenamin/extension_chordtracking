@@ -216,7 +216,8 @@
       this.nowKey = null;   // tên nốt đổi theo chế độ: vẽ lại ô "đang hát"
       this.notes.forEach((n, i) => {
         const e = this.noteEls[i];
-        Strip.setNoteName(e.lastChild, L[i].name);
+        const p = i > 0 ? this.notes[i - 1] : null;
+        Strip.setNoteName(e.lastChild, L[i].name, p ? T().octaveMark(L[i - 1].name, p.pitch, L[i].name, n.pitch) : "");
         const conf = Number.isFinite(n.confidence) ? ` · độ tin cậy ${Math.round(n.confidence * 100)}%` : "";
         e.title = `${L[i].name}${L[i].arrow ? " " + L[i].arrow : ""} · ${fmt(n.start)}${conf}`
           + `${n.uncertain ? " (model không chắc)" : ""}. Bấm để tua tới đây`;
@@ -251,7 +252,7 @@
       let shown = false;   // tên của nốt trước (hoặc đầu chuỗi lặp của nó) có đang hiện không
       els.forEach((e, i) => {
         const p = ns[i - 1];
-        if (p && shown && L[i]?.name === L[i - 1]?.name && ns[i].start - p.end < 0.6) {
+        if (p && shown && p.pitch === ns[i].pitch && L[i]?.name === L[i - 1]?.name && ns[i].start - p.end < 0.6) {
           e.classList.add("ct-nrep");
           if (w[i] > room[i]) e.classList.add("ct-nbare");   // lúc đang phát (hiện tên) cũng không tràn ra ngoài viên
           return;
@@ -546,9 +547,10 @@
   }
 
   /** Ghi tên nốt vào nhãn: chữ cái chính và dấu thăng/giáng (b, #, cả dạng bậc "b3") tách riêng để thu nhỏ được. */
-  Strip.setNoteName = (lbl, name) => {
+  Strip.setNoteName = (lbl, name, mark = "") => {
     const m = /^([b#]?)(.*?)([b#]?)$/.exec(name || "");
     lbl.textContent = "";
+    if (mark) lbl.append(el("i", "ct-noct", mark));   // ↑/↓: cùng tên với nốt trước nhưng khác quãng tám
     if (m[1]) lbl.append(el("sup", null, m[1]));
     lbl.append(m[2]);
     if (m[3]) lbl.append(el("sup", null, m[3]));
