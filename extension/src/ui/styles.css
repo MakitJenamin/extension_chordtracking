@@ -265,8 +265,8 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 
 /* ---------------- Dòng giai điệu (strip.js, làn piano-roll dưới ô hợp âm, trên thước phách) ----------------
  * Dải cao thêm --ct-mel-h. Mỗi nốt là một viên cao --ct-pill-h, đặt dọc theo cao độ (--y: 0 = cao nhất, 1 = thấp nhất,
- * strip.js tính), dài đúng thời lượng. Tên nốt là "đầu" viên (cùng màu), được tràn quá viên tới đầu nốt kế;
- * ct-nbare = không vừa thì chỉ còn viên. Nốt đang phát: viên đỏ phát sáng. Nốt uncertain: viên rỗng viền đứt.
+ * strip.js tính), dài đúng thời lượng. Tên nốt nằm trong viên (cùng màu), viên hẹp thì chữ thu nhỏ (ct-nsm, ct-nxs);
+ * ct-nbare = vẫn không vừa thì chỉ còn viên; ct-nrep = nốt lặp, không ghi lại tên. Nốt đang phát: viên đỏ phát sáng. Nốt uncertain: viên rỗng viền đứt.
  * Ô .ct-mel-now cố định ở mép trái làn: tên nốt đang phát chữ to, kèm "→ nốt kế". */
 .ct-strip-wrap { --ct-mel-h: 0px; --ct-pill-h: 15px; --ct-mel: #115e59; --ct-mel-fg: #fff; }
 html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }

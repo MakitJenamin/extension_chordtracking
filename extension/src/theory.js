@@ -446,14 +446,6 @@
     return j >= 0 && t < notes[j].end ? j : -1;
   }
 
-  /** Cách hiện nhãn mỗi nốt khi dòng nốt dày. room[i]: số px từ đầu nốt i tới đầu nốt kế (khe nhãn được dùng),
-   * full[i]/name[i]: bề rộng nhãn đầy đủ / chỉ tên. Trả "full" | "name" (bỏ mũi tên) | "bare" (chỉ còn thanh). */
-  function noteFit(room, full, name) {
-    if (full <= room) return "full";
-    if (name <= room) return "name";
-    return "bare";
-  }
-
   /** Dải cao độ của làn piano-roll: phân vị 5%–95% của pitch (bỏ vài nốt lạc quá cao/thấp), nới mỗi bên 1 nửa cung,
    * rộng tối thiểu `minSpan` nửa cung (giai điệu hẹp không bị kéo giãn thành dốc đứng). Nốt ngoài dải nằm sát mép.
    * Trả { lo, hi } (MIDI), hoặc null nếu không có nốt. */
@@ -559,7 +551,7 @@
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
-    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, noteFit, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
+    DEGREES, melodyName, melodyArrow, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
     MELODY_VOCALS_RESULT, melodyAvail, melodyEffective, melodyMissingText, MELODY_KY_HINT, MELODY_SETUP_HINT,
   };

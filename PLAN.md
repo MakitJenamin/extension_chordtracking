@@ -640,6 +640,14 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     nên hợp âm E–G#–B cũng thành `Ab`). Nếu người dùng thấy khó đọc thì đổi chung cho cả hợp âm và giai điệu.
   - ⚠️ Giai điệu nhanh rất dày (~0,17 s/nốt ở 69 px/s): khoảng 20% nốt phải thu gọn nhãn (mũi tên nhỏ dưới tên),
     ~10% chỉ còn mũi tên và thanh. Toàn màn hình (92 px/s) đỡ hơn.
+- [x] Dòng giai điệu đổi sang piano-roll (2026-11-13, người dùng duyệt): viên xanh ngọc chữ trắng, độ cao theo cao độ
+  (thay mũi tên ↑/↓), tên luôn nằm trong viên và thu nhỏ dần khi hẹp (người dùng không muốn tên tràn hay hàng tên phụ),
+  nốt đang phát đỏ phát sáng, ô "đang hát" ở mép trái (nốt hiện tại + "→ nốt kế ↑/↓"). Magia thật (`QwquipMpsiQ`,
+  Bình thường): 6/678 nốt không có tên (viên 4–8 px).
+  - ⚠️ Giai điệu mẫu của harness (`data/cache/dev_melody/devmagia_01.json`) từng là bản ghép cũ chưa tách giọng, trả cho
+    mọi biến thể, nên khác hẳn kết quả "Bình thường" thật trên YouTube và làm người dùng tưởng giao diện hiện sai nốt.
+    Đã thay bằng `QwquipMpsiQ/melody_yourmt3_vocals.json` (bản cũ để ở `devmagia_01.old-combo.json`). So nốt giữa harness
+    và YouTube thì kiểm tra trường `model` trước.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

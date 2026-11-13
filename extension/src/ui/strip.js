@@ -8,8 +8,8 @@
  * Dòng giai điệu (setMelody): một làn nốt nằm TRONG track, dưới các ô hợp âm, nên trượt cùng transform, cùng
  * px/giây và cùng vạch đỏ, và đi theo dải sang lớp phủ toàn màn hình. Kiểu piano-roll: mỗi nốt là một viên
  * nằm ngang, chiều dài = thời lượng, độ cao = cao độ (CT.theory.pitchRange/pitchY), nên nhìn ra giai điệu lên/xuống
- * mà không cần mũi tên. Tên nốt (CT.theory.melodyName, không số quãng tám) ghi ở đầu viên; không vừa khe tới
- * nốt kế thì chỉ còn viên (tooltip vẫn đủ). Nốt uncertain: viên rỗng viền đứt. Nốt đang phát: viên đỏ, phát sáng,
+ * mà không cần mũi tên. Tên nốt (CT.theory.melodyName, không số quãng tám) luôn nằm trong viên, viên hẹp thì chữ
+ * thu nhỏ dần (fitMelody); hẹp quá thì chỉ còn viên (tooltip vẫn đủ). Nốt lặp không ghi lại tên. Nốt uncertain: viên rỗng viền đứt. Nốt đang phát: viên đỏ, phát sáng,
  * và ô "đang hát" ở mép trái dải ghi tên nốt hiện tại bằng chữ to kèm nốt kế tiếp.
  */
 (() => {
