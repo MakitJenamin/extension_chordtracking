@@ -46,6 +46,54 @@ def test_tempo_from_median():
     assert estimate_tempo(np.array([1.0])) == 0.0
 
 
+def test_fix_double_time_run_and_extra_beats():
+    from chordtrack.beats import fix_double_time
+
+    g = 0.9
+    normal = np.arange(0, 20 * g, g)                                # 20 phách đều
+    double = normal[-1] + g / 2 * np.arange(1, 17)                  # 16 phách ở tốc độ gấp đôi
+    tail = double[-1] + g * np.arange(1, 11)
+    beats = np.concatenate([normal, double, tail])
+    out = fix_double_time(beats)
+    assert len(out) == 20 + 8 + 10
+    assert np.allclose(np.diff(out), g)
+    # một phách thừa lẻ tẻ (hai khoảng g/2 liền nhau): bỏ phách giữa
+    extra = np.sort(np.append(normal, normal[7] + g / 2))
+    assert np.allclose(fix_double_time(extra), normal)
+    # không có gì sai thì giữ nguyên
+    assert np.allclose(fix_double_time(normal), normal)
+
+
+def test_lock_meter_keeps_4_4_through_two_beat_accents():
+    from chordtrack.beats import lock_meter
+
+    # 4/4 rõ trong 8 ô nhịp, rồi 8 ô nhịp model nhấn cứ 2 phách một lần (đổi hợp âm mỗi 2 phách)
+    act = np.full(64, 0.05)
+    act[0:32:4] = 0.9
+    act[32::2] = 0.6
+    down = lock_meter(act, 4, switch_penalty=6.0)
+    assert np.array_equal(down, np.arange(0, 64, 4))
+
+
+def test_lock_meter_follows_strong_evidence_of_real_bar_change():
+    from chordtrack.beats import lock_meter
+
+    # một ô 2/4 thật (bằng chứng rất mạnh) rồi 4/4 lệch pha: chấp nhận đổi
+    act = np.full(42, 0.01)
+    act[[0, 4, 8, 12, 16]] = 0.99
+    act[[18, 22, 26, 30, 34, 38]] = 0.99
+    down = lock_meter(act, 4, switch_penalty=6.0)
+    assert list(down) == [0, 4, 8, 12, 16, 18, 22, 26, 30, 34, 38]
+
+
+def test_meter_from_downbeats():
+    from chordtrack.beats import meter_from_downbeats
+
+    beats = np.arange(30, dtype=float)
+    assert meter_from_downbeats(beats, beats[::3]) == 3
+    assert meter_from_downbeats(beats, beats[:1]) == 4
+
+
 @pytest.mark.gpu
 def test_track_beats_sample_30s():
     from chordtrack.beats import track_beats
