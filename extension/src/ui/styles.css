@@ -300,7 +300,8 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-note.ct-past { opacity: 0.32; }
 .ct-note.ct-nunc { opacity: 0.5; }
 .ct-note.ct-nunc .ct-nbar { background: none; border: 1.5px dashed var(--ct-mel); }
-.ct-note.ct-nunc .ct-nl { background: none; color: var(--ct-mel); }
+.ct-note.ct-nunc .ct-nl { background: none; color: var(--ct-text); }
+.ct-note.ct-nunc.ct-past { opacity: 0.25; }   /* sau .ct-nunc: nốt không chắc đã qua vẫn mờ hơn nốt thường đã qua */
 .ct-note.ct-cur { opacity: 1; z-index: 3; }
 .ct-note.ct-cur .ct-nbar, .ct-note.ct-cur .ct-nl {
   background: var(--ct-red); color: #fff; border-color: transparent;
@@ -314,6 +315,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
   box-shadow: 0 0 0 1px var(--ct-layer), 0 2px 8px rgba(0, 0, 0, 0.15); white-space: nowrap;
 }
 .ct-has-melody .ct-mel-now { display: flex; }
+.ct-has-melody.ct-mel-narrow .ct-mel-now { display: none; }
 .ct-mel-now b { font-size: 26px; line-height: 1; font-weight: 700; color: var(--ct-red); min-width: 1.4em; text-align: center; }
 .ct-mel-now span { font-size: 13px; font-weight: 500; color: var(--ct-text2); }
 .ct-mel-now.ct-rest b { color: var(--ct-text2); opacity: 0.6; }
@@ -372,6 +374,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-fs .ct-note.ct-nsm .ct-nl { font-size: 12px; padding: 0 2px; }
 .ct-fs .ct-note.ct-nxs .ct-nl { font-size: 10px; padding: 0 1px; }
 .ct-fs .ct-note.ct-past { opacity: 0.3; }
+.ct-fs .ct-note.ct-nunc.ct-past { opacity: 0.22; }
 .ct-fs .ct-mel-now { background: rgba(0, 0, 0, 0.55); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .ct-fs .ct-mel-now b { font-size: 36px; }
 .ct-fs .ct-mel-now span { font-size: 16px; }

@@ -81,6 +81,8 @@
       this.bindPan();
       this.ro = new ResizeObserver((entries) => {
         this.width = entries[0].contentRect.width;
+        // Dải hẹp: ô "đang hát" (~130 px ở mép trái) sẽ che vạch đỏ ở 28% bề rộng, nên ẩn đi.
+        this.el.classList.toggle("ct-mel-narrow", this.width * PLAYHEAD < 150);
         // Lần đầu dải hiện ra (trước đó bề rộng 0 nên chưa đo được chữ), hoặc đổi panel <-> toàn màn hình.
         // Làn nốt chưa đo được chữ (dựng lúc dải đang ẩn) cũng đo lại.
         if (this.width && (!this.fitWidth || this.fitScale !== this.scale || (this.lane && !this.melFit))) this.fitLabels();
@@ -186,9 +188,6 @@
         const e = el("div", "ct-note" + (n.uncertain ? " ct-nunc" : ""));
         e.dataset.i = i;
         e.style.setProperty("--y", T().pitchY(n.pitch, this.range).toFixed(3));
-        // Nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s): không ghi tên, chỉ còn viên (tooltip vẫn đủ).
-        const p = this.notes[i - 1];
-        if (p && p.pitch === n.pitch && n.start - p.end < 0.6) e.classList.add("ct-nrep");
         e.append(el("span", "ct-nbar"), el("span", "ct-nl"));
         frag.append(e);
         this.noteEls.push(e);
@@ -230,23 +229,36 @@
     /** Tên nốt luôn nằm gọn trong viên của chính nốt đó (không tràn sang viên khác). Viên hẹp thì chữ thu nhỏ
      * dần: cỡ thường -> ct-nsm (chữ nhỏ, dấu thăng/giáng thu thành chỉ số trên) -> ct-nxs (nhỏ nhất, sát lề);
      * vẫn không vừa thì chỉ còn viên (ct-nbare, tooltip vẫn đủ). Mỗi nấc đo chữ thật một lượt cho cả bài.
+     * Nốt lặp (ct-nrep): cùng tên hiển thị với nốt ngay trước, nghỉ dưới 0,6 s, và tên đó đang hiện ở viên trước
+     * (hoặc đầu chuỗi lặp) thì không ghi lại; đầu chuỗi không có tên thì nốt sau vẫn ghi tên nếu vừa.
      * Dải đang ẩn (chữ chưa vẽ) thì bỏ qua; ResizeObserver gọi lại khi dải hiện ra. */
     fitMelody() {
       this.melFit = false;
       if (!this.lane || !this.width) return;
-      const els = this.noteEls, ns = this.notes, px = this.px;
-      for (const e of els) e.classList.remove("ct-nbare", "ct-nsm", "ct-nxs");
+      const els = this.noteEls, ns = this.notes, px = this.px, L = this.labels;
+      for (const e of els) e.classList.remove("ct-nbare", "ct-nsm", "ct-nxs", "ct-nrep");
       const room = ns.map((n) => (n.end - n.start) * px - 1);   // .ct-nbar chừa 1 px bên phải
-      let w = els.map((e) => e.lastChild.offsetWidth);
+      const w = els.map((e) => e.lastChild.offsetWidth);
       if (!w.some((x) => x > 0)) return;   // chữ chưa được vẽ (dải đang ẩn): đo lại khi dải hiện ra
       this.melFit = true;
       for (const cls of ["ct-nsm", "ct-nxs"]) {
-        const over = els.filter((e, i) => w[i] > room[i]);
-        if (!over.length) return;
-        for (const e of over) e.classList.remove("ct-nsm"), e.classList.add(cls);
-        w = els.map((e, i) => (over.includes(e) ? e.lastChild.offsetWidth : w[i]));
+        const over = [];
+        els.forEach((e, i) => { if (w[i] > room[i]) over.push(i); });
+        if (!over.length) break;
+        for (const i of over) els[i].classList.remove("ct-nsm"), els[i].classList.add(cls);
+        for (const i of over) w[i] = els[i].lastChild.offsetWidth;
       }
-      els.forEach((e, i) => { if (w[i] > room[i]) e.classList.add("ct-nbare"); });
+      let shown = false;   // tên của nốt trước (hoặc đầu chuỗi lặp của nó) có đang hiện không
+      els.forEach((e, i) => {
+        const p = ns[i - 1];
+        if (p && shown && L[i]?.name === L[i - 1]?.name && ns[i].start - p.end < 0.6) {
+          e.classList.add("ct-nrep");
+          if (w[i] > room[i]) e.classList.add("ct-nbare");   // lúc đang phát (hiện tên) cũng không tràn ra ngoài viên
+          return;
+        }
+        shown = w[i] <= room[i];
+        if (!shown) e.classList.add("ct-nbare");
+      });
     }
 
     /** Ô "đang hát": tên nốt đang phát (đang nghỉ thì để trống) và nốt kế tiếp có cao độ khác. Chỉ đổi chữ khi nội dung đổi. */
@@ -533,17 +545,17 @@
     }
   }
 
-  // Hệ số zoom so với CT.settings.pxPerSecond (46): 46 px/s làm hợp âm 1 giây của nhạc Kajiura bị cắt chữ.
-  // Panel ~800 px x 1.5 thì thấy trước ~8 giây (2–4 ô nhịp); toàn màn hình dùng FS_SCALE.
   /** Ghi tên nốt vào nhãn: chữ cái chính và dấu thăng/giáng (b, #, cả dạng bậc "b3") tách riêng để thu nhỏ được. */
   Strip.setNoteName = (lbl, name) => {
-    const m = /^([b#]?)(.*?)([b#]?)$/.exec(name || "") || ["", "", name || "", ""];
+    const m = /^([b#]?)(.*?)([b#]?)$/.exec(name || "");
     lbl.textContent = "";
     if (m[1]) lbl.append(el("sup", null, m[1]));
     lbl.append(m[2]);
     if (m[3]) lbl.append(el("sup", null, m[3]));
   };
 
+  // Hệ số zoom so với CT.settings.pxPerSecond (46): 46 px/s làm hợp âm 1 giây của nhạc Kajiura bị cắt chữ.
+  // Panel ~800 px x 1.5 thì thấy trước ~8 giây (2–4 ô nhịp); toàn màn hình dùng FS_SCALE.
   Strip.BASE_SCALE = 1.5;
   Strip.FS_SCALE = 2;
   Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua
