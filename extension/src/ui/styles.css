@@ -268,8 +268,8 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
  * strip.js tính), dài đúng thời lượng. Tên nốt là "đầu" viên (cùng màu), được tràn quá viên tới đầu nốt kế;
  * ct-nbare = không vừa thì chỉ còn viên. Nốt đang phát: viên đỏ phát sáng. Nốt uncertain: viên rỗng viền đứt.
  * Ô .ct-mel-now cố định ở mép trái làn: tên nốt đang phát chữ to, kèm "→ nốt kế". */
-.ct-strip-wrap { --ct-mel-h: 0px; --ct-pill-h: 15px; --ct-mel: #6a3fe0; --ct-mel-fg: #fff; }
-html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
+.ct-strip-wrap { --ct-mel-h: 0px; --ct-pill-h: 15px; --ct-mel: #115e59; --ct-mel-fg: #fff; }
+html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-strip-wrap.ct-has-melody { --ct-mel-h: 84px; height: calc(104px + var(--ct-mel-h)); }
 .ct-has-melody .ct-chord { bottom: calc(var(--ct-lane-bottom) + var(--ct-mel-h)); }
 .ct-mel-lane {
@@ -366,7 +366,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
 .ct-fs .ct-rn { font-size: 15px; line-height: 18px; }
 .ct-fs .ct-chord.ct-past { opacity: 0.35; }
 .ct-fs .ct-beat span { font-size: 11px; }
-.ct-root.ct-fs .ct-strip-wrap { --ct-mel: #9575ff; }
+.ct-root.ct-fs .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-fs .ct-strip-wrap.ct-has-melody { --ct-mel-h: 100px; --ct-pill-h: 19px; height: calc(128px + var(--ct-mel-h)); }
 .ct-fs .ct-nl { font-size: 14px; padding: 0 4px; }
 .ct-fs .ct-note.ct-nsm .ct-nl { font-size: 12px; padding: 0 2px; }
