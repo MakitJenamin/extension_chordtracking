@@ -249,7 +249,7 @@ test("melodyArrow và melodyLabels: mũi tên theo pitch gốc, giọng theo vù
   assert.deepEqual(T.melodyLabels(null, notes.slice(0, 1), { mode: "orig" }), [{ name: "E", arrow: "" }]);
 });
 
-test("melodyNotes, noteIndexAt, noteFit", () => {
+test("melodyNotes, noteIndexAt", () => {
   const m = { notes: [{ start: 3, end: 4, pitch: 60 }, { start: 1, end: 2, pitch: 62 }, { start: 5, end: 5, pitch: 1 },
                       null, { start: 6, end: 7 }, { start: 2, end: 2.5, pitch: 64 }] };
   const notes = T.melodyNotes(m);
@@ -264,9 +264,19 @@ test("melodyNotes, noteIndexAt, noteFit", () => {
   assert.equal(T.noteIndexAt(notes, 3.5, 1), 2);
   assert.equal(T.noteIndexAt(notes, 1.5, 2), 0);              // hint sai vẫn tìm đúng
   assert.equal(T.noteIndexAt(notes, 9), -1);
-  assert.equal(T.noteFit(30, 20, 10), "full");
-  assert.equal(T.noteFit(15, 20, 10), "name");
-  assert.equal(T.noteFit(5, 20, 10), "bare");
+});
+
+test("pitchRange, pitchY", () => {
+  assert.equal(T.pitchRange([]), null);
+  assert.deepEqual(T.pitchRange([{ pitch: 60 }, { pitch: 62 }]), { lo: 55, hi: 67 });   // hẹp: nới đủ 12 nửa cung
+  const wide = Array.from({ length: 100 }, (_, i) => ({ pitch: 50 + (i % 25) }));
+  wide.push({ pitch: 120 });                                                          // nốt lạc: không kéo giãn dải
+  const r = T.pitchRange(wide);
+  assert.ok(r.hi < 80 && r.lo >= 49, JSON.stringify(r));
+  assert.equal(T.pitchY(r.hi, r), 0);
+  assert.equal(T.pitchY(r.lo, r), 1);
+  assert.equal(T.pitchY(200, r), 0);                                                  // ngoài dải: kẹp mép
+  assert.equal(T.pitchY(60, null), 0.5);
 });
 
 const magiaMel = (() => {

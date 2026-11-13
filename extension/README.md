@@ -50,14 +50,19 @@ bật thì bài có sẵn hiện luôn, nhưng bài mới vẫn không bao giờ
 Phím tắt dùng Alt+Shift để không đụng phím của YouTube (k, j, l, f, số…). Trên dải: vạch đỏ là thời điểm đang phát,
 vạch cao kèm số là phách 1 của ô nhịp, vạch thấp là phách nhẹ, vạch vàng đứt là chỗ đổi giọng, ⚠ là hợp âm model không chắc.
 
-**Dòng giai điệu** (sau khi dò): làn nốt ngay dưới các ô hợp âm, cùng tỷ lệ thời gian, cùng vạch đỏ; nốt đang phát có
-nền sáng và thanh đỏ, nốt đã qua mờ đi. Mỗi nốt: tên C D E F G A B (thăng/giáng như hợp âm, **không có số quãng tám**)
-và ↑/↓ so với nốt trước (bằng nhau thì không có). Nốt model không chắc (`uncertain`) mờ, thanh chấm. Dịch giọng theo chế
+**Dòng giai điệu** (sau khi dò): làn piano-roll ngay dưới các ô hợp âm, cùng tỷ lệ thời gian, cùng vạch đỏ. Mỗi nốt là
+một viên màu xanh ngọc: dài đúng thời lượng, **độ cao theo cao độ** (thang tính theo phân vị 5–95% cao độ của cả bài, nốt
+lạc nằm sát mép), nên nhìn là thấy giai điệu lên hay xuống. Tên nốt C D E F G A B (thăng/giáng như hợp âm, **không có số
+quãng tám**) ghi trong viên; nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s) không ghi lại tên. Nốt đang phát: viên
+đỏ phát sáng; nốt đã qua mờ đi. Ô "đang hát" cố định ở mép trái làn: tên nốt đang phát chữ to kèm "→ nốt kế" (nốt kế có
+cao độ khác, có ↑/↓ nên phân biệt được cùng tên khác quãng tám). Nốt model không chắc (`uncertain`) là viên rỗng viền
+đứt. Dịch giọng theo chế
 độ: Gốc dùng Tông −/+; 🎹 Phím trắng dịch theo vùng giọng đang phát như hợp âm; **Bậc La Mã hiện số 1–7** (1 là chủ âm
 giọng trưởng, giọng thứ dùng giọng trưởng song song nên A thứ: A = 6; nốt ngoài giọng b2 b3 #4 b6 b7). Lý do chọn số
 thay vì tên nốt: số không phụ thuộc giọng, đọc được như ký âm số, và **trùng đúng phím trắng phải bấm** ở chế độ Phím
-trắng (1 = C, 2 = D … 7 = B), nên chuyển qua lại hai chế độ không phải nhớ hai cách gọi. Giai điệu nhanh: nhãn "C↑"
-không vừa khe tới nốt kế thì mũi tên nhỏ xuống dưới tên; hẹp nữa thì chỉ còn mũi tên và thanh (rê chuột xem tooltip).
+trắng (1 = C, 2 = D … 7 = B), nên chuyển qua lại hai chế độ không phải nhớ hai cách gọi. Viên hẹp (giai điệu nhanh):
+tên luôn nằm trong viên, chữ thu nhỏ dần (dấu thăng/giáng thành chỉ số trên); viên chỉ rộng vài px thì không ghi tên
+(rê chuột xem tooltip; Magia: 6/678 nốt).
 Bấm vào nốt để tua tới đó. Toàn màn hình: dòng nốt đi cùng dải hợp âm vào lớp phủ.
 
 **Toàn màn hình:** dải hợp âm chuyển vào lớp phủ trong `#movie_player`, nằm ngay trên thanh điều khiển YouTube. Khi
@@ -73,7 +78,7 @@ nên theo theme sáng/tối của YouTube.
 |---|---|
 | `src/background.js` | Service worker: chuyển `{type:"ct:fetch", path, method, body}` tới `CT.settings.serverUrl`, trả `{ok, status, data \| error}` |
 | `src/api.js` | `CT.api.loadSong`: `POST /analyze`, poll `/jobs/{id}` mỗi giây, `GET /result/{song_id}`; `loadMelody`/`getMelody` cho `/melody` (docs/melody_api.md) |
-| `src/theory.js` | Dịch giọng theo ký hiệu (kể cả hợp âm đảo), đơn giản hóa, ẩn bass, nhãn theo chế độ, số chỉ nhịp; tên nốt giai điệu theo chế độ, mũi tên, chọn cách hiện nhãn khi dòng dày |
+| `src/theory.js` | Dịch giọng theo ký hiệu (kể cả hợp âm đảo), đơn giản hóa, ẩn bass, nhãn theo chế độ, số chỉ nhịp; tên nốt giai điệu theo chế độ, mũi tên, thang cao độ của làn piano-roll (`pitchRange`, `pitchY`) |
 | `src/sync.js` | Vòng `requestAnimationFrame` đọc `video.currentTime` (phát `time`), `CT.seekTo`, toàn màn hình |
 | `src/content.js` | Điều phối: videoId khi YouTube điều hướng SPA, chỉ phân tích khi người dùng bật, nhớ video đã bật trong phiên, tự thử lại khi server tắt, dọn khi rời trang video |
 | `src/ui/icons.js` | Bộ icon SVG riêng (`CT.icons`): logo và avatar piano cách điệu, metronome có quả lắc xoay theo phách, phím đàn |

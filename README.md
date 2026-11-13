@@ -33,7 +33,7 @@
 </tr>
 <tr>
 <td align="center">🎹<br><b>Phím trắng</b><br><sub>Tự transpose cho người chơi piano</sub></td>
-<td align="center">🎵<br><b>Dò giai điệu</b><br><sub>Tên nốt và ↑/↓ chạy dưới hợp âm</sub></td>
+<td align="center">🎵<br><b>Dò giai điệu</b><br><sub>Nốt lên xuống theo cao độ, chạy dưới hợp âm</sub></td>
 <td align="center">🖥️<br><b>Toàn màn hình &amp; rạp phim</b><br><sub>Hợp âm hiện ở mọi chế độ xem</sub></td>
 </tr>
 </table>
@@ -62,7 +62,8 @@
 
 <img src="docs/img/melody.png" alt="Dòng nốt giai điệu dưới dải hợp âm">
 
-Bấm **♪ Dò giai điệu** khi hợp âm đã hiện. Tên nốt chạy dưới hợp âm, ↑/↓ là cao hay thấp hơn nốt trước. Giọng hát
+Bấm **♪ Dò giai điệu** khi hợp âm đã hiện. Nốt chạy dưới hợp âm kiểu piano-roll: viên càng cao thì nốt càng cao, dài
+theo độ dài nốt, tên nốt ghi trong viên. Ô bên trái ghi to nốt đang hát và nốt kế tiếp. Giọng hát
 được tách riêng trước khi dò; nốt tự khớp phách và dịch giọng theo hợp âm. Bài 4 phút mất khoảng 2–3 phút ở lần đầu.
 
 | Cách | Model | Hợp với |
