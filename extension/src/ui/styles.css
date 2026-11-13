@@ -289,19 +289,23 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
   color: var(--ct-mel-fg); background: var(--ct-mel);
 }
 .ct-note.ct-nbare .ct-nl, .ct-note.ct-nrep .ct-nl { visibility: hidden; }
-.ct-note.ct-cur.ct-nrep .ct-nl { visibility: visible; }   /* nốt đang phát luôn có tên */
+.ct-note.ct-cur .ct-nl { visibility: visible; }   /* nốt đang phát luôn có tên */
+/* Hàng nhãn phụ: sát dưới viên (sát trên nếu viên ở nửa dưới làn), nền nhạt để khác nhãn trên viên. */
+.ct-note.ct-nalt .ct-nl { top: calc(100% + 1px); height: auto; line-height: 13px;
+  background: color-mix(in srgb, var(--ct-mel) 28%, var(--ct-bg)); color: var(--ct-text); }
+.ct-note.ct-nalt.ct-nup .ct-nl { top: auto; bottom: calc(100% + 1px); }
 .ct-note:not(.ct-nbare):not(.ct-nrep) { z-index: 1; }   /* nhãn nằm trên các viên phía sau */
+.ct-note.ct-nalt { z-index: 2; }
 .ct-note:hover .ct-nbar, .ct-note:hover .ct-nl { filter: brightness(1.2); }
 .ct-note.ct-past { opacity: 0.32; }
 .ct-note.ct-nunc { opacity: 0.5; }
 .ct-note.ct-nunc .ct-nbar { background: none; border: 1.5px dashed var(--ct-mel); }
 .ct-note.ct-nunc .ct-nl { background: none; color: var(--ct-mel); }
-.ct-note.ct-cur { opacity: 1; z-index: 2; }
+.ct-note.ct-cur { opacity: 1; z-index: 3; }
 .ct-note.ct-cur .ct-nbar, .ct-note.ct-cur .ct-nl {
   background: var(--ct-red); color: #fff; border-color: transparent;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ct-red) 30%, transparent), 0 0 12px color-mix(in srgb, var(--ct-red) 70%, transparent);
 }
-.ct-note.ct-cur .ct-nl { font-size: 13px; }
 
 .ct-mel-now {
   display: none; position: absolute; left: 6px; bottom: calc(var(--ct-lane-bottom) + 4px); height: calc(var(--ct-mel-h) - 8px);
@@ -365,7 +369,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #8f6bff; }
 .ct-root.ct-fs .ct-strip-wrap { --ct-mel: #9575ff; }
 .ct-fs .ct-strip-wrap.ct-has-melody { --ct-mel-h: 100px; --ct-pill-h: 19px; height: calc(128px + var(--ct-mel-h)); }
 .ct-fs .ct-nl { font-size: 14px; padding: 0 4px; }
-.ct-fs .ct-note.ct-cur .ct-nl { font-size: 16px; }
+.ct-fs .ct-note.ct-nalt .ct-nl { line-height: 16px; }
 .ct-fs .ct-note.ct-past { opacity: 0.3; }
 .ct-fs .ct-mel-now { background: rgba(0, 0, 0, 0.55); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .ct-fs .ct-mel-now b { font-size: 36px; }

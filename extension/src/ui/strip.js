@@ -185,7 +185,9 @@
       this.notes.forEach((n, i) => {
         const e = el("div", "ct-note" + (n.uncertain ? " ct-nunc" : ""));
         e.dataset.i = i;
-        e.style.setProperty("--y", T().pitchY(n.pitch, this.range).toFixed(3));
+        const y = T().pitchY(n.pitch, this.range);
+        e.style.setProperty("--y", y.toFixed(3));
+        if (y > 0.55) e.classList.add("ct-nup");   // nhãn hàng phụ đặt phía trên viên (dưới không còn chỗ)
         // Nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s): không ghi tên, chỉ còn viên (tooltip vẫn đủ).
         const p = this.notes[i - 1];
         if (p && p.pitch === n.pitch && n.start - p.end < 0.6) e.classList.add("ct-nrep");
@@ -227,23 +229,26 @@
       this.update(this.t, true);
     }
 
-    /** Xếp nhãn tham lam từ trái sang: nhãn được đè lên các viên phía sau (nằm trên chúng), chỉ cần không chạm
-     * nhãn trước (khe 2 px). Nốt lặp (ct-nrep, gán lúc dựng) bỏ qua. Không xếp được thì chỉ còn viên
-     * (tooltip vẫn đủ). Đo chữ thật một lượt. Dải đang ẩn (bề rộng 0) thì bỏ qua; fitLabels gọi lại khi dải hiện ra. */
+    /** Xếp nhãn tham lam từ trái sang, hai hàng: hàng chính nằm trên viên (được đè lên các viên phía sau), hàng phụ
+     * (ct-nalt) nằm sát dưới viên, hoặc sát trên nếu viên ở nửa dưới làn (ct-nup). Nhãn chỉ cần không chạm nhãn
+     * trước trong cùng hàng (khe 1 px); hai hàng đều kín thì chỉ còn viên (ct-nbare, tooltip vẫn đủ). Tên có dấu
+     * như "Eb" rộng hơn khe của nốt móc đơn, nên hàng phụ giữ được tên cho nốt ngay sau. Nốt lặp (ct-nrep, gán lúc
+     * dựng) bỏ qua. Nốt đang phát luôn hiện tên (CSS). Đo chữ thật một lượt; dải đang ẩn thì đo lại khi hiện ra. */
     fitMelody() {
       this.melFit = false;
       if (!this.lane || !this.width) return;
       const els = this.noteEls;
-      for (const e of els) e.classList.remove("ct-nbare");
+      for (const e of els) e.classList.remove("ct-nbare", "ct-nalt");
       const w = els.map((e) => e.lastChild.offsetWidth);
       if (!w.some((x) => x > 0)) return;   // chữ chưa được vẽ (dải đang ẩn): đo lại khi dải hiện ra
       this.melFit = true;
       const px = this.px, ns = this.notes;
-      let edge = -Infinity;
+      let main = -Infinity, alt = -Infinity;
       els.forEach((e, i) => {
-        const x = ns[i].start * px;
         if (e.classList.contains("ct-nrep")) return;
-        if (x >= edge + 1) edge = x + w[i];
+        const x = ns[i].start * px;
+        if (x >= main + 1) main = x + w[i];
+        else if (x >= alt + 1) { alt = x + w[i]; e.classList.add("ct-nalt"); }
         else e.classList.add("ct-nbare");
       });
     }
