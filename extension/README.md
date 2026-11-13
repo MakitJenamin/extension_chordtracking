@@ -53,7 +53,8 @@ vạch cao kèm số là phách 1 của ô nhịp, vạch thấp là phách nh�
 **Dòng giai điệu** (sau khi dò): làn piano-roll ngay dưới các ô hợp âm, cùng tỷ lệ thời gian, cùng vạch đỏ. Mỗi nốt là
 một viên màu xanh ngọc: dài đúng thời lượng, **độ cao theo cao độ** (thang tính theo phân vị 5–95% cao độ của cả bài, nốt
 lạc nằm sát mép), nên nhìn là thấy giai điệu lên hay xuống. Tên nốt C D E F G A B (thăng/giáng như hợp âm, **không có số
-quãng tám**) ghi trong viên; nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s) không ghi lại tên. Nốt đang phát: viên
+quãng tám**) ghi trong viên; nốt lặp cao độ của nốt ngay trước (nghỉ dưới 0,6 s) không ghi lại tên. Nốt cùng tên
+với nốt ngay trước nhưng khác quãng tám có ↑/↓ ở đầu tên (ví dụ G rồi ↓G là xuống một quãng tám). Nốt đang phát: viên
 đỏ phát sáng; nốt đã qua mờ đi. Ô "đang hát" cố định ở mép trái làn: tên nốt đang phát chữ to kèm "→ nốt kế" (nốt kế có
 cao độ khác, có ↑/↓ nên phân biệt được cùng tên khác quãng tám). Nốt model không chắc (`uncertain`) là viên rỗng viền
 đứt. Dịch giọng theo chế
