@@ -5,9 +5,8 @@
     estimate_key_regions -> JSON (xem `build_result`)
 
 Mặc định **không tách nguồn**: model hợp âm và bắt nhịp chạy trên mix, bass lấy từ `bass_probs` của
-CNN-LSTM. Tách nguồn (BS-Roformer + HTDemucs) chỉ thêm khoảng +0.1 điểm hợp âm đảo mà tốn khoảng
-84 trên 89 giây mỗi bài (PLAN.md, "Kết quả đánh giá Kajiura"), nên chỉ bật khi `use_separation=True`;
-khi đó stem bass được trộn thêm vào phân bố bass (`bass_source="both"`).
+CNN-LSTM. `use_separation=True` tách giọng bằng BS-Roformer để chạy model trên stem `vocals` hoặc
+`instrumental` (`chord_stem`, `beat_stem`); mix vẫn tốt hơn instrumental (PLAN.md, kết quả đợt 2).
 
 Mỗi bước dùng GPU tự lấy `gpu_lock()` riêng bên trong hàm của nó (separate, track_beats,
 run_chordmini, run_cnnlstm), nên ở đây không lồng khóa; giữa các bước gọi `free_vram()`.
@@ -21,7 +20,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -45,7 +44,7 @@ log = logging.getLogger(__name__)
 RESULT_VERSION = 1
 DEFAULT_METER = 4           # số phách mỗi ô nhịp khi không suy ra được từ phách mạnh
 UNCERTAIN_THRESHOLD = 0.5   # hợp âm có confidence nhỏ hơn mức này bị đánh dấu "uncertain"
-STEM_NAMES = ("mix", "vocals", "instrumental", "bass", "no_bass")
+STEM_NAMES = ("mix", "vocals", "instrumental")
 CHORD_MODELS = ("chordmini-btc", "cnnlstm")      # luôn chạy; ChordFormer chỉ chạy khi tham số fuse cần
 MODEL_NAMES = {"chordmini": "chordmini-btc", "cnnlstm": "cnnlstm", "chordformer": "chordformer"}
 TIMING_KEYS = ("fetch", "separation", "beats", "chords", "fusion", "analysis", "total")
@@ -80,8 +79,8 @@ class PipelineConfig:
                 raise ValueError(f"stem phải là một trong {STEM_NAMES}, nhận được {name!r}")
 
     def effective(self) -> "PipelineConfig":
-        """Không tách nguồn thì mọi bước chạy trên mix."""
-        if self.use_separation:
+        """Không tách nguồn, hoặc tách mà mọi bước vẫn chạy trên mix (stem tách ra không ai dùng), thì như mặc định."""
+        if self.use_separation and (self.chord_stem, self.beat_stem) != ("mix", "mix"):
             return self
         return PipelineConfig(use_separation=False, chord_stem="mix", beat_stem="mix")
 
@@ -142,7 +141,7 @@ def analyze(
     if config.use_separation:
         # Chỉ báo VRAM của bước thật sự chạy lần này, không lấy số cũ của stem đã cache.
         stats_after = read_json(stats_path) or {}
-        for step in ("roformer", "demucs"):
+        for step in ("roformer",):
             ran = stats_after.get(step) is not None and stats_after.get(step) != stats_before.get(step)
             vram[step] = stats_after[step].get("peak_vram_mb") if ran else None
     free_vram()
@@ -165,7 +164,7 @@ def analyze(
     free_vram()
     models["cnnlstm"], vram["cnnlstm"] = _measure_vram(run_cnnlstm, chord_audio)
     free_vram()
-    bass_audio, fusion_params = _fusion_inputs(stems, config)
+    fusion_params = fusion.DEFAULT_PARAMS
     if fusion.uses_chordformer(fusion_params):
         models["chordformer"], vram["chordformer"] = _measure_vram(run_chordformer, chord_audio)
         free_vram()
@@ -174,7 +173,7 @@ def analyze(
 
     report("fusion", 0.0)
     t0 = time.perf_counter()
-    segments = fusion.fuse(models, grid, bass_audio, duration, fusion_params)
+    segments = fusion.fuse(models, grid, duration, fusion_params)
     timing["fusion"] = time.perf_counter() - t0
     report("fusion", 1.0)
 
@@ -196,17 +195,6 @@ def analyze(
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_json(result_path, result)
     return result
-
-
-def _fusion_inputs(stems: Stems, config: PipelineConfig) -> tuple[Path | None, fusion.FusionParams]:
-    """(file stem bass, tham số fuse). Không tách nguồn: không có stem, bass chỉ từ CNN-LSTM. Có tách
-    nguồn: trộn thêm chroma stem bass với trọng số `stem_weight`.
-
-    Lưu ý: bộ mặc định được chọn với `bass_source="cnn"`; tổ hợp với stem bass chưa được đo lại (stem chỉ
-    thêm khoảng +0.1 điểm với bộ tham số cũ)."""
-    if not config.use_separation:
-        return None, fusion.DEFAULT_PARAMS
-    return stems.bass, replace(fusion.DEFAULT_PARAMS, bass_source="both")
 
 
 def _cached_result(song_id: str, config: PipelineConfig) -> dict | None:
@@ -237,7 +225,7 @@ def _prepare_stems(audio_path: Path, cache_dir: Path, config: PipelineConfig) ->
     if not mix.exists():
         separation.normalize_audio(audio_path, mix)
     # Không tách: chỉ có mix. Các stem khác trỏ về mix để tham số stem vẫn hợp lệ.
-    return Stems(mix=mix, vocals=mix, instrumental=mix, bass=mix, no_bass=mix)
+    return Stems(mix=mix, vocals=mix, instrumental=mix)
 
 
 def _measure_vram(fn, *args):
@@ -413,7 +401,6 @@ def build_result(
         "timing": {k: round(float(timing.get(k, 0.0)), 2) for k in TIMING_KEYS},
         "pipeline": {
             "separation_model": separation.ROFORMER_MODEL if config.use_separation else None,
-            "bass_model": separation.DEMUCS_MODEL if config.use_separation else None,
             "chord_models": list(chord_models) if chord_models is not None else list(CHORD_MODELS),
             "chord_stem": config.chord_stem,
             "beat_stem": config.beat_stem,

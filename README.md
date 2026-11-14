@@ -209,7 +209,7 @@ Clone lại vào thư mục ngắn (ví dụ `C:\chordtrack`) hoặc bật `Long
 ## 🧑‍💻 Phát triển và đóng góp
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Full   # thêm thư viện và model để chấm điểm
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Full   # thêm thư viện để chấm điểm
 ```
 
 Luôn gọi `.venv\Scripts\python.exe` bằng đường dẫn đầy đủ: lệnh `python` trên Windows có thể là bản giả của Microsoft Store.
@@ -218,7 +218,7 @@ Luôn gọi `.venv\Scripts\python.exe` bằng đường dẫn đầy đủ: lệ
 
 | Thư mục | Nội dung |
 |---|---|
-| `chordtrack/` | Backend: tải audio, tách nguồn, bắt nhịp, nhận hợp âm (`chords/`), trộn kết quả (`fusion.py`), giọng và cấu trúc (`analysis.py`), dò giai điệu (`melody/`), hàng đợi job, server FastAPI |
+| `chordtrack/` | Backend: tải audio, tách giọng, bắt nhịp, nhận hợp âm (`chords/`), trộn kết quả (`fusion.py`), giọng và cấu trúc (`analysis.py`), dò giai điệu (`melody/`), hàng đợi job, server FastAPI |
 | `chordtrack/types.py` | Kiểu dữ liệu dùng chung (`Stems`, `BeatGrid`, `ChordSegment`, `ChordModelOutput`…) |
 | `extension/` | Extension Chrome (Manifest V3). `extension/dev/` có harness thử giao diện không cần YouTube |
 | `eval/` | Bộ đánh giá hợp âm ([README](eval/README.md)) và giai điệu ([README](eval/melody/README.md)) |
@@ -283,7 +283,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8765/analyze -ContentType applic
 - **Bắt nhịp:** [Beat This!](https://github.com/CPJKU/beat_this) (Foscarin, Schlüter, Widmer, CPJKU).
 - **Dò giai điệu:** [YourMT3+](https://huggingface.co/spaces/mimbres/YourMT3) (Chang, Dixon, Benetos),
   [MuScriptor](https://github.com/muscriptor/muscriptor) (Kyutai và Mirelo).
-- **Tách nguồn:** BS-Roformer và HTDemucs qua [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
+- **Tách giọng:** BS-Roformer qua [audio-separator](https://github.com/nomadkaraoke/python-audio-separator).
 - **Tải audio:** [yt-dlp](https://github.com/yt-dlp/yt-dlp). **Đánh giá:** nhãn hợp âm của [Isophonics](http://isophonics.net/).
 
 ## 📜 License

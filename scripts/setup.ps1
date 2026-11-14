@@ -12,7 +12,7 @@
     3. Cài PyTorch: bản CUDA 12.6 nếu máy có GPU NVIDIA (nvidia-smi), không thì bản CPU.
     4. Cài thư viện trong requirements\runtime.txt (giữ numpy 1.26).
     5. Tải mã nguồn và weights các model (scripts\fetch_models.py --melody), kiểm tra SHA-256.
-       Dò giai điệu cài mặc định: YourMT3+ (cách dò "Nhanh", không cần tài khoản). MuScriptor small (cách dò "Kỹ")
+       Dò giai điệu cài mặc định: YourMT3+ (cách dò "Bình thường", không cần tài khoản). MuScriptor small (cách dò "Kỹ")
        là tùy chọn: repo gated trên Hugging Face, chưa đăng nhập thì chỉ cảnh báo, setup vẫn chạy tiếp.
     6. Kiểm tra ffmpeg và Deno (yt-dlp cần để tải YouTube), thiếu thì cài bằng winget.
     7. Chạy thử (scripts\smoke_test.py): tạo audio hợp âm C – G, chạy đủ các model, kiểm tra nhận đúng; chạy thử
@@ -22,7 +22,7 @@
 .PARAMETER Cpu
   Cài PyTorch bản CPU kể cả khi có GPU NVIDIA.
 .PARAMETER Full
-  Cài thêm thư viện đánh giá, tải thêm consonance-ACE (thư viện tách nguồn đã cài cùng dò giai điệu).
+  Cài thêm thư viện đánh giá (requirements\eval.txt) và thư viện tách giọng.
 .PARAMETER NoMelody
   Không cài dò giai điệu (gồm tách giọng). Mặc định có cài.
 .PARAMETER Melody
@@ -127,7 +127,7 @@ if ($WithMelody) {
     # Mã MuScriptor (MIT, tải không cần tài khoản; weights gated tải ở bước 5). Lỗi thì chỉ cảnh báo: chỉ cách dò "Kỹ" cần.
     # --no-deps: muscriptor khai báo numpy>=2 nhưng chạy được với numpy 1.26 (không được lên numpy 2)
     & $Python -m pip install --quiet --no-deps -r requirements\melody_muscriptor.txt -c requirements\constraints.txt
-    if ($LASTEXITCODE -ne 0) { Write-Warning "Không cài được gói muscriptor: cách dò `"Kỹ`" sẽ tắt, cách dò `"Nhanh`" vẫn dùng được." }
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Không cài được gói muscriptor: cách dò `"Kỹ`" sẽ tắt, cách dò `"Bình thường`" vẫn dùng được." }
 }
 
 # 5. Model ------------------------------------------------------------------------------------------
@@ -136,7 +136,6 @@ if (-not (Have "git")) {
     if (-not (Winget-Install "Git.Git")) { throw "Cần git: winget install Git.Git, rồi chạy lại." }
 }
 $fetch = @("scripts\fetch_models.py")
-if ($Full) { $fetch += "--extra" }
 # --melody: YourMT3+ bắt buộc; MuScriptor small thiếu quyền tải (chưa đăng nhập Hugging Face) chỉ cảnh báo, mã thoát 0.
 if ($WithMelody) { $fetch += "--melody" }
 Run $Python $fetch
@@ -163,20 +162,20 @@ Write-Host ("  PyTorch: " + (& $Python -c "import torch; print(torch.__version__
 if ($WithMelody) {
     $ready = @((& $Python -c "from chordtrack.melody import pipeline as p; r = p.variant_ready(p.melody_ready()); print(' '.join(k for k, v in r.items() if v))") -split " ")
     Write-Host "  Dò giai điệu:"
-    if ($ready -contains "yourmt3") { Write-Host "    Nhanh (YourMT3+):   có" }
-    else { Write-Host "    Nhanh (YourMT3+):   THIẾU, xem lỗi ở bước Model rồi chạy lại setup" -ForegroundColor Red }
+    if ($ready -contains "yourmt3") { Write-Host "    Bình thường (YourMT3+): có" }
+    else { Write-Host "    Bình thường (YourMT3+): THIẾU, xem lỗi ở bước Model rồi chạy lại setup" -ForegroundColor Red }
     if ($ready -contains "combo") {
-        Write-Host "    Kỹ (+ MuScriptor):  có"
+        Write-Host "    Kỹ (+ MuScriptor):      có"
     } else {
-        Write-Host "    Kỹ (+ MuScriptor):  chưa bật (tùy chọn, cần tài khoản Hugging Face, chỉ dùng phi thương mại). Muốn bật:" -ForegroundColor Yellow
+        Write-Host "    Kỹ (+ MuScriptor):      chưa bật (tùy chọn, cần tài khoản Hugging Face, chỉ dùng phi thương mại). Muốn bật:" -ForegroundColor Yellow
         Write-Host "      1. Tạo access token loại Read ở https://huggingface.co/settings/tokens"
         Write-Host "      2. Mở https://huggingface.co/MuScriptor/muscriptor-small, đăng nhập, bấm đồng ý điều khoản"
         Write-Host "      3. .venv\Scripts\hf.exe auth login        (dán token)"
         Write-Host "         .venv\Scripts\python.exe scripts\fetch_models.py --muscriptor"
         Write-Host "      rồi khởi động lại server."
     }
-    if ($ready -contains "yourmt3_vocals") { Write-Host "    Tách giọng:         có" }
-    else { Write-Host "    Tách giọng:         chưa cài (gói audio-separator lỗi?), dò trên bản mix. Xem lỗi ở bước Thư viện Python" }
+    if ($ready -contains "yourmt3_vocals") { Write-Host "    Tách giọng:             có" }
+    else { Write-Host "    Tách giọng:             chưa cài (gói audio-separator lỗi?), dò trên bản mix. Xem lỗi ở bước Thư viện Python" }
 } else {
     Write-Host "  Dò giai điệu: không cài (-NoMelody). Muốn cài: chạy lại setup không có -NoMelody."
 }

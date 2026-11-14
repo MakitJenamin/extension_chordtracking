@@ -1,21 +1,22 @@
-"""Đánh giá ChordFormer và consonance-ACE, một mình và trong bộ trộn với ChordMini, CNN-LSTM.
+"""Đánh giá ChordFormer, một mình và trong bộ trộn với ChordMini, CNN-LSTM.
 
     python -m eval.new_models_eval [--jobs 6] [--folds 3] [--quick]
 
 Cần: đặc trưng gốc (`eval.cache_features`, `eval.ablation_kajiura cache`, `eval.kajiura align`) và
 `python -m eval.cache_new_models`. Mọi model chạy trên **mix**, không tách nguồn.
 
-Bốn model, ký hiệu: cm = ChordMini BTC-PL, cn = Chord-CNN-LSTM, cf = ChordFormer, cs = consonance-ACE.
+Ba model, ký hiệu: cm = ChordMini BTC-PL, cn = Chord-CNN-LSTM, cf = ChordFormer. (consonance-ACE từng được so ở
+đây, đã bỏ khỏi dự án; kết quả còn ở PLAN.md.)
 Cách trộn tổng quát hóa `fusion.mix_models(level="family")`:
-- **Họ hợp âm** (gốc + maj/min/dim/aug/sus): trung bình log có trọng số của cả bốn model (`w`, tổng 1),
+- **Họ hợp âm** (gốc + maj/min/dim/aug/sus): trung bình log có trọng số của cả ba model (`w`, tổng 1),
   mỗi model đã đưa về từ vựng 170 nhãn của ChordMini (cn, cf qua `cnnlstm_on_chordmini`).
-- **Loại hợp âm trong họ** (C, C7, Cmaj7): trộn ChordMini với một model `qsrc` (cn, cf hoặc cs) theo
+- **Loại hợp âm trong họ** (C, C7, Cmaj7): trộn ChordMini với một model `qsrc` (cn hoặc cf) theo
   trọng số `q`, giống `quality_weight`.
-- **Bass**: `bass_probs` của cn, cf, cs hoặc trung bình (`bass`), ngưỡng `th`.
+- **Bass**: `bass_probs` của cn, cf hoặc trung bình (`bass`), ngưỡng `th`.
 - Làm mượt HMM theo khung (`sp`), gộp đoạn < `md` giây, như `fusion.fuse_probs`.
 
 Hàm mục tiêu, cross-validation và cách chấm giống `eval.refit_fusion` (0.6 Kajiura + 0.4 Beatles, mean4).
-⚠️ consonance-ACE và ChordFormer đều học trên Isophonics (Beatles), nên điểm Beatles của chúng lạc quan.
+⚠️ ChordFormer học trên Isophonics (Beatles), nên điểm Beatles của chúng lạc quan.
 """
 from __future__ import annotations
 
@@ -44,14 +45,14 @@ from eval.datasets import REF_DIR
 from eval.evaluate import METRICS, _nan_to_none, _utf8_console, evaluate_pair
 from eval.refit_fusion import BEATLES_WEIGHT, KAJIURA_WEIGHT, OBJECTIVE, SEQ_METRICS, evaluate_rows, mean4
 
-MODELS = ("cm", "cn", "cf", "cs")
-KEYS = {"cm": "chordmini_mix", "cn": "cnnlstm_mix", "cf": "chordformer_mix", "cs": "consonance_mix"}
+MODELS = ("cm", "cn", "cf")
+KEYS = {"cm": "chordmini_mix", "cn": "cnnlstm_mix", "cf": "chordformer_mix"}
 
 
 # ---------------------------------------------------------------- bài hát
 
 class _Probs:
-    """Xác suất của bốn model trên lưới khung chung và từ vựng ChordMini, nhớ lại để chấm nhanh."""
+    """Xác suất của ba model trên lưới khung chung và từ vựng ChordMini, nhớ lại để chấm nhanh."""
 
     def _init_new(self, feats_pkl: Path):
         with open(new_models_path(feats_pkl), "rb") as f:
@@ -66,12 +67,8 @@ class _Probs:
             cm = self.models["chordmini_mix"]
             if x == "cm":
                 v = F._normalize(F.resample_probs(cm.frame_times, cm.frame_probs, self.times))
-            elif x in ("cn", "cf"):
-                v = F.cnnlstm_on_chordmini(self.models[KEYS[x]], cm, self.times, self.p("cm"))
             else:
-                m = self.models[KEYS[x]]
-                assert list(m.vocabulary) == self.vocab_cm()
-                v = F._normalize(F.resample_probs(m.frame_times, m.frame_probs, self.times))
+                v = F.cnnlstm_on_chordmini(self.models[KEYS[x]], cm, self.times, self.p("cm"))
             self._p[x] = v
         return self._p[x]
 
@@ -83,9 +80,7 @@ class _Probs:
     def bass(self, src: str) -> np.ndarray:
         key = ("bass", src)
         if key not in self._p:
-            if src == "mean":
-                v = np.mean([self.bass("cn"), self.bass("cf"), self.bass("cs")], axis=0)
-            elif src == "cnf":
+            if src == "cnf":
                 v = np.mean([self.bass("cn"), self.bass("cf")], axis=0)
             else:
                 v = F.cnnlstm_bass(self.models[KEYS[src]], self.times)
@@ -260,7 +255,7 @@ def simplex(step: float, models=MODELS):
 
 def grid_chords(quick: bool, step: float | None = None, models=MODELS) -> list[dict]:
     step = step or (0.25 if quick else 0.1)
-    qopts = (("cn", 1.0), ("cf", 1.0), ("cf", 0.5), ("cs", 0.5), ("cm", 0.0)) if quick else         (("cn", 1.0), ("cn", 0.7), ("cf", 1.0), ("cf", 0.7), ("cf", 0.5), ("cm", 0.0))
+    qopts = (("cn", 1.0), ("cf", 1.0), ("cf", 0.5), ("cm", 0.0)) if quick else         (("cn", 1.0), ("cn", 0.7), ("cf", 1.0), ("cf", 0.7), ("cf", 0.5), ("cm", 0.0))
     out = []
     for w in simplex(step, models):
         for qsrc, q in qopts:
@@ -271,7 +266,7 @@ def grid_chords(quick: bool, step: float | None = None, models=MODELS) -> list[d
 
 
 def grid_refine(best: list[dict], quick: bool = True) -> list[dict]:
-    basses = ("cn", "cf", "cs", "cnf", "mean") if quick else ("cn", "cf", "cnf")
+    basses = ("cn", "cf", "cnf")
     ths = (0.4, 0.5, 0.6) if quick else (0.4, 0.5, 0.6, 0.7)
     sps = (0.6, 0.7, 0.8, 0.9) if quick else (0.4, 0.5, 0.6, 0.7, 0.8)
     out = []
@@ -325,8 +320,6 @@ def main(argv=None) -> int:
         ("ChordMini một mình (gốc)", {"kind": "raw", "model": "cm"}),
         ("CNN-LSTM một mình (gốc)", {"kind": "raw", "model": "cn"}),
         ("ChordFormer một mình (gốc)", {"kind": "raw", "model": "cf"}),
-        ("consonance-ACE một mình (gốc, argmax)", {"kind": "raw", "model": "cs"}),
-        ("consonance-ACE + HMM, bass riêng", cfg({"cs": 1}, qsrc="cm", q=0.0, bass="cs")),
         ("ChordFormer + HMM của ta, bass riêng", cfg({"cf": 1}, qsrc="cf", q=1.0, bass="cf")),
         ("**Mặc định hiện tại** (cm+cn 0.6, loại cn)", cfg({"cm": 0.4, "cn": 0.6}, qsrc="cn", q=1.0, bass="cn")),
         ("Thay CNN-LSTM bằng ChordFormer (cùng tham số)", cfg({"cm": 0.4, "cf": 0.6}, qsrc="cf", q=1.0, bass="cf")),
@@ -334,6 +327,9 @@ def main(argv=None) -> int:
     ref_scores = Scores([c for _, c in refs], songs, args.jobs)
 
     # 2) Lưới bộ trộn (bass cf), rồi chỉnh bass/làm mượt cho các bộ tốt nhất
+    unknown = set(args.models.split(",")) - set(MODELS)
+    if unknown:
+        ap.error(f"model không có: {', '.join(sorted(unknown))} (chỉ có {', '.join(MODELS)}; consonance-ACE đã bỏ)")
     models = tuple(x for x in MODELS if x in args.models.split(","))
     g1 = grid_chords(args.quick, args.step, models)
     print(f"Lưới bộ trộn: {len(g1)} cấu hình", flush=True)

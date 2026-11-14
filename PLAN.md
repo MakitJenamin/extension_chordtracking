@@ -19,7 +19,7 @@ Làm Chrome extension hiện hợp âm chạy theo video YouTube. Ưu tiên số
 | Nguồn audio | `yt-dlp` cho server tự tải audio. **Chỉ dùng cá nhân.** Nếu phát hành công khai thì phải xem lại, có thể chuyển sang `tabCapture`, vì tự tải audio vi phạm điều khoản của YouTube |
 | Phần cứng | Chạy local trên **RTX 3060 Ti, 8 GB VRAM**. Sau này cần thì đưa lên cloud |
 | Mức chi tiết hợp âm | Đầy đủ: 7, sus, dim, hợp âm đảo. Đơn giản hóa làm sau |
-| Tách bass (bước 3) | **Tắt mặc định, giữ tùy chọn** (`--separation`), từ 2026-11-03. Hợp âm đảo đến từ `bass_probs` của CNN-LSTM; stem bass chỉ thêm +0.1 điểm mà tốn 84/89 giây mỗi bài (mục "Kết quả đánh giá Kajiura") |
+| Tách bass (bước 3) | **Đã bỏ HTDemucs** (2026-11-14, người dùng quyết định). Hợp âm đảo đến từ `bass_probs` của CNN-LSTM và ChordFormer; stem bass chỉ thêm +0.1 điểm mà tốn 84/89 giây mỗi bài (mục "Kết quả đánh giá Kajiura"). `--separation` giờ chỉ tách giọng bằng BS-Roformer |
 | Nơi đặt code | `C:\Users\MakitJenamin\Documents\extension_chordtracking` |
 | Hàng đợi job | Bản local dùng hàng đợi lưu bằng SQLite, vì Redis chạy trên Windows khá phiền. Khi lên cloud mới đổi sang Redis |
 | VRAM 8 GB | Chạy từng model một và giải phóng VRAM sau mỗi model. BS-Roformer xử lý audio theo từng đoạn ngắn |
@@ -42,7 +42,7 @@ Extension (Chrome MV3) ──HTTP──► Backend Python (FastAPI) ──► H�
 | 0 | Tải audio | `yt-dlp` | Lấy audio từ `videoId` |
 | 1 | Chuẩn hóa audio | ffmpeg, librosa | Đưa mọi bài về cùng sample rate và độ lớn |
 | 2 | Tách giọng | **BS-Roformer-Viperx-1297** | Bỏ giọng hát. Giai điệu hát là nguồn gây sai hợp âm lớn nhất |
-| 3 | Tách bass | **HTDemucs**, chạy trên phần instrumental | Lấy nốt bass để nhận hợp âm đảo và xác định đúng nốt gốc |
+| 3 | ~~Tách bass~~ | ~~HTDemucs~~ (đã bỏ 2026-11-14) | Nốt bass lấy từ `bass_probs` của model hợp âm |
 | 4 | Bắt nhịp và phách mạnh | **beat_this** (dự phòng: madmom DBN) | Dựng lưới ô nhịp để hợp âm đổi đúng chỗ |
 | 5 | Nhận diện giọng (key) | Suy ra từ kết quả hợp âm, hoặc dùng essentia/madmom | Đổi sang bậc La Mã, gợi ý capo, làm cơ sở cho bước làm mượt |
 | 6 | **Nhận diện hợp âm** | Kết hợp nhiều model, xem mục 5 | Đoán hợp âm theo thời gian |
@@ -583,7 +583,7 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     `yourmt3[vocals]>muscriptor_small`; file `melody_yourmt3_vocals.json`, `melody_vocals.json`; job
     `melody_yourmt3_vocals`, `melody_combo_vocals`). Bước `melody_separate`: `separation._run_roformer` ghi
     `vocals.wav` + `instrumental.wav` vào `data/cache/<id>/` qua `separation.separate_vocals` (pipeline hợp âm sẽ dùng
-    lại; xóa bass/no_bass cũ như `separate()`; đã có thì không tách lại, trừ `force`). YourMT3+ trên stem (đầu ra thô `melody_raw/yourmt3_vocals.npz`, dùng chung hai bản tách giọng);
+    lại; đã có thì không tách lại, trừ `force`). YourMT3+ trên stem (đầu ra thô `melody_raw/yourmt3_vocals.npz`, dùng chung hai bản tách giọng);
     cổng giọng = nốt `voice` của YourMT3+ trên stem nới 0,6 s; ngoài cổng YourMT3+ trên mix (bước
     `melody_voice_mix`) hoặc MuScriptor small. Tham số chép theo bản ghép, **chưa chấm điểm** trên bộ eval.
   - Đo thật trên Let It Be (243 s, file cục bộ, chưa có đầu ra thô nào): bản YourMT3+ tách giọng 109 s = tách giọng
@@ -657,6 +657,16 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   không đổi, F phách mạnh 0,875 → 0,886 (tốt hơn 15 bài, kém 3), ô đúng nhịp 0,918 → 0,994. Bài trên: 81/81 ô 4 phách.
   - ⚠️ Đánh đổi: đoạn gấp đôi tốc độ thật (bridge Here Comes the Sun, đáp án ghi phách 0,22 s) cũng bị bỏ cách một
     phách (F phách bài đó 0,973 → 0,948). Không phân biệt được với lỗi của model chỉ từ khoảng cách phách.
+
+- [x] Dọn model không dùng (2026-11-14, người dùng quyết định): **xóa hẳn HTDemucs và consonance-ACE** khỏi mã, eval,
+  `fetch_models.py` (bỏ `--extra`) và `requirements/separation.txt` (bỏ gói `demucs`). Fusion bỏ nhánh stem bass
+  (`bass_source` chỉ còn `"none"`/`"cnn"`, bỏ `stem_weight`, `fuse()` không còn tham số `bass_audio`); `Stems` bỏ
+  `bass`/`no_bass`. Kết quả hợp âm mặc định không đổi (Let It Be: 130 hợp âm giống hệt). Các bảng cũ dùng stem bass
+  hoặc consonance-ACE ở các mục dưới không tái lập được nữa.
+  - `fetch_models.py` xóa thư mục `.git` của repo model sau khi checkout và kiểm SHA-256 (chord-cnn-lstm 57 → 31 MB;
+    ChordFormer clone đủ lịch sử còn chứa weights cũ). YourMT3+ vốn đã bỏ qua file LFS khi clone: bản sao checkpoint
+    536 MB trong `third_party_src/YourMT3/.git` chỉ có trên máy đã cài từ thời đầu.
+  - Tên cách dò giai điệu "Nhanh" đổi hẳn thành "Bình thường" trong `setup.ps1` và `fetch_models.py`.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
@@ -828,7 +838,7 @@ K = Kajiura theo thời gian (25 bài), F1 chuỗi trên 32 bài; B = Beatles (4
 
 **Mặc định mới của `FusionParams`:** `cnn_weight=0.6, mix_level="family", quality_weight=1.0, smoothing="hmm",
 self_prob=0.7, min_duration=0.25, bass_source="cnn", bass_threshold=0.5`. Khi bật `--separation`, pipeline đổi
-`bass_source` thành "both" (trộn 0.3 stem bass).
+`bass_source` thành "both" (trộn 0.3 stem bass). (Đã bỏ cùng HTDemucs ngày 2026-11-14: `--separation` giờ chỉ tách giọng.)
 
 **Đối chiếu với mục tiêu:**
 - *Không kém CNN-LSTM một mình trên Kajiura:* **chưa đạt, kém ít.** Điểm CV kém 0.48 mean4 (majmin −0.27,

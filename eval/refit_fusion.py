@@ -239,8 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     baselines = [
         ("CNN-LSTM một mình", {"kind": "cnnlstm", "src": "mix"}),
         ("ChordMini một mình", {"kind": "chordmini", "src": "mix"}),
-        ("fuse cũ (mặc định cũ, có stem bass)", fusion_cfg(**OLD_DEFAULTS)),
-        ("fuse cũ, bass CNN-LSTM (không tách nguồn)", fusion_cfg(**{**OLD_DEFAULTS, "bass_source": "cnn"})),
+        ("fuse cũ, bass CNN-LSTM (bỏ stem bass, khác bảng cũ trong PLAN.md)", fusion_cfg(**OLD_DEFAULTS)),
     ]
     base_scores = Scores([c for _, c in baselines], beatles + kajiura, args.jobs)
     rows = []

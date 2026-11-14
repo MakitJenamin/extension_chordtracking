@@ -13,10 +13,9 @@ from the authors' repositories at the pinned commits. The MIT license of this pr
 | Chord-CNN-LSTM — Junyan Jiang et al. (Music X Lab), ISMIR 2019 | Nhận hợp âm, nốt bass (hợp âm đảo) | [ptnghia-j/chord-cnn-lstm-model](https://github.com/ptnghia-j/chord-cnn-lstm-model) | `35619f7` | MIT |
 | ChordFormer — Akram, Dettori, Colla, Buttazzo, IEEE TASLP 2026 | Nhận hợp âm, nốt bass | [mwaseemrandhawa/ChordFormer](https://github.com/mwaseemrandhawa/ChordFormer) | mã `77bec51`, weights `0d1071a` | ⚠️ không có license |
 | Beat This! — Foscarin, Schlüter, Widmer (CPJKU), ISMIR 2024 | Bắt nhịp, phách mạnh | [CPJKU/beat_this](https://github.com/CPJKU/beat_this) | `b95c8ab` | MIT |
-| consonance-ACE — Poltronieri, Serra, Rocamora, ISMIR 2025 | Chỉ dùng cho đánh giá (`--extra`) | [andreamust/consonance-ACE](https://github.com/andreamust/consonance-ACE) | `d17633a` | MIT |
 | YourMT3+ (`YPTF.MoE+Multi (noPS)`) — Chang, Dixon, Benetos, MLSP 2024 | Dò giai điệu, cách "Bình thường" và phần hát của "Kỹ" (cài mặc định, không cần tài khoản) | [HF Space mimbres/YourMT3](https://huggingface.co/spaces/mimbres/YourMT3); transformers 4.45.1 cài riêng ở `third_party_src/YourMT3_pydeps` | `5e66c1e` | Apache-2.0 (mã và checkpoint trong Space) |
 | MuScriptor small — Kyutai + Mirelo, 2026 | Dò giai điệu nhạc cụ ngoài đoạn hát, chỉ cách "Kỹ" (tùy chọn, cần tài khoản Hugging Face) | mã [muscriptor/muscriptor](https://github.com/muscriptor/muscriptor), weights [HF MuScriptor/muscriptor-small](https://huggingface.co/MuScriptor/muscriptor-small) (gated) | mã `8a1ef88` | mã MIT; ⚠️ weights **CC BY-NC 4.0** |
-| BS-Roformer, HTDemucs (qua audio-separator, demucs) | BS-Roformer: tách giọng trước khi dò giai điệu (cài cùng dò giai điệu); tách nguồn cho hợp âm tắt mặc định | PyPI / Hugging Face | | xem từng gói |
+| BS-Roformer (qua audio-separator) | Tách giọng trước khi dò giai điệu (cài cùng dò giai điệu) | PyPI / Hugging Face | | xem gói |
 
 ## ⚠️ MuScriptor: CC BY-NC 4.0, cần đăng nhập Hugging Face
 
