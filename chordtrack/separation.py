@@ -1,12 +1,9 @@
-"""Bước 2 và 3 của pipeline: tách giọng (BS-Roformer) rồi tách bass (HTDemucs).
+"""Tách giọng bằng BS-Roformer (dò giai điệu bản tách giọng, và pipeline hợp âm khi bật `use_separation`).
 
     mix.wav ──BS-Roformer-Viperx-1297──► vocals.wav, instrumental.wav
-    instrumental.wav ──HTDemucs──► bass.wav, no_bass.wav (drums + other [+ guitar, piano])
 
-Mỗi bước bỏ qua nếu đầu ra đã có (cache). Khi một bước chạy lại thì đầu ra của các bước sau
-bị xóa để chạy lại theo. Mỗi model chạy trong `gpu_lock()` riêng; tải weights, đọc audio và
-nạp model lên CPU làm trước khi lấy khóa. Thời gian và VRAM đỉnh của từng bước ghi vào
-`separation_stats.json`.
+Mỗi bước bỏ qua nếu đầu ra đã có (cache). Model chạy trong `gpu_lock()`; tải weights và nạp model
+làm trước khi lấy khóa. Thời gian và VRAM đỉnh ghi vào `separation_stats.json`.
 """
 from __future__ import annotations
 
@@ -21,10 +18,7 @@ import time
 import warnings
 from pathlib import Path
 
-import numpy as np
-import soundfile as sf
-
-from chordtrack.gpu import device, gpu_lock
+from chordtrack.gpu import gpu_lock
 from chordtrack.paths import MODELS_DIR
 from chordtrack.types import Stems
 
@@ -33,9 +27,9 @@ log = logging.getLogger(__name__)
 SAMPLE_RATE = 44100
 ROFORMER_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"  # BS-Roformer-Viperx-1297
 ROFORMER_FRIENDLY_NAME = "Roformer Model: BS-Roformer-Viperx-1297"
-DEMUCS_MODEL = "htdemucs_ft"
-DEMUCS_SEGMENT = None  # None = độ dài mặc định của model (7.8 s), vừa 8 GB VRAM
 STATS_FILE = "separation_stats.json"
+# Stem HTDemucs của bản cũ (đã bỏ): xóa khi gặp để cache không giữ mãi.
+LEGACY_STEMS = ("bass.wav", "no_bass.wav")
 
 
 def separate(audio_path: Path, out_dir: Path) -> Stems:
@@ -46,31 +40,25 @@ def separate(audio_path: Path, out_dir: Path) -> Stems:
         mix=out_dir / "mix.wav",
         vocals=out_dir / "vocals.wav",
         instrumental=out_dir / "instrumental.wav",
-        bass=out_dir / "bass.wav",
-        no_bass=out_dir / "no_bass.wav",
     )
     vocal_step = [stems.vocals, stems.instrumental]
-    bass_step = [stems.bass, stems.no_bass]
+    _remove([out_dir / n for n in LEGACY_STEMS])
     stats = _load_stats(out_dir)
 
     source = _source_id(audio_path)
     if source is not None and stats.get("source") not in (None, source):
         log.warning("%s đang chứa kết quả của file khác (%s), tách lại", out_dir, stats["source"])
-        _remove([stems.mix, *vocal_step, *bass_step])
+        _remove([stems.mix, *vocal_step])
         stats = {}
 
     if not stems.mix.exists():
-        _remove([*vocal_step, *bass_step])
+        _remove(vocal_step)
         t0 = time.perf_counter()
         normalize_audio(audio_path, stems.mix)
         stats = {"source": source, "normalize": {"seconds": round(time.perf_counter() - t0, 2)}}
 
     if not all(p.exists() for p in vocal_step):
-        _remove(bass_step)
         stats["roformer"] = _run_roformer(stems.mix, stems.vocals, stems.instrumental)
-
-    if not all(p.exists() for p in bass_step):
-        stats["demucs"] = _run_demucs(stems.instrumental, stems.bass, stems.no_bass)
 
     (out_dir / STATS_FILE).write_text(json.dumps(stats, indent=2), encoding="utf-8")
     log.info("separation stats: %s", stats)
@@ -79,15 +67,13 @@ def separate(audio_path: Path, out_dir: Path) -> Stems:
 
 def separate_vocals(out_dir: Path) -> dict:
     """Chỉ chạy bước BS-Roformer trên `out_dir/mix.wav` (đã chuẩn hóa), ghi `vocals.wav` và `instrumental.wav` như
-    `separate()` để lần phân tích hợp âm sau dùng lại. Dùng cho dò giai điệu bản tách giọng. Như `separate()`: bass
-    tách từ instrumental cũ bị xóa, thống kê thêm mục `roformer` vào `separation_stats.json` (giữ các mục khác,
-    kể cả `source`). Trả thống kê của bước Roformer."""
+    `separate()` để lần phân tích hợp âm sau dùng lại. Dùng cho dò giai điệu bản tách giọng. Thống kê thêm mục
+    `roformer` vào `separation_stats.json` (giữ các mục khác, kể cả `source`). Trả thống kê của bước Roformer."""
     out_dir = Path(out_dir)
     mix = out_dir / "mix.wav"
-    _remove([out_dir / "bass.wav", out_dir / "no_bass.wav"])
+    _remove([out_dir / n for n in LEGACY_STEMS])
     stats = _run_roformer(mix, out_dir / "vocals.wav", out_dir / "instrumental.wav")
     all_stats = _load_stats(out_dir)
-    all_stats.pop("demucs", None)
     all_stats["roformer"] = stats
     (out_dir / STATS_FILE).write_text(json.dumps(all_stats, indent=2), encoding="utf-8")
     return stats
@@ -173,66 +159,6 @@ def use_local_model_files(sep) -> None:
     sep.download_model_files = download_model_files
 
 
-def load_demucs(name: str = DEMUCS_MODEL):
-    """Tải HTDemucs từ HuggingFace vào MODELS_DIR (không dùng cache mặc định trong ~)."""
-    from demucs.apply import BagOfModels
-    from demucs.hf import DEFAULT_NAMESPACE, hf_repo_name, load_safetensors_model
-    from huggingface_hub import hf_hub_download
-    import yaml
-
-    repo_id = f"{DEFAULT_NAMESPACE}/{hf_repo_name(name)}"
-    local = MODELS_DIR / "demucs" / name
-
-    def fetch(filename: str) -> str:
-        # Đã có file thì đọc thẳng, không gửi request lên Hub (chạy được khi offline).
-        p = local / filename
-        return str(p) if p.exists() else hf_hub_download(repo_id, filename, local_dir=local)
-
-    with open(fetch(f"{name}.yaml")) as f:
-        bag = yaml.safe_load(f)
-    models = [load_safetensors_model(fetch(f"{sig}.safetensors")) for sig in bag["models"]]
-    model = BagOfModels(models, bag.get("weights"), bag.get("segment"))
-    model.eval()
-    return model
-
-
-def _run_demucs(instrumental: Path, bass: Path, no_bass: Path) -> dict:
-    import torch
-    from demucs.apply import apply_model
-
-    data, sr = sf.read(str(instrumental), dtype="float32", always_2d=True)
-    if sr != SAMPLE_RATE:
-        raise ValueError(f"{instrumental} có sample rate {sr}, cần {SAMPLE_RATE}")
-    wav = torch.from_numpy(data.T.copy())
-    if wav.shape[0] == 1:
-        wav = wav.repeat(2, 1)
-    # Chuẩn hóa như CLI của demucs, rồi trả lại mức ban đầu
-    ref = wav.mean(0)
-    mean, std = ref.mean(), ref.std() + 1e-8
-    model = load_demucs()  # nạp lên CPU trước khi lấy khóa GPU
-    sources = list(model.sources)  # htdemucs_ft: drums, bass, other, vocals
-    result = {}
-
-    def run():
-        try:
-            with torch.no_grad():
-                out = apply_model(model, ((wav - mean) / std)[None], device=device(), shifts=1,
-                                  split=True, overlap=0.25, segment=DEMUCS_SEGMENT, progress=False)[0]
-            result["out"] = (out * std + mean).cpu().numpy()  # (S, C, T)
-        finally:
-            model.cpu()
-
-    stats = _gpu_step(run)
-    del model
-    out = result["out"]
-    # no_bass = mọi nhạc cụ trừ bass. Bỏ stem "vocals" vì đó là phần giọng còn sót sau Roformer.
-    keep = [i for i, s in enumerate(sources) if s not in ("bass", "vocals")]
-    # no_bass ghi trước: điều kiện cache là cả hai file cùng tồn tại
-    _write_wav(no_bass, out[keep].sum(0))
-    _write_wav(bass, out[sources.index("bass")])
-    return {**stats, "model": DEMUCS_MODEL}
-
-
 def _gpu_step(fn) -> dict:
     """Chạy fn trong gpu_lock(), đo thời gian chạy, thời gian chờ khóa và VRAM đỉnh."""
     t_wait = time.perf_counter()
@@ -255,12 +181,6 @@ def _temp_path(dst: Path):
         yield tmp
     finally:
         tmp.unlink(missing_ok=True)
-
-
-def _write_wav(path: Path, wav: np.ndarray) -> None:
-    with _temp_path(path) as tmp:
-        sf.write(str(tmp), wav.T, SAMPLE_RATE, subtype="FLOAT", format="WAV")
-        tmp.replace(path)
 
 
 def _remove(paths: list[Path]) -> None:

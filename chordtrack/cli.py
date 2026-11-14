@@ -1,6 +1,6 @@
 """CLI: python -m chordtrack.cli <videoId|url|file> [-o out.json] [--force] [--separation]
 
-Mặc định không tách nguồn (mọi model chạy trên mix); `--separation` bật BS-Roformer + HTDemucs.
+Mặc định không tách nguồn (mọi model chạy trên mix); `--separation` tách giọng bằng BS-Roformer để chạy model trên stem khác (`--chord-stem`, `--beat-stem`).
 `--no-separation` vẫn nhận để tương thích (giờ là mặc định).
 
 In bảng tóm tắt (giọng, các vùng giọng và chỗ đổi giọng kèm gợi ý transpose phím trắng, tempo,
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", help="bỏ qua kết quả đã cache, chạy lại")
     sep = parser.add_mutually_exclusive_group()
     sep.add_argument("--separation", dest="separation", action="store_true",
-                     help="bật tách nguồn (BS-Roformer + HTDemucs), trộn stem bass vào phần gán bass")
+                     help="tách giọng bằng BS-Roformer, cho phép chạy model trên stem vocals/instrumental")
     sep.add_argument("--no-separation", dest="separation", action="store_false",
                      help="không tách nguồn (mặc định, giữ để tương thích)")
     parser.set_defaults(separation=False)

@@ -302,7 +302,7 @@ def test_health_melody_flag(fake, tmp_path):
     with make_melody_client(fake, mel, tmp_path, start_worker=False) as c:
         h = c.get("/health").json()
         assert h["melody"] is True and h["melody_models"] == {"combo": True, "yourmt3": True}
-        # Thiếu MuScriptor small: "melody" vẫn true vì YourMT3+ (cách dò "Nhanh") chạy được.
+        # Thiếu MuScriptor small: "melody" vẫn true vì YourMT3+ (cách dò "Bình thường") chạy được.
         mel.ready = False
         h = c.get("/health").json()
         assert h["melody"] is True and h["melody_models"] == {"combo": False, "yourmt3": True}
@@ -333,7 +333,7 @@ def test_melody_variant_not_ready_409(fake, tmp_path):
         assert "Kỹ" in msg and "huggingface.co/MuScriptor/muscriptor-small" in msg and "hf.exe auth login" in msg
         assert "--muscriptor" in msg
         assert c.post("/melody", json={"source": VID}).status_code == 409        # không có model = ghép
-        # Cách dò "Nhanh" vẫn chạy; khóa không có trong melody_ready (server giả cũ) không bị chặn.
+        # Cách dò "Bình thường" vẫn chạy; khóa không có trong melody_ready (server giả cũ) không bị chặn.
         y3 = c.post("/melody", json={"source": VID, "model": "yourmt3"})
         assert y3.status_code == 200 and y3.json()["status"] in ("queued", "running", "done")
         assert c.post("/melody", json={"source": VID, "model": "yourmt3", "vocals": True}).status_code == 200

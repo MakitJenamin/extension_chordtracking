@@ -122,7 +122,7 @@ _MELODY_READY: list = [0.0, {}]     # (thời điểm kiểm tra, kết quả)
 MELODY_READY_TTL = 60.0             # giây; /health bị poll thường xuyên, chỉ kiểm tra file lại sau khoảng này
 MELODY_MISSING_TTL = 5.0            # khi còn thiếu model: kiểm tra lại sớm để thấy ngay model vừa tải thêm
 
-# Hướng dẫn khi biến thể chưa đủ model (lỗi 409 của POST /melody). Tên cách dò cho người dùng: "Nhanh" (yourmt3),
+# Hướng dẫn khi biến thể chưa đủ model (lỗi 409 của POST /melody). Tên cách dò cho người dùng: "Bình thường" (yourmt3),
 # "Kỹ" (combo), cùng câu với `MELODY_*_HINT` ở extension/src/theory.js.
 MELODY_SETUP_HINT = (r"Chạy lại cài đặt: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1, rồi khởi động "
                      "lại server.")

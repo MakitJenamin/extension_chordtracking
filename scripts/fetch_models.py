@@ -1,7 +1,6 @@
 """Tải mã nguồn và weights của các model hợp âm vào `third_party_src/`, đúng commit đã kiểm chứng.
 
     python scripts/fetch_models.py            # model pipeline cần: ChordMini, Chord-CNN-LSTM, ChordFormer, beat_this
-    python scripts/fetch_models.py --extra    # thêm consonance-ACE (chỉ dùng cho script đánh giá)
     python scripts/fetch_models.py --check    # chỉ kiểm tra, không tải
     python scripts/fetch_models.py --melody   # thêm model dò giai điệu: YourMT3+ (+ MuScriptor small nếu tải được)
     python scripts/fetch_models.py --muscriptor   # chỉ tải MuScriptor small (sau `hf auth login`)
@@ -16,7 +15,8 @@ Dò giai điệu (`--melody`, xem README, mục "Dò giai điệu"):
   chỉ in cảnh báo kèm cách bật, mã thoát vẫn 0 (YourMT3+ đủ để dò giai điệu); `--muscriptor` thì báo lỗi.
 
 Mọi weights đều nằm trong repo gốc của tác giả trên GitHub, nên chỉ cần `git clone` rồi checkout đúng commit.
-Sau khi tải, từng file weights được kiểm tra SHA-256.
+Sau khi tải, từng file weights được kiểm tra SHA-256, rồi thư mục `.git` bị xóa để tiết kiệm chỗ (lịch sử repo gốc,
+riêng ChordFormer còn chứa cả weights cũ). Muốn tải lại commit khác thì xóa thư mục trong `third_party_src/`.
 
 ChordFormer (github.com/mwaseemrandhawa/ChordFormer): repo không có license, và tác giả đã xóa thư mục checkpoint
 ở commit 77bec51. Weights lấy từ commit 0d1071a (lần phát hành đầu), như trên máy của tác giả dự án này.
@@ -45,7 +45,6 @@ class Repo:
     weights: dict[str, str]         # đường dẫn tương đối -> SHA-256
     weights_commit: str | None = None   # lấy thư mục weights từ commit khác (ChordFormer)
     weights_dir: str | None = None
-    extra: bool = False
     note: str = ""
     keep: list[str] = field(default_factory=list)
 
@@ -80,10 +79,6 @@ REPOS = [
         weights_commit="0d1071a130c3afbcc757d6d4b136d342d3746ea0", weights_dir="cache_data",
         note="không có license; weights lấy từ lịch sử repo (tác giả đã xóa)",
     ),
-    Repo(
-        "consonance-ACE", "https://github.com/andreamust/consonance-ACE.git", "d17633aea4e68e616e735d09df97b97ae3428e71",
-        {}, extra=True, note="MIT, chỉ dùng cho eval",
-    ),
 ]
 
 
@@ -113,12 +108,24 @@ def verify(repo: Repo, dest: Path) -> list[str]:
     return errors
 
 
+COMMIT_MARKER = ".chordtrack_commit"   # commit đã checkout, ghi lại vì .git bị xóa sau khi tải
+
+
+def _pinned(repo: Repo) -> str:
+    return f"{repo.commit} {repo.weights_commit or ''}".strip()
+
+
 def fetch(repo: Repo, dest: Path) -> None:
     if dest.exists() and not (dest / ".git").exists():
-        # Có thư mục nhưng không phải repo git (ví dụ đã xóa .git để tiết kiệm chỗ): chỉ chấp nhận khi đủ weights.
-        if not verify(repo, dest):
+        # Đã tải trước đó và xóa .git: dùng lại nếu đúng commit đang ghim và đủ weights, không thì tải lại từ đầu.
+        marker = dest / COMMIT_MARKER
+        recorded = marker.read_text(encoding="utf-8").strip() if marker.exists() else None
+        if recorded in (None, _pinned(repo)) and not verify(repo, dest):
+            if recorded is None:   # bản cài cũ chưa có marker nhưng weights đúng SHA-256
+                marker.write_text(_pinned(repo), encoding="utf-8")
             return
-        raise SystemExit(f"{dest} có sẵn nhưng thiếu hoặc sai weights. Xóa thư mục này rồi chạy lại.")
+        print(f"   {dest.name}: khác commit đang ghim hoặc thiếu weights, tải lại", flush=True)
+        shutil.rmtree(dest, onerror=_force_writable)
     if not dest.exists():
         git("clone", "--no-checkout", repo.url, str(dest))
     git("fetch", "--quiet", "origin", repo.commit, cwd=dest)
@@ -127,6 +134,27 @@ def fetch(repo: Repo, dest: Path) -> None:
         git("fetch", "--quiet", "origin", repo.weights_commit, cwd=dest)
         git("checkout", "--quiet", repo.weights_commit, "--", repo.weights_dir, cwd=dest)
         git("reset", "--quiet", cwd=dest)   # bỏ khỏi index, giữ file trong thư mục
+    if not verify(repo, dest):
+        (dest / COMMIT_MARKER).write_text(_pinned(repo), encoding="utf-8")
+        remove_git_dir(dest)
+
+
+def _force_writable(func, path, _exc):
+    """onerror của rmtree: file trong .git/objects là chỉ đọc trên Windows."""
+    import stat
+
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def remove_git_dir(repo_dir: Path) -> None:
+    """Xóa `.git` sau khi đã checkout xong để tiết kiệm chỗ. Không xóa được (file bị khóa) thì chỉ cảnh báo."""
+    if not (repo_dir / ".git").exists():
+        return
+    try:
+        shutil.rmtree(repo_dir / ".git", onerror=_force_writable)
+    except OSError as e:
+        print(f"   Cảnh báo: không xóa được {repo_dir / '.git'} ({e}); vẫn dùng được, chỉ tốn thêm chỗ.", flush=True)
 
 
 YOURMT3_SPACE = "mimbres/YourMT3"
@@ -137,7 +165,7 @@ YOURMT3_PYDEPS = ["transformers==4.45.1", "huggingface_hub==0.36.2", "tokenizers
 
 
 MUSCRIPTOR_REPO_URL = "https://huggingface.co/MuScriptor/muscriptor-small"
-MUSCRIPTOR_STEPS = rf"""   MuScriptor small chỉ cần cho cách dò "Kỹ". Cách dò "Nhanh" (YourMT3+) không cần bước này.
+MUSCRIPTOR_STEPS = rf"""   MuScriptor small chỉ cần cho cách dò "Kỹ". Cách dò "Bình thường" (YourMT3+) không cần bước này.
    Muốn bật "Kỹ" (weights CC BY-NC 4.0, chỉ dùng phi thương mại):
      1. Tạo tài khoản Hugging Face, tạo access token loại Read ở https://huggingface.co/settings/tokens
      2. Mở {MUSCRIPTOR_REPO_URL}, đăng nhập và bấm đồng ý điều khoản (Agree and access repository)
@@ -155,6 +183,10 @@ def fetch_yourmt3(check: bool) -> list[str]:
     src = yourmt3.SRC_DIR
     if not check:
         try:
+            marker = src / COMMIT_MARKER
+            if (src / "model_helper.py").exists() and not (src / ".git").exists() and marker.exists()                     and marker.read_text(encoding="utf-8").strip() != YOURMT3_COMMIT:
+                print("   YourMT3: khác commit đang ghim, tải lại mã", flush=True)
+                shutil.rmtree(src, onerror=_force_writable)
             if not (src / "model_helper.py").exists():
                 if src.exists() and not (src / ".git").exists():
                     raise RuntimeError(f"{src} có sẵn nhưng không phải repo git. Xóa thư mục này rồi chạy lại.")
@@ -165,6 +197,8 @@ def fetch_yourmt3(check: bool) -> list[str]:
                 # core.longpaths: Space có thư mục `amt/logs/2024/<tên ~70 ký tự>/`, vượt 260 ký tự khi repo nằm sâu.
                 subprocess.run(["git", "-c", "core.longpaths=true", "checkout", "--quiet", "--force", YOURMT3_COMMIT],
                                cwd=src, check=True, env=env)
+                marker.write_text(YOURMT3_COMMIT, encoding="utf-8")
+                remove_git_dir(src)
             ckpt = yourmt3.CHECKPOINT
             if not ckpt.exists() or sha256(ckpt) != yourmt3.CHECKPOINT_SHA256:
                 download_yourmt3_checkpoint(ckpt)
@@ -294,7 +328,7 @@ def fetch_melody(check: bool, muscriptor_only: bool = False, muscriptor_required
     status, problems = fetch_muscriptor(check)
     if status != "ok":
         print("\nCẢNH BÁO: chưa có MuScriptor small, cách dò \"Kỹ\" sẽ bị tắt trong extension "
-              "(không ảnh hưởng cách dò \"Nhanh\").", flush=True)
+              "(không ảnh hưởng cách dò \"Bình thường\").", flush=True)
         print(MUSCRIPTOR_STEPS, flush=True)
         if muscriptor_required:
             errors += problems
@@ -309,7 +343,6 @@ def fetch_beat_this() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--extra", action="store_true", help="tải thêm consonance-ACE (chỉ dùng cho đánh giá)")
     ap.add_argument("--check", action="store_true", help="chỉ kiểm tra, không tải")
     ap.add_argument("--no-beat-this", action="store_true", help="không tải checkpoint beat_this")
     ap.add_argument("--melody", action="store_true",
@@ -335,8 +368,6 @@ def main(argv: list[str] | None = None) -> int:
     THIRD_PARTY.mkdir(parents=True, exist_ok=True)
     failed = []
     for repo in REPOS:
-        if repo.extra and not args.extra:
-            continue
         dest = THIRD_PARTY / repo.name
         if not args.check:
             print(f"== {repo.name} ({repo.note})", flush=True)

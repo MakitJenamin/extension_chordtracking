@@ -6,7 +6,7 @@ Checkpoint: `YPTF.MoE+Multi (noPS)` (mặc định của demo trên Space), file
 `data/models/yourmt3/YPTF.MoE+Multi_noPS_last.ckpt`.
 
 Phụ thuộc: YourMT3 cần transformers 4.45.1, bản này đòi huggingface_hub < 1.0, trong khi venv đang có
-huggingface_hub 2.x (demucs, muscriptor dùng). Vì vậy transformers 4.45.1, huggingface_hub 0.36.2, tokenizers và regex
+huggingface_hub 2.x (muscriptor dùng). Vì vậy transformers 4.45.1, huggingface_hub 0.36.2, tokenizers và regex
 được cài riêng vào `third_party_src/YourMT3_pydeps` (`pip install --no-deps --target`) và chỉ được thêm vào đầu
 `sys.path` khi nạp model. Hệ quả: trong cùng một tiến trình không nạp được YourMT3 nếu huggingface_hub 2.x đã được
 import trước (hàm `_load_model` báo lỗi rõ ràng). Chạy YourMT3 trong tiến trình riêng (`python -m eval.melody.cache_yourmt3`).

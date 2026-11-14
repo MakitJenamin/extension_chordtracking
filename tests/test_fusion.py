@@ -84,22 +84,9 @@ def test_assign_bass_per_segment_and_per_beat():
 
 def test_bass_distribution_sources():
     cnn = np.tile(np.eye(12)[0], (5, 1))
-    chroma = np.tile(np.eye(12)[7] * 10, (5, 1))
-    p = F.FusionParams(bass_source="both", stem_weight=0.5)
-    d = F.bass_distribution(cnn, chroma, p)
-    assert d[0, 0] == pytest.approx(0.5) and d[0, 7] == pytest.approx(0.5)
-    assert F.bass_distribution(cnn, chroma, F.FusionParams(bass_source="none")) is None
-    assert np.argmax(F.bass_distribution(cnn, chroma, F.FusionParams(bass_source="stem"))[0]) == 7
-    # thiếu một nguồn thì dùng nguồn còn lại
-    assert np.argmax(F.bass_distribution(None, chroma, p)[0]) == 7
-
-
-def test_stem_bass_probs_silence_is_uniform():
-    chroma = np.zeros((4, 12))
-    chroma[:3, 9] = 1.0
-    p = F.stem_bass_probs(chroma)
-    assert p[0, 9] == pytest.approx(1.0)
-    np.testing.assert_allclose(p[3], np.full(12, 1 / 12))
+    assert F.bass_distribution(cnn, F.FusionParams(bass_source="none")) is None
+    assert F.bass_distribution(cnn, F.FusionParams(bass_source="cnn")) is cnn
+    assert F.bass_distribution(None, F.FusionParams(bass_source="cnn")) is None
 
 
 # ---------------------------------------------------------------- ánh xạ và trộn
@@ -210,7 +197,7 @@ def test_fuse_synthetic_progression_with_inversion(smoothing):
     models = _synthetic_models()
     beats = BeatGrid(np.arange(0.0, 16.0, 1.0), np.arange(0.0, 16.0, 4.0), 60.0)
     p = F.FusionParams(cnn_weight=0.3, smoothing=smoothing, bass_source="cnn", bass_threshold=0.5)
-    out = F.fuse(models, beats, None, duration, params=p)
+    out = F.fuse(models, beats, duration, params=p)
     _covers(out, duration)
     labels = [s.label for s in out]
     assert labels[:4] == ["C:maj/5", "G:maj", "A:min", "F:maj"]
@@ -221,34 +208,17 @@ def test_fuse_synthetic_progression_with_inversion(smoothing):
 
 def test_fuse_default_params_and_missing_inputs():
     models = _synthetic_models()
-    out = F.fuse(models, None, None, 16.0)
+    out = F.fuse(models, None, 16.0)
     _covers(out, 16.0)
     # chỉ có CNN-LSTM: dùng từ vựng của nó (đã có hợp âm đảo)
-    out = F.fuse({"cnnlstm": models["cnnlstm"]}, None, None, 16.0)
+    out = F.fuse({"cnnlstm": models["cnnlstm"]}, None, 16.0)
     _covers(out, 16.0)
     assert out[0].label == "C:maj/5"
     # không có xác suất theo khung: lấp khoảng trống cho đoạn sẵn có
     seg_only = ChordModelOutput("x", [ChordSegment(1.0, 2.0, "C:maj", 0.7)])
-    out = F.fuse({"chordmini": seg_only}, None, None, 3.0)
+    out = F.fuse({"chordmini": seg_only}, None, 3.0)
     _covers(out, 3.0)
     assert [s.label for s in out] == ["N", "C:maj", "N"]
-
-
-def test_fuse_with_bass_stem_file(tmp_path):
-    import soundfile as sf
-
-    sr = 11025
-    t = np.arange(int(sr * 8.0)) / sr
-    # 0–4 s bass G2 (98 Hz) dưới hợp âm C -> C/G; 4–8 s bass G2 dưới G -> G (nốt gốc)
-    y = 0.5 * np.sin(2 * np.pi * 98.0 * t)
-    sf.write(tmp_path / "bass.wav", y, sr)
-    plan = [("C:maj", 4.0), ("G:maj", 4.0)]
-    t_cm, p_cm = _one_hot_track(plan, F.FRAME_HOP, CM_VOCAB)
-    models = {"chordmini": _model("chordmini_btc", t_cm, p_cm, CM_VOCAB)}
-    p = F.FusionParams(smoothing="hmm", bass_source="stem", bass_threshold=0.3)
-    out = F.fuse(models, None, tmp_path / "bass.wav", 8.0, params=p)
-    _covers(out, 8.0)
-    assert [s.label for s in out] == ["C:maj/5", "G:maj"]
 
 
 # ---------------------------------------------------------------- các lỗi đã sửa sau review
@@ -290,7 +260,7 @@ def test_beats_outside_song_fall_back_to_frames():
 
 def test_invalid_bass_source_raises():
     with pytest.raises(ValueError):
-        F.bass_distribution(None, None, F.FusionParams(bass_source="stems"))
+        F.bass_distribution(None, F.FusionParams(bass_source="stem"))
 
 
 def test_family_mix_quality_weight():
@@ -391,10 +361,10 @@ def test_model_bass_sources():
 def test_default_uses_chordformer_and_fuse_runs():
     assert F.uses_chordformer(F.DEFAULT_PARAMS)
     assert not F.uses_chordformer(F.FusionParams(cf_weight=0.0, bass_model="cnnlstm"))
-    assert not F.uses_chordformer(F.FusionParams(cf_weight=0.0, bass_source="stem"))   # bass không lấy từ model
+    assert not F.uses_chordformer(F.FusionParams(cf_weight=0.0, bass_source="none"))   # bass không lấy từ model
     assert not F.uses_chordformer(F.FusionParams(mix_level="full", bass_model="cnnlstm"))
     times, models = _three_models()
-    segs = F.fuse(models, None, None, float(times[-1] + F.FRAME_HOP / 2))
+    segs = F.fuse(models, None, float(times[-1] + F.FRAME_HOP / 2))
     assert segs and segs[0].label.startswith("C:")
     # mix_level="full" vẫn chạy (bỏ qua ChordFormer), không báo lỗi
-    assert F.fuse(models, None, None, float(times[-1] + F.FRAME_HOP / 2), F.FusionParams(mix_level="full"))
+    assert F.fuse(models, None, float(times[-1] + F.FRAME_HOP / 2), F.FusionParams(mix_level="full"))

@@ -1,9 +1,9 @@
-"""Cache xác suất của ChordFormer và consonance-ACE trên **mix** cho cả hai bộ đánh giá.
+"""Cache xác suất của ChordFormer trên **mix** cho cả hai bộ đánh giá.
 
     python -m eval.cache_new_models [--only NAME ...] [--force]
 
-Ghi ra `<thư mục đặc trưng>/<tên>.new_models.pkl` (dict "version", "models": {"chordformer_mix",
-"consonance_mix"}, "timings"), cạnh file `<tên>.pkl` của `eval.cache_features` / `eval.ablation_kajiura
+Ghi ra `<thư mục đặc trưng>/<tên>.new_models.pkl` (dict "version", "models": {"chordformer_mix"},
+"timings"), cạnh file `<tên>.pkl` của `eval.cache_features` / `eval.ablation_kajiura
 cache`. `eval.ablation.Song` tự đọc file này nếu có. Cần đặc trưng gốc (để biết thư mục stem có mix.wav).
 """
 from __future__ import annotations
@@ -46,7 +46,6 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     from chordtrack.chords.chordformer import run_chordformer
-    from chordtrack.chords.consonance import run_consonance
     from eval.evaluate import _utf8_console
 
     _utf8_console()
@@ -68,9 +67,6 @@ def main(argv: list[str] | None = None) -> int:
             t = time.perf_counter()
             models["chordformer_mix"] = _compact(run_chordformer(mix))
             timings["chordformer_mix"] = time.perf_counter() - t
-            t = time.perf_counter()
-            models["consonance_mix"] = _compact(run_consonance(mix))
-            timings["consonance_mix"] = time.perf_counter() - t
         except Exception:
             traceback.print_exc()
             failed.append(name)

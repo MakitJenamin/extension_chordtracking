@@ -6,7 +6,8 @@
 `cache` dùng `eval.cache_features.extract` (mỗi bước GPU tự lấy `gpu_lock()`), stem ở
 `CACHE_DIR/kajiura_<tên>/`, đặc trưng ở `EVAL_DIR/kajiura/features/<tên>.pkl`.
 
-Mọi phương án dùng bộ tham số mặc định **cũ** của `FusionParams` (`OLD_DEFAULTS`, chọn chỉ trên Beatles),
+Mọi phương án dùng bộ tham số mặc định **cũ** của `FusionParams` (`OLD_DEFAULTS`, chọn chỉ trên Beatles, nay bỏ phần
+stem bass HTDemucs nên số không khớp bảng cũ trong PLAN.md),
 không chỉnh lại trên Kajiura, nên đây là phép thử chuyển giao. Bộ mặc định mới chọn trên cả hai bộ ở
 `eval/refit_fusion.py`:
  1  ChordMini trên mix
@@ -14,9 +15,8 @@ không chỉnh lại trên Kajiura, nên đây là phép thử chuyển giao. B�
  3a CNN-LSTM trên mix,  3b CNN-LSTM trên instrumental
  4  fuse() trên mix, bass chỉ từ CNN-LSTM (`bass_source="cnn"`)   <- không cần tách nguồn
  4b fuse() trên mix, không gán bass                               <- không cần tách nguồn
- 5  fuse() trên mix, bass CNN-LSTM + stem bass (mặc định cũ)
- 6  fuse() chạy model trên instrumental, bass cả hai nguồn
- 7  fuse() trộn đặc trưng mix và instrumental (trung bình log xác suất hợp âm), bass cả hai nguồn
+ 6  fuse() chạy model trên instrumental, bass CNN-LSTM
+ 7  fuse() trộn đặc trưng mix và instrumental (trung bình log xác suất hợp âm), bass CNN-LSTM
  8  thăm dò: như 4 nhưng trọng số CNN-LSTM 0.65, trộn trên cả 170 nhãn (CNN-LSTM một mình tốt hơn fuse
     mặc định trên Kajiura). Chỉ để tham khảo; chọn tham số trên chính bộ này thì lạc quan.
 
@@ -92,7 +92,7 @@ def cache(only: list[str] | None, force: bool = False) -> int:
 # ---------------------------------------------------------------- dữ liệu một bài
 
 class KajiuraSong(Song):
-    """Như `eval.ablation.Song` nhưng đọc đặc trưng và chroma stem bass trong thư mục Kajiura."""
+    """Như `eval.ablation.Song` nhưng đọc đặc trưng trong thư mục Kajiura."""
 
     def __init__(self, name: str):  # noqa: D401 - không gọi Song.__init__ (đường dẫn khác)
         with open(features_path(name), "rb") as f:
@@ -107,25 +107,11 @@ class KajiuraSong(Song):
         self.times = F.frame_grid(self.duration)
         self._cache: dict = {}
 
-    def stem_chroma(self) -> np.ndarray:
-        if "stem" not in self._cache:
-            path = FEATURES_DIR / f"{self.name}.bass_chroma.npz"
-            if path.exists():
-                d = np.load(path)
-                t, c = d["times"], d["chroma"]
-            else:
-                t, c = F.bass_chroma(self.stems_dir / "bass.wav")
-                c = c.astype(np.float32)
-                tmp = path.with_name(path.stem + ".part.npz")   # ghi tạm rồi đổi tên, tránh file hỏng
-                np.savez_compressed(tmp, times=t, chroma=c)
-                tmp.replace(path)
-            self._cache["stem"] = F.resample_probs(t, c, self.times)
-        return self._cache["stem"]
 
-
-# Bộ mặc định cũ của `FusionParams` (trước khi chọn lại trên Beatles + Kajiura), giữ để bảng cũ tái lập được.
+# Bộ mặc định cũ của `FusionParams` (trước khi chọn lại trên Beatles + Kajiura). Bộ gốc trộn thêm stem bass
+# HTDemucs (`bass_source="both"`, `stem_weight=0.3`); HTDemucs đã bỏ nên ở đây bass chỉ lấy từ CNN-LSTM.
 OLD_DEFAULTS = dict(cnn_weight=0.35, mix_level="family", quality_weight=0.0, smoothing="hmm", self_prob=0.8,
-                    min_duration=0.25, bass_source="both", stem_weight=0.3, bass_threshold=0.4, bass_per_beat=False)
+                    min_duration=0.25, bass_source="cnn", bass_threshold=0.4, bass_per_beat=False)
 
 
 def _fusion_cfg(src: str, **params) -> dict:
@@ -141,8 +127,7 @@ VARIANTS: list[tuple[str, dict]] = [
     ("3b CNN-LSTM instrumental", {"kind": "cnnlstm", "src": "inst"}),
     ("4 fuse mix, bass CNN-LSTM (không tách nguồn)", _fusion_cfg("mix", bass_source="cnn")),
     ("4b fuse mix, không bass (không tách nguồn)", _fusion_cfg("mix", bass_source="none")),
-    ("5 fuse mix, bass CNN-LSTM + stem (mặc định cũ)", _fusion_cfg("mix")),
-    ("6 fuse instrumental, bass cả hai", _fusion_cfg("inst")),
+    ("6 fuse instrumental, bass CNN-LSTM", _fusion_cfg("inst")),
     ("7 fuse trộn mix + instrumental", {"kind": "fusion_both", "src": "mix", "params": _fusion_cfg("mix")["params"]}),
     # Thăm dò (không phải mặc định): tăng trọng số CNN-LSTM, trộn trên cả 170 nhãn, không tách nguồn.
     ("8 fuse mix, CNN-LSTM 0.65 cả 170 nhãn, bass CNN-LSTM (thăm dò)",
@@ -157,10 +142,8 @@ def predict_variant(song: Song, cfg: dict) -> list[ChordSegment]:
     a = song.chord("mix", p.cnn_weight, p.mix_level, p.quality_weight)
     b = song.chord("inst", p.cnn_weight, p.mix_level, p.quality_weight)
     probs = F.mix_log(a, b, 0.5)
-    stem = song.stem_chroma() if p.bass_source in ("stem", "both") else None
-    cnn_bass = song.cnn_bass("mix") if p.bass_source in ("cnn", "both") else None
-    return F.fuse_probs(probs, song.vocab("mix"), song.times, song.beats, song.duration, p,
-                        cnn_bass=cnn_bass, stem_chroma=stem)
+    cnn_bass = song.cnn_bass("mix") if p.bass_source == "cnn" else None
+    return F.fuse_probs(probs, song.vocab("mix"), song.times, song.beats, song.duration, p, cnn_bass=cnn_bass)
 
 
 # ---------------------------------------------------------------- chấm điểm
@@ -216,13 +199,10 @@ def time_weighted_diff(ra: dict, rb: dict, names: list[str], metric: str, n: int
 # ---------------------------------------------------------------- thời gian xử lý
 
 def cold_fuse_seconds(name: str, cfg: dict) -> float:
-    """Thời gian `fuse` của một bài khi chưa có gì trong cache: tính lại xác suất trên lưới khung và
-    chroma stem bass từ file WAV (không đọc npz đã cache), giống pipeline thật."""
-    p = F.FusionParams(**cfg["params"])
+    """Thời gian `fuse` của một bài khi chưa có gì trong cache: tính lại xác suất trên lưới khung, giống
+    pipeline thật."""
     song = KajiuraSong(name)
     t = time.perf_counter()
-    if p.bass_source in ("stem", "both"):
-        song._cache["stem"] = F.resample_probs(*F.bass_chroma(song.stems_dir / "bass.wav"), song.times)
     predict_variant(song, cfg)
     return time.perf_counter() - t
 
@@ -236,19 +216,16 @@ def timing_summary(songs: list[KajiuraSong], fuse_seconds: dict[str, list[float]
             "duration": s.duration,
             "normalize": (stats.get("normalize") or {}).get("seconds", np.nan),
             "roformer": (stats.get("roformer") or {}).get("seconds", np.nan),
-            "demucs": (stats.get("demucs") or {}).get("seconds", np.nan),
             "roformer_vram": (stats.get("roformer") or {}).get("peak_vram_mb", np.nan),
-            "demucs_vram": (stats.get("demucs") or {}).get("peak_vram_mb", np.nan),
             "beats": s.timings.get("beats", np.nan),
             "chordmini": s.timings.get("chordmini_mix", np.nan),
             "cnnlstm": s.timings.get("cnnlstm_mix", np.nan),
         })
     mean = {k: float(np.nanmean([r[k] for r in rows])) for k in rows[0]}
-    mean["fuse_no_stem"] = float(np.mean(fuse_seconds["4"]))
-    mean["fuse_with_stem"] = float(np.mean(fuse_seconds["5"]))
-    mean["total_no_separation"] = mean["beats"] + mean["chordmini"] + mean["cnnlstm"] + mean["fuse_no_stem"]
-    mean["total_with_separation"] = (mean["normalize"] + mean["roformer"] + mean["demucs"] + mean["beats"]
-                                     + mean["chordmini"] + mean["cnnlstm"] + mean["fuse_with_stem"])
+    mean["fuse"] = float(np.mean(fuse_seconds["4"]))
+    mean["total_no_separation"] = mean["beats"] + mean["chordmini"] + mean["cnnlstm"] + mean["fuse"]
+    mean["total_with_separation"] = (mean["normalize"] + mean["roformer"] + mean["beats"]
+                                     + mean["chordmini"] + mean["cnnlstm"] + mean["fuse"])
     return mean
 
 
@@ -303,8 +280,7 @@ def run(n_boot: int, beatles: bool, jobs: int) -> int:
         scores[key] = {n: score_song(songs[n], sheets[n], report[n], predict_variant(songs[n], cfg)) for n in names}
         print(f"{vname}: xong", flush=True)
     cfgs = dict(VARIANTS)
-    fuse_seconds = {key: [cold_fuse_seconds(n, cfgs[v]) for n in names]
-                    for key, v in (("4", VARIANTS[4][0]), ("5", VARIANTS[6][0]))}
+    fuse_seconds = {"4": [cold_fuse_seconds(n, cfgs[VARIANTS[4][0]]) for n in names]}
 
     # Bảng tổng
     keys = [v.split()[0] for v, _ in VARIANTS]
@@ -317,8 +293,7 @@ def run(n_boot: int, beatles: bool, jobs: int) -> int:
         table[vname] = row
 
     rng = np.random.default_rng(0)
-    pairs = [("4", "5"), ("4b", "4"), ("1", "2"), ("3a", "3b"), ("5", "6"), ("7", "5"), ("4", "1"), ("5", "1"),
-             ("3a", "4"), ("8", "4")]
+    pairs = [("4b", "4"), ("1", "2"), ("3a", "3b"), ("4", "6"), ("7", "4"), ("4", "1"), ("3a", "4"), ("8", "4")]
     tests = {}
     for a, b in pairs:
         t = {}

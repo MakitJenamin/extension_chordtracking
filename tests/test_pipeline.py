@@ -55,7 +55,7 @@ def check_schema(result: dict) -> None:
     for s in result["sections"]:
         assert base <= set(s) and set(s) - base <= {"transposed_from", "semitones"}
     assert set(result["timing"]) == set(pipeline.TIMING_KEYS)
-    assert {"separation_model", "bass_model", "chord_models"} <= set(result["pipeline"])
+    assert {"separation_model", "chord_models"} <= set(result["pipeline"])
     json.dumps(result)  # phải ghi ra JSON được
 
 
@@ -133,7 +133,7 @@ def test_analyze_order_stems_and_schema(fake_env):
     by_symbol = {c["symbol"]: c for c in result["chords"]}
     assert by_symbol["G"]["uncertain"] is True and by_symbol["C"]["uncertain"] is False
     assert result["pipeline"]["separation_model"] is None
-    assert result["pipeline"]["bass_model"] is None
+    assert "bass_model" not in result["pipeline"]
     assert result["pipeline"]["chord_models"] == ["chordmini-btc", "cnnlstm", "chordformer"]
     assert result["timing"]["total"] >= result["timing"]["beats"]
     assert (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
@@ -143,27 +143,34 @@ def test_default_does_not_separate_and_fuses_without_stem(fake_env, monkeypatch)
     seen = {}
     real_fuse = pipeline.fusion.fuse
 
-    def spy_fuse(models, beats, bass_audio, duration, params=None):
-        seen["bass_audio"], seen["params"] = bass_audio, params
-        return real_fuse(models, beats, bass_audio, duration, params)
+    def spy_fuse(models, beats, duration, params=None):
+        seen["params"] = params
+        return real_fuse(models, beats, duration, params)
 
     monkeypatch.setattr(pipeline.fusion, "fuse", spy_fuse)
     assert pipeline.PipelineConfig().use_separation is False
     pipeline.analyze("abcdefghijk")
     assert "separate" not in [c[0] for c in fake_env]
-    assert seen["bass_audio"] is None and seen["params"].bass_source == "cnn"
-    pipeline.analyze("abcdefghijk", use_separation=True)
+    assert seen["params"].bass_source == "cnn"
+    pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="instrumental")
     assert "separate" in [c[0] for c in fake_env]
-    assert seen["bass_audio"].name == "bass.wav" and seen["params"].bass_source == "both"
+    assert seen["params"].bass_source == "cnn"     # bass luôn lấy từ model, kể cả khi tách giọng
+
+
+def test_separation_with_only_mix_stems_is_skipped(fake_env):
+    # Tách giọng mà mọi model vẫn chạy trên mix thì stem không ai dùng: chạy như mặc định, chung result.json.
+    result = pipeline.analyze("abcdefghijk", use_separation=True)
+    assert "separate" not in [c[0] for c in fake_env]
+    assert result["pipeline"]["separation_model"] is None
+    assert (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
 
 
 def test_separation_on_runs_separate_and_reports_models(fake_env):
-    result = pipeline.analyze("abcdefghijk", use_separation=True)
+    result = pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="instrumental")
     assert [c[0] for c in fake_env] == SEPARATION_STEPS
-    assert ("beats", "mix.wav") in fake_env and ("chordmini", "mix.wav") in fake_env
+    assert ("beats", "mix.wav") in fake_env and ("chordmini", "instrumental.wav") in fake_env
     check_schema(result)
     assert result["pipeline"]["separation_model"] == "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
-    assert result["pipeline"]["bass_model"] == "htdemucs_ft"
     # cache riêng, không đè kết quả mặc định
     assert not (paths.CACHE_DIR / "abcdefghijk" / "result.json").exists()
     assert list((paths.CACHE_DIR / "abcdefghijk").glob("result-*.json"))
@@ -171,10 +178,10 @@ def test_separation_on_runs_separate_and_reports_models(fake_env):
 
 def test_cache_not_mixed_between_separation_modes(fake_env):
     plain = pipeline.analyze("abcdefghijk")
-    sep = pipeline.analyze("abcdefghijk", use_separation=True)
+    sep = pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="instrumental")
     fake_env.clear()
     assert pipeline.analyze("abcdefghijk") == plain
-    assert pipeline.analyze("abcdefghijk", use_separation=True) == sep
+    assert pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="instrumental") == sep
     assert fake_env == []
     assert plain["pipeline"]["separation_model"] is None and sep["pipeline"]["separation_model"] is not None
     # result.json do bản cũ ghi khi mặc định còn tách nguồn: không được dùng cho cấu hình không tách
@@ -222,15 +229,15 @@ def test_separation_vram_only_when_step_ran(fake_env, monkeypatch):
         return stems
 
     monkeypatch.setattr(pipeline.separation, "separate", separate_writing_stats)
-    first = pipeline.analyze("abcdefghijk", use_separation=True)
+    first = pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="instrumental")
     assert first["pipeline"]["peak_vram_mb"]["roformer"] == 1600.0
-    again = pipeline.analyze("abcdefghijk", force=True, use_separation=True)  # stats không đổi = stem lấy từ cache
+    again = pipeline.analyze("abcdefghijk", force=True, use_separation=True, chord_stem="instrumental")  # stats không đổi = stem lấy từ cache
     assert again["pipeline"]["peak_vram_mb"]["roformer"] is None
 
 
 def test_no_separation_runs_everything_on_mix(fake_env):
     # chord_stem khác mix bị bỏ qua khi không tách nguồn
-    result = pipeline.analyze("abcdefghijk", use_separation=False, chord_stem="no_bass")
+    result = pipeline.analyze("abcdefghijk", use_separation=False, chord_stem="vocals")
     assert [c[0] for c in fake_env] == ["fetch", "normalize", "beats", "chordmini", "cnnlstm", "chordformer"]
     assert all(c[1] == "mix.wav" for c in fake_env[1:])
     check_schema(result)
@@ -240,8 +247,8 @@ def test_no_separation_runs_everything_on_mix(fake_env):
 
 
 def test_chord_stem_parameter(fake_env):
-    pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="no_bass", beat_stem="instrumental")
-    assert ("chordmini", "no_bass.wav") in fake_env and ("beats", "instrumental.wav") in fake_env
+    pipeline.analyze("abcdefghijk", use_separation=True, chord_stem="vocals", beat_stem="instrumental")
+    assert ("chordmini", "vocals.wav") in fake_env and ("beats", "instrumental.wav") in fake_env
     with pytest.raises(ValueError):
         pipeline.analyze("abcdefghijk", chord_stem="drums")
 
@@ -351,8 +358,8 @@ def test_cli_writes_json_and_summary(fake_env, tmp_path, capsys):
     assert "separate" not in [c[0] for c in fake_env]
 
 
-@pytest.mark.parametrize("flags, separate", [([], False), (["--no-separation"], False), (["--separation"], True),
-                                             (["--separation", "--chord-stem", "no_bass"], True)])
+@pytest.mark.parametrize("flags, separate", [([], False), (["--no-separation"], False), (["--separation"], False),
+                                             (["--separation", "--chord-stem", "vocals"], True)])
 def test_cli_separation_flags(fake_env, flags, separate):
     assert cli.main(["abcdefghijk", *flags]) == 0
     assert ("separate" in [c[0] for c in fake_env]) is separate

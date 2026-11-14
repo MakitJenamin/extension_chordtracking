@@ -105,11 +105,11 @@ WCSR trùng đúng với `fill_gaps(run_chordmini(...).segments)` của wrapper 
 python -m eval.cache_features [--only NAME ...] [--force]
 ```
 
-Với mỗi bài trong CSV có audio (kể cả bài bị loại, để đổi quy tắc loại bài không phải chạy lại): tách nguồn
+Với mỗi bài trong CSV có audio (kể cả bài bị loại, để đổi quy tắc loại bài không phải chạy lại): tách giọng bằng BS-Roformer
 (`CACHE_DIR/eval_<tên>/`), bắt nhịp trên mix, chạy ChordMini BTC-PL và CNN-LSTM trên **mix và instrumental**.
 Ghi `EVAL_DIR/features/<tên>.pkl` (đọc bằng `load_features`). Mỗi bước GPU tự lấy `gpu_lock()` riêng.
-Chạy 43 bài mất 43.5 phút (tách nguồn 40–80 s mỗi bài, các model hợp âm 0.5–2 s). Stem chiếm khoảng 300 MB mỗi bài.
-`ablation.py` cache thêm chroma stem bass ở `<tên>.bass_chroma.npz`.
+Số đo cũ (khi còn tách bass bằng HTDemucs): 43 bài mất 43.5 phút (tách nguồn 40–80 s mỗi bài, các model hợp âm 0.5–2 s).
+HTDemucs và các biến thể dùng stem bass đã bỏ khỏi dự án; kết quả cũ còn ở PLAN.md.
 
 ## 5. Ablation: `ablation.py`
 

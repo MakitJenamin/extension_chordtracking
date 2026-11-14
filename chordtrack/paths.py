@@ -33,11 +33,10 @@ THIRD_PARTY = Path(os.environ.get("CHORDTRACK_THIRD_PARTY", MAIN_ROOT / "third_p
 CHORDMINI_DIR = THIRD_PARTY / "ChordMini"
 CNNLSTM_DIR = THIRD_PARTY / "chord-cnn-lstm-model"
 CHORDFORMER_DIR = THIRD_PARTY / "ChordFormer"        # github.com/mwaseemrandhawa/ChordFormer, checkpoint lấy từ commit 0d1071a
-CONSONANCE_DIR = THIRD_PARTY / "consonance-ACE"     # github.com/andreamust/consonance-ACE (MIT)
 
 DATA_DIR = Path(os.environ.get("CHORDTRACK_DATA", MAIN_ROOT / "data"))
 AUDIO_DIR = DATA_DIR / "audio"          # audio tải bằng yt-dlp, đặt tên theo <videoId>.wav
-MODELS_DIR = DATA_DIR / "models"        # weights tải thêm (BS-Roformer, HTDemucs, beat_this...)
+MODELS_DIR = DATA_DIR / "models"        # weights tải thêm (BS-Roformer, beat_this, YourMT3+...)
 CACHE_DIR = DATA_DIR / "cache"          # stem và kết quả trung gian, theo <videoId>/
 EVAL_DIR = DATA_DIR / "eval"            # dữ liệu đánh giá: nhãn chuẩn kèm audio
 

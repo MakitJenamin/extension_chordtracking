@@ -5,6 +5,6 @@
 pytorch-lightning==2.6.6
 # Dùng thêm einops, librosa, mido: đã có sẵn trong venv.
 #
-# KHÔNG cài vào venv: transformers 4.45.1 đòi huggingface_hub<1.0, venv đang có huggingface_hub 2.x (demucs, muscriptor).
+# KHÔNG cài vào venv: transformers 4.45.1 đòi huggingface_hub<1.0, venv đang có huggingface_hub 2.x (muscriptor).
 # Cài riêng vào thư mục mà wrapper tự thêm vào sys.path:
 #   pip install --no-deps --target third_party_src/YourMT3_pydeps transformers==4.45.1 huggingface_hub==0.36.2 tokenizers==0.20.3 regex==2026.11.9

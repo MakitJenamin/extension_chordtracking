@@ -31,7 +31,7 @@ def test_normalize_audio_to_44k_stereo(tmp_path):
 
 
 def test_cache_skips_existing_outputs(tmp_path, monkeypatch):
-    for name in ["mix", "vocals", "instrumental", "bass", "no_bass"]:
+    for name in ["mix", "vocals", "instrumental"]:
         sf.write(tmp_path / f"{name}.wav", np.zeros((10, 2)), SAMPLE_RATE)
 
     def boom(*a, **k):
@@ -39,45 +39,26 @@ def test_cache_skips_existing_outputs(tmp_path, monkeypatch):
 
     monkeypatch.setattr(separation, "normalize_audio", boom)
     monkeypatch.setattr(separation, "_run_roformer", boom)
-    monkeypatch.setattr(separation, "_run_demucs", boom)
     stems = separate(tmp_path / "khong_ton_tai.wav", tmp_path)
-    assert stems.bass == tmp_path / "bass.wav"
-    assert stems.no_bass == tmp_path / "no_bass.wav"
+    assert stems.vocals == tmp_path / "vocals.wav"
+    assert stems.instrumental == tmp_path / "instrumental.wav"
 
 
-def test_cache_reruns_only_missing_step(tmp_path, monkeypatch):
-    for name in ["mix", "vocals", "instrumental"]:
+def test_cache_reruns_missing_vocal_step(tmp_path, monkeypatch):
+    # instrumental.wav bị mất: chỉ Roformer chạy lại, mix giữ nguyên
+    for name in ["mix", "vocals"]:
         sf.write(tmp_path / f"{name}.wav", np.zeros((10, 2)), SAMPLE_RATE)
     calls = []
 
-    def fake_demucs(instrumental, bass, no_bass):
-        calls.append("demucs")
-        for p in (bass, no_bass):
+    def fake_roformer(_, a, b):
+        calls.append("roformer")
+        for p in (a, b):
             sf.write(p, np.zeros((10, 2)), SAMPLE_RATE)
 
-    monkeypatch.setattr(separation, "_run_roformer", lambda *a: calls.append("roformer"))
-    monkeypatch.setattr(separation, "_run_demucs", fake_demucs)
+    monkeypatch.setattr(separation, "normalize_audio", lambda *a: pytest.fail("không được chuẩn hóa lại mix"))
+    monkeypatch.setattr(separation, "_run_roformer", fake_roformer)
     separate(tmp_path / "x.wav", tmp_path)
-    assert calls == ["demucs"]
-
-
-def test_rerun_vocal_step_invalidates_bass_step(tmp_path, monkeypatch):
-    # instrumental.wav bị mất: Roformer chạy lại, nên bass/no_bass cũ phải được tạo lại theo
-    for name in ["mix", "vocals", "bass", "no_bass"]:
-        sf.write(tmp_path / f"{name}.wav", np.zeros((10, 2)), SAMPLE_RATE)
-    calls = []
-
-    def fake(step):
-        def run(_, a, b):
-            calls.append(step)
-            for p in (a, b):
-                sf.write(p, np.zeros((10, 2)), SAMPLE_RATE)
-        return run
-
-    monkeypatch.setattr(separation, "_run_roformer", fake("roformer"))
-    monkeypatch.setattr(separation, "_run_demucs", fake("demucs"))
-    separate(tmp_path / "x.wav", tmp_path)
-    assert calls == ["roformer", "demucs"]
+    assert calls == ["roformer"]
 
 
 @needs_ffmpeg
@@ -93,15 +74,14 @@ def test_different_source_redoes_everything(tmp_path, monkeypatch):
         return run
 
     monkeypatch.setattr(separation, "_run_roformer", fake("roformer"))
-    monkeypatch.setattr(separation, "_run_demucs", fake("demucs"))
     a, b = tmp_path / "a.wav", tmp_path / "b.wav"
     sf.write(a, np.zeros((22050, 2)), 22050)
     sf.write(b, np.zeros((44100, 2)), 22050)
     separate(a, out)
     separate(a, out)  # cùng nguồn: dùng cache
-    assert calls == ["roformer", "demucs"]
+    assert calls == ["roformer"]
     separate(b, out)  # nguồn khác: tách lại từ đầu
-    assert calls == ["roformer", "demucs"] * 2
+    assert calls == ["roformer"] * 2
     assert abs(sf.info(out / "mix.wav").duration - 2.0) < 0.01
 
 
@@ -161,11 +141,11 @@ def test_separate_first_20s_of_sample(tmp_path, monkeypatch):
                     "-t", "20", str(clip)], check=True)
 
     _block_network(monkeypatch)
-    # separate() tự lấy gpu_lock() cho từng model
+    # separate() tự lấy gpu_lock()
     stems = separate(clip, tmp_path / "out")
 
     audio = {}
-    for name in ["mix", "vocals", "instrumental", "bass", "no_bass"]:
+    for name in ["mix", "vocals", "instrumental"]:
         p = getattr(stems, name)
         assert p.exists(), name
         data, sr = sf.read(p, dtype="float32", always_2d=True)
@@ -175,11 +155,8 @@ def test_separate_first_20s_of_sample(tmp_path, monkeypatch):
         assert np.isfinite(data).all(), name
         audio[name] = data
 
-    for name in ["mix", "vocals", "instrumental", "no_bass"]:
+    for name in ["mix", "vocals", "instrumental"]:
         assert _rms(audio[name]) > 1e-2, f"{name} gần như im lặng"
-    # 20 giây đầu "Let It Be" chưa có bass (bass vào ở khoảng giây 60), nên chỉ đòi không phải
-    # toàn số 0. Việc bass có tín hiệu thật đã kiểm tra trên cả bài, xem mô tả PR.
-    assert np.abs(audio["bass"]).max() > 0
 
     # Intro 0–8 s chỉ có piano; giọng hát bắt đầu khoảng giây 12.
     sr = SAMPLE_RATE
@@ -188,15 +165,13 @@ def test_separate_first_20s_of_sample(tmp_path, monkeypatch):
     assert sung > 10 * intro, (intro, sung)
 
 
-def test_separate_vocals_only_roformer_and_invalidates_bass(tmp_path, monkeypatch):
-    """`separate_vocals` (dò giai điệu bản tách giọng): chỉ chạy Roformer trên mix.wav, xóa bass làm từ instrumental
-    cũ, thêm mục `roformer` vào thống kê mà giữ `source`."""
+def test_separate_vocals_only_roformer(tmp_path, monkeypatch):
+    """`separate_vocals` (dò giai điệu bản tách giọng): chỉ chạy Roformer trên mix.wav, thêm mục `roformer` vào
+    thống kê mà giữ `source`."""
     import json
 
-    for name in ("mix.wav", "bass.wav", "no_bass.wav"):
-        (tmp_path / name).write_bytes(b"x")
-    (tmp_path / separation.STATS_FILE).write_text(json.dumps({"source": {"path": "a"}, "demucs": {"seconds": 1}}),
-                                                  encoding="utf-8")
+    (tmp_path / "mix.wav").write_bytes(b"x")
+    (tmp_path / separation.STATS_FILE).write_text(json.dumps({"source": {"path": "a"}}), encoding="utf-8")
     seen = []
 
     def fake_roformer(mix, vocals, instrumental):
@@ -206,10 +181,8 @@ def test_separate_vocals_only_roformer_and_invalidates_bass(tmp_path, monkeypatc
         return {"seconds": 2.0, "peak_vram_mb": 1600.0}
 
     monkeypatch.setattr(separation, "_run_roformer", fake_roformer)
-    monkeypatch.setattr(separation, "_run_demucs", lambda *a: pytest.fail("không được chạy Demucs"))
     stats = separation.separate_vocals(tmp_path)
     assert seen == [tmp_path / "mix.wav"] and stats["peak_vram_mb"] == 1600.0
     assert (tmp_path / "vocals.wav").exists() and (tmp_path / "instrumental.wav").exists()
-    assert not (tmp_path / "bass.wav").exists() and not (tmp_path / "no_bass.wav").exists()
     st = json.loads((tmp_path / separation.STATS_FILE).read_text(encoding="utf-8"))
     assert st == {"source": {"path": "a"}, "roformer": stats}

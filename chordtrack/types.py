@@ -22,8 +22,6 @@ class Stems:
     mix: Path            # audio gốc đã chuẩn hóa
     vocals: Path
     instrumental: Path   # mix bỏ giọng hát (đầu ra của BS-Roformer)
-    bass: Path           # chỉ có bass (HTDemucs chạy trên phần instrumental)
-    no_bass: Path        # instrumental bỏ bass: hòa âm ở dải trung và cao
 
 
 @dataclass

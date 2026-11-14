@@ -15,21 +15,20 @@ Luồng xử lý của `fuse()`:
    - `"hmm"`: Viterbi theo khung, xác suất giữ nguyên hợp âm `self_prob`;
    - `"beat_hmm"`: Viterbi trên quan sát theo phách (hợp âm chỉ đổi ở phách).
    Sau đó gộp đoạn ngắn hơn `min_duration` vào đoạn bên cạnh.
-4. **Gán bass:** phân bố nốt bass (12 nốt) trong mỗi đoạn lấy từ `bass_probs` của CNN-LSTM, từ
-   chroma dải thấp của stem bass, hoặc trộn cả hai (`bass_source`, `stem_weight`). Chỉ thêm `/x`
+4. **Gán bass:** phân bố nốt bass (12 nốt) trong mỗi đoạn lấy từ `bass_probs` của CNN-LSTM và/hoặc
+   ChordFormer (`bass_source`, `bass_model`). Chỉ thêm `/x`
    khi nốt bass nổi bật nhất thuộc hợp âm, khác nốt gốc và có xác suất ≥ `bass_threshold`.
    Nhãn ghi theo Harte: `C:maj/5`, `A:min/b3`.
 5. **Độ tin cậy:** trung bình xác suất (đã kết hợp) của nhãn được chọn trong đoạn, khoảng [0, 1].
 
 Giá trị mặc định của `FusionParams` là bộ tốt nhất đo bằng `eval/refit_fusion.py` trên cả Beatles và
 Kajiura, chỉ dùng mix, không tách nguồn (xem PLAN.md, mục "Chọn lại tham số fuse trên Beatles + Kajiura").
-Bộ cũ (chọn chỉ trên Beatles) nằm ở `eval.ablation_kajiura.OLD_DEFAULTS`.
+Bộ cũ (chọn chỉ trên Beatles, bỏ phần stem bass) nằm ở `eval.ablation_kajiura.OLD_DEFAULTS`.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 
@@ -57,8 +56,7 @@ class FusionParams:
     smoothing: str = "hmm"           # "frame" | "beat" | "hmm" | "beat_hmm"
     self_prob: float = 0.7           # HMM: xác suất giữ nguyên hợp âm sang khung/phách sau
     min_duration: float = 0.25       # gộp đoạn ngắn hơn (giây)
-    bass_source: str = "cnn"         # "none" | "cnn" | "stem" | "both" (stem cần tách nguồn, tắt mặc định)
-    stem_weight: float = 0.3         # "both": trọng số của chroma stem bass
+    bass_source: str = "cnn"         # "none" | "cnn" (bass_probs của model, xem bass_model)
     bass_threshold: float = 0.5      # xác suất tối thiểu của nốt bass để thêm /x
     bass_per_beat: bool = False      # True: quyết định bass theo từng phách, đổi bass thì tách đoạn
     cf_weight: float = 0.4           # trọng số ChordFormer khi trộn họ hợp âm (chỉ dùng khi mix_level="family";
@@ -75,13 +73,12 @@ def uses_chordformer(p: FusionParams) -> bool:
     """Bộ tham số có cần đầu ra của ChordFormer không (pipeline chỉ chạy model này khi cần)."""
     if p.mix_level == "family" and (p.cf_weight > 0 or (p.quality_source == "chordformer" and p.quality_weight > 0)):
         return True
-    return p.bass_model != "cnnlstm" and p.bass_source in ("cnn", "both")
+    return p.bass_model != "cnnlstm" and p.bass_source == "cnn"
 
 
 def fuse(
     models: dict[str, ChordModelOutput],
     beats: BeatGrid | None,
-    bass_audio: Path | None,
     duration: float,
     params: FusionParams | None = None,
 ) -> list[ChordSegment]:
@@ -89,7 +86,6 @@ def fuse(
 
     models: các khóa đã biết là "chordmini" (BTC-PL) và "cnnlstm"; có thể thiếu khóa.
     beats: lưới phách để bỏ phiếu theo phách; None nếu không có.
-    bass_audio: file WAV chỉ có bass (Stems.bass); None nếu không có.
     """
     p = params or DEFAULT_PARAMS
     if not models or duration <= 0:
@@ -104,11 +100,8 @@ def fuse(
         probs, vocab = chord_probs_multi(models, times, p)
     else:
         probs, vocab = chord_probs(models, times, p.cnn_weight, p.mix_level, p.quality_weight)
-    stem_chroma = None
-    if bass_audio is not None and p.bass_source in ("stem", "both"):
-        stem_chroma = resample_probs(*bass_chroma(Path(bass_audio)), times)
-    cnn_bass = model_bass(models, times, p.bass_model) if p.bass_source in ("cnn", "both") else None
-    return fuse_probs(probs, vocab, times, beats, duration, p, cnn_bass=cnn_bass, stem_chroma=stem_chroma)
+    cnn_bass = model_bass(models, times, p.bass_model) if p.bass_source == "cnn" else None
+    return fuse_probs(probs, vocab, times, beats, duration, p, cnn_bass=cnn_bass)
 
 
 def fuse_probs(
@@ -119,13 +112,12 @@ def fuse_probs(
     duration: float,
     p: FusionParams,
     cnn_bass: np.ndarray | None = None,
-    stem_chroma: np.ndarray | None = None,
 ) -> list[ChordSegment]:
     """Phần lõi của `fuse` trên dữ liệu đã đưa về lưới khung chung (dùng lại trong eval/ablation.py)."""
     labels = decode(probs, times, beats, duration, p)
     segs = frames_to_segments(labels, times, duration)
     segs = merge_short(segs, probs, times, p.min_duration)
-    bass = bass_distribution(cnn_bass, stem_chroma, p)
+    bass = bass_distribution(cnn_bass, p)
     if bass is not None:
         intervals = _beat_intervals(beats, duration) if p.bass_per_beat else None
         labeled = assign_bass(segs, vocab, bass, times, p.bass_threshold, intervals)
@@ -539,69 +531,11 @@ def _merge_same(segs: list[ChordSegment]) -> list[ChordSegment]:
 
 # ---------------------------------------------------------------- bass
 
-BASS_HARMONICS = ((1, 1.0), (2, 0.5), (3, 0.33), (4, 0.25))   # (bậc bồi âm, trọng số)
-
-
-def bass_chroma(path: Path, sr: int = 11025, hop: int = 256) -> tuple[np.ndarray, np.ndarray]:
-    """Độ nổi bật của nốt bass theo 12 nốt, từ stem bass.
-
-    CQT 36 bin/quãng tám từ E1 (41 Hz) lên 5 quãng tám, mỗi nửa cung lấy bin lớn nhất trong 3 bin
-    (chịu được lệch chuẩn âm). Độ nổi bật của nốt cơ bản p (E1..D#3) = tổng có trọng số biên độ ở
-    các bồi âm 1–4 của nó, để bồi âm bậc 3 (quãng 5) không lấn nốt cơ bản. Trả về (thời điểm khung,
-    (T, 12)) chưa chuẩn hóa: tổng mỗi hàng tỉ lệ với năng lượng, khung im lặng có tổng gần 0.
-
-    Lưu ý: stem của HTDemucs chỉ có bass guitar. Đoạn không có bass guitar (ví dụ piano tự đệm)
-    thì không có thông tin, khi đó `stem_bass_probs` trả về phân bố đều."""
-    import librosa
-    import soundfile as sf
-
-    y, file_sr = sf.read(str(path), dtype="float32", always_2d=True)
-    y = y.mean(axis=1)
-    if file_sr != sr:
-        y = librosa.resample(y, orig_sr=file_sr, target_sr=sr)
-    n_semi = 60
-    fmin = librosa.note_to_hz("E1") * 2 ** (-1 / 36)   # bin giữa của mỗi bộ 3 rơi đúng nốt
-    c = np.abs(librosa.cqt(y, sr=sr, hop_length=hop, fmin=fmin, n_bins=3 * n_semi, bins_per_octave=36))
-    c = c.reshape(n_semi, 3, -1).max(axis=1)           # (60 nửa cung từ E1, T)
-    n_fund = 24
-    sal = np.zeros((n_fund, c.shape[1]))
-    for h, w in BASS_HARMONICS:
-        off = int(round(12 * np.log2(h)))
-        sal += w * c[off:off + n_fund]
-    first_pc = 4  # E
-    chroma = np.zeros((12, c.shape[1]))
-    for k in range(n_fund):
-        chroma[(first_pc + k) % 12] += sal[k]
-    times = (np.arange(c.shape[1]) + 0.5) * hop / sr
-    return times, chroma.T
-
-
-def stem_bass_probs(chroma: np.ndarray, power: float = 2.0, silence: float = 0.05) -> np.ndarray:
-    """Đổi chroma bass (T, 12) thành phân bố: lũy thừa `power` rồi chuẩn hóa. Khung có năng lượng
-    dưới `silence` × trung vị năng lượng của bài thì phân bố đều (không có thông tin)."""
-    e = chroma.sum(axis=1)
-    ref = np.median(e[e > 0]) if (e > 0).any() else 1.0
-    p = _normalize(np.maximum(chroma, 0) ** power)
-    p[e < silence * ref] = 1.0 / 12
-    return p
-
-
-def bass_distribution(cnn_bass: np.ndarray | None, stem_chroma: np.ndarray | None, p: FusionParams) -> np.ndarray | None:
-    """Phân bố 12 nốt bass theo khung từ các nguồn được chọn. `stem_chroma` là chroma chưa chuẩn hóa."""
-    if p.bass_source not in ("none", "cnn", "stem", "both"):
+def bass_distribution(cnn_bass: np.ndarray | None, p: FusionParams) -> np.ndarray | None:
+    """Phân bố 12 nốt bass theo khung (`bass_probs` của model), hoặc None khi `bass_source="none"`."""
+    if p.bass_source not in ("none", "cnn"):
         raise ValueError(f"bass_source không hợp lệ: {p.bass_source!r}")
-    stem = stem_bass_probs(stem_chroma) if stem_chroma is not None else None
-    if p.bass_source == "none":
-        return None
-    if p.bass_source == "cnn":
-        return cnn_bass
-    if p.bass_source == "stem":
-        return stem
-    if cnn_bass is None:
-        return stem
-    if stem is None:
-        return cnn_bass
-    return (1 - p.stem_weight) * cnn_bass + p.stem_weight * stem
+    return cnn_bass if p.bass_source == "cnn" else None
 
 
 def chord_tones(label: str) -> tuple[int, set[int]]:

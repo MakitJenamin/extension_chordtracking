@@ -9,8 +9,7 @@ Các biến thể (mỗi biến thể một dòng trong bảng):
  2  ChordMini trên instrumental
  3  CNN-LSTM trên mix / instrumental
  4  ChordMini + bass từ `bass_probs` của CNN-LSTM
- 5  ChordMini + bass từ chroma của stem bass
- 6  ChordMini + bass trộn hai nguồn
+    (biến thể 5–6 cũ dùng stem bass HTDemucs đã bỏ cùng HTDemucs; kết quả còn ở PLAN.md)
  7  Trộn xác suất hai model hợp âm (trung bình log), giải mã HMM: a) trên cả 170 nhãn, b) theo họ hợp âm
  8  Làm mượt: bỏ phiếu theo phách, HMM theo khung, HMM theo phách (chỉ ChordMini, không bass)
  9  Bộ tốt nhất: tìm theo hai tầng (tầng hợp âm rồi tầng bass)
@@ -91,21 +90,6 @@ class Song:
             self._cache[key] = F.cnnlstm_bass(self.model("cnnlstm", src), self.times)
         return self._cache[key]
 
-    def stem_chroma(self) -> np.ndarray:
-        if "stem" not in self._cache:
-            path = FEATURES_DIR / f"{self.name}.bass_chroma.npz"
-            if path.exists():
-                d = np.load(path)
-                t, c = d["times"], d["chroma"]
-            else:
-                t, c = F.bass_chroma(self.stems_dir / "bass.wav")
-                c = c.astype(np.float32)  # dùng đúng giá trị như khi đọc lại từ cache
-                tmp = path.with_name(path.stem + ".part.npz")
-                np.savez_compressed(tmp, times=t, chroma=c)
-                tmp.replace(path)
-            self._cache["stem"] = F.resample_probs(t, c, self.times)
-        return self._cache["stem"]
-
     def vocab(self, src: str) -> list[str]:
         return list(self.model("chordmini", src).vocabulary)
 
@@ -120,8 +104,7 @@ def _segments_with_bass(song: Song, src: str, base: list[ChordSegment], p: F.Fus
     vocab = song.vocab(src)
     index = {lab: i for i, lab in enumerate(vocab)}
     segs = [(s.start, s.end, index.get(s.label, index["N"])) for s in base]
-    bass = F.bass_distribution(song.cnn_bass(src) if p.bass_source in ("cnn", "both") else None,
-                               song.stem_chroma() if p.bass_source in ("stem", "both") else None, p)
+    bass = F.bass_distribution(song.cnn_bass(src) if p.bass_source == "cnn" else None, p)
     if bass is None:
         return base
     intervals = F._beat_intervals(song.beats, song.duration) if p.bass_per_beat else None
@@ -141,10 +124,9 @@ def predict(song: Song, cfg: dict) -> list[ChordSegment]:
         base = F.fill_gaps(song.model("chordmini", src).segments, song.duration)
         return _segments_with_bass(song, src, base, p)
     if kind == "fusion":
-        cnn_bass = song.cnn_bass(src) if p.bass_source in ("cnn", "both") else None
-        stem = song.stem_chroma() if p.bass_source in ("stem", "both") else None
-        return F.fuse_probs(song.chord(src, p.cnn_weight, p.mix_level, p.quality_weight), song.vocab(src), song.times, song.beats, song.duration, p,
-                            cnn_bass=cnn_bass, stem_chroma=stem)
+        cnn_bass = song.cnn_bass(src) if p.bass_source == "cnn" else None
+        return F.fuse_probs(song.chord(src, p.cnn_weight, p.mix_level, p.quality_weight), song.vocab(src), song.times,
+                            song.beats, song.duration, p, cnn_bass=cnn_bass)
     raise ValueError(kind)
 
 
@@ -209,9 +191,8 @@ BASS_THRESHOLDS = (0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
 
 
 def bass_grid(source: str) -> list[dict]:
-    weights = (0.3, 0.5, 0.7) if source == "both" else (0.5,)
-    return [dict(bass_source=source, stem_weight=w, bass_threshold=t, bass_per_beat=pb)
-            for w, t, pb in itertools.product(weights, BASS_THRESHOLDS, (False, True))]
+    return [dict(bass_source=source, bass_threshold=t, bass_per_beat=pb)
+            for t, pb in itertools.product(BASS_THRESHOLDS, (False, True))]
 
 
 def chord_grid(srcs=("mix", "inst"), weights=(0.0, 0.2, 0.35, 0.5), levels=("full", "family"),
@@ -253,7 +234,7 @@ def search_smoothing(runner: Runner, train: list[str]) -> dict:
 
 def search_full(runner: Runner, train: list[str]) -> dict:
     chord = best_cfg(runner, chord_grid(), train)
-    cfgs = [with_params(chord, **b) for s in ("cnn", "stem", "both") for b in bass_grid(s)]
+    cfgs = [with_params(chord, **b) for b in bass_grid("cnn")]
     best = best_cfg(runner, cfgs, train)
     # Tầng 3: thử lại độ dài tối thiểu với bộ đã chọn.
     return best_cfg(runner, [with_params(best, min_duration=d) for d in (0.25, 0.5, 1.0)], train)
@@ -265,8 +246,6 @@ VARIANTS: list[tuple[str, object]] = [
     ("3a CNN-LSTM mix", {"kind": "cnnlstm", "src": "mix"}),
     ("3b CNN-LSTM instrumental", {"kind": "cnnlstm", "src": "inst"}),
     ("4 ChordMini + bass CNN-LSTM", search_cm_bass("cnn")),
-    ("5 ChordMini + bass stem", search_cm_bass("stem")),
-    ("6 ChordMini + bass cả hai", search_cm_bass("both")),
     ("7a Trộn 2 model (cả 170 nhãn), HMM", search_mix("full")),
     ("7b Trộn 2 model (theo họ hợp âm), HMM", search_mix("family")),
     ("8 Làm mượt (phách/HMM), ChordMini", search_smoothing),
