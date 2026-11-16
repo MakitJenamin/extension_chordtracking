@@ -45,9 +45,9 @@
   const sc = (code) => "Alt+Shift+" + SHORTCUTS.find((s) => s.code === code).key;
 
   /* ---------------- Hủy job ---------------- */
-  /** Tên loại job cho người dùng: "Hợp âm" | "Giai điệu (Kỹ)". */
-  const jobKindText = (j) => (j.kind || "analyze") === "analyze" ? "Hợp âm"
-    : `Giai điệu (${(T().MELODY_MODELS[j.model] || T().MELODY_MODELS.combo).short})`;
+  /** Việc của job, nói cho người dùng: "Phân tích hợp âm" | "Dò giai điệu (Kỹ)". */
+  const jobKindText = (j) => (j.kind || "analyze") === "analyze" ? "Phân tích hợp âm"
+    : `Dò giai điệu (${(T().MELODY_MODELS[j.model] || T().MELODY_MODELS.combo).short})`;
   // Panel vẽ lại mỗi lần poll (~1 s): giữ nguyên nút/danh sách khi nội dung không đổi, để cú bấm không rơi vào nút vừa
   // bị thay, tooltip không tắt và nút vừa bấm vẫn mờ tới khi server báo đã hủy.
   const memo = new Map();
@@ -76,19 +76,24 @@
       } }, busy ? "Đang hủy…" : text);
     return b;
   }
-  /** Danh sách job xếp trước (`ahead` của GET /jobs/{id}), mỗi job một nút hủy: lỡ bấm nhầm bài nào thì hủy bài đó. */
-  function aheadList(job) {
+  /** Khung "Đang làm trước" (`ahead` của GET /jobs/{id}): bài nào đang chiếm hàng đợi, mỗi bài một nút "Dừng bài đó"
+   * để bỏ bài lỡ bấm nhầm. Không có bài nào phía trước thì null. */
+  function aheadBox(job) {
     const ahead = Array.isArray(job.ahead) ? job.ahead : [];
     if (!ahead.length) return null;
     const key = ahead.map((j) => [j.job_id, j.status, !!j.cancelling, j.title].join("|")).join(";") + "@" + CT.state.videoId;
-    return keep("ahead", key, () => h("ul", { class: "ct-ahead" }, ...ahead.map((j) => {
-      const same = j.song_id === CT.state.videoId;
-      const name = same ? "bài này" : (j.title || j.song_id);
-      return h("li", {},
-        h("span", { class: "ct-ahead-st", text: j.cancelling ? "Đang hủy" : j.status === "running" ? "Đang chạy" : "Đang chờ" }),
-        h("span", { class: "ct-ahead-name", title: j.title || j.song_id, text: `${jobKindText(j)} · ${name}` }),
-        cancelBtn(j, { tip: `Hủy ${jobKindText(j).toLowerCase()} của ${same ? "bài này" : "bài " + JSON.stringify(name)} để bài này được xử lý sớm hơn` }));
-    })));
+    return keep("ahead", key, () => h("div", { class: "ct-ahead" },
+      h("div", { class: "ct-ahead-head", text: ahead.length > 1 ? `Đang làm trước bài này (${ahead.length} bài):` : "Đang làm trước bài này:" }),
+      ...ahead.map((j) => {
+        const same = j.song_id === CT.state.videoId;
+        const name = same ? "bài này" : (j.title || j.song_id);
+        return h("div", { class: "ct-ahead-row" },
+          h("span", { class: "ct-ahead-name", title: `${jobKindText(j)}: ${j.title || j.song_id}` },
+            h("b", { text: jobKindText(j) }), ` · ${name}`,
+            j.status === "queued" ? h("span", { class: "ct-ahead-wait", text: " (đang chờ)" }) : null),
+          cancelBtn(j, { text: "Dừng bài đó", cls: "ct-btn ct-sm",
+            tip: `Dừng ${jobKindText(j).toLowerCase()} của ${same ? "bài này" : JSON.stringify(name)} để bài này được làm ngay` }));
+      })));
   }
   function stepTranspose(d) {
     const v = Math.max(-6, Math.min(6, (CT.settings.transpose | 0) + d));
@@ -454,22 +459,26 @@
       const etaText = eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
         : `còn khoảng ${Math.round(eta / 60)} phút`;
       const queued = job.status === "queued";
-      this.status.replaceChildren(
+      const ahead = queued ? aheadBox(job) : null;
+      // replaceChildren (khác h()) in cả null thành chữ "null": lọc bỏ phần không có.
+      this.status.replaceChildren(...[
         h("div", { class: "ct-st-title" },
           h("span", { class: "ct-spinner" }), job.cancelling ? "Đang hủy phân tích bài này"
-            : queued ? (job.message || "Đang chờ tới lượt") : "Đang phân tích hợp âm bài này",
-          h("span", { class: "ct-st-pct", text: queued ? "" : `${pct}%` })),
+            : queued ? (ahead ? "Đang chờ tới lượt" : job.message || "Đang chờ tới lượt") : "Đang phân tích hợp âm bài này",
+          h("span", { class: "ct-st-pct", text: queued ? "" : `${pct}%` }),
+          // Một nút hủy nhỏ ở góc: hủy việc của chính bài này (lỡ bấm nhầm).
+          job.job_id && !job.cancelling ? cancelBtn(job, { text: "Hủy", cls: "ct-btn ct-ghost ct-st-cancel",
+            tip: "Hủy phân tích bài này. Bấm nút ChordTrack lần nữa để phân tích lại" }) : null),
         h("div", { class: "ct-progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 },
           h("div", { style: `width:${queued ? 2 : Math.max(2, pct)}%` })),
         h("ol", { class: "ct-steps" }, ...STEPS.map(([k, label], i) =>
           h("li", { class: cur < 0 ? (queued ? "" : "") : i < cur ? "ct-done" : i === cur ? "ct-now" : "" },
             (cur >= 0 && i < cur ? "✓ " : "") + label))),
+        ahead,
         h("div", { class: "ct-st-note" },
           [etaText && etaText[0].toUpperCase() + etaText.slice(1), "Video vẫn xem bình thường, hợp âm sẽ hiện khi xong. Lần sau mở lại bài này là có ngay."]
             .filter(Boolean).join(" · ")),
-        queued ? aheadList(job) : null,
-        job.job_id ? h("div", { class: "ct-st-actions" }, cancelBtn(job, { text: "Hủy phân tích bài này",
-          tip: "Hủy job hợp âm của bài này (vd lỡ bấm nhầm). Bấm nút ChordTrack lần nữa để phân tích lại" })) : null);
+      ].filter(Boolean));
       this.show("loading");
     },
 
