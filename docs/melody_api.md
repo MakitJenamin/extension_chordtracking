@@ -75,6 +75,12 @@ và `"vocals": bool`. Các bước: `fetch` (dùng lại audio đã tải nếu 
 giọng), `melody_voice` (YourMT3+, trên stem giọng nếu tách giọng), `melody_voice_mix` (YourMT3+ trên mix, chỉ bản
 YourMT3+ tách giọng), `melody_fill` (MuScriptor small, chỉ bản ghép), `melody_line` (ghép / tạo dòng nốt).
 
+Hủy job bằng `POST /jobs/{job_id}/cancel` (dùng chung cho mọi loại job): job đang chờ thành `"status": "cancelled"`
+ngay; job đang chạy trả `"cancelling": true` và dừng ở điểm hủy gần nhất (tiến trình con YourMT3+ bị kill,
+MuScriptor và BS-Roformer dừng ở lần chạy model kế tiếp, các bước khác dừng ở đầu bước sau). Job đang chờ có thêm
+`ahead`: danh sách job xếp trước (`job_id`, `song_id`, `kind`, `status`, `title`, `cancelling`), job đang chạy
+đứng đầu. `POST /analyze` và `POST /melody` nhận thêm `"title"` (tên video) để danh sách này hiện tên bài.
+
 ### `GET /melody/{song_id}?model=combo|yourmt3&vocals=0|1`
 
 Trả `<Melody>` của biến thể (`model`, `vocals`) (mặc định `combo`, không tách giọng), 404 nếu biến thể đó chưa có. Kết quả mã cũ trả kèm header `X-Chordtrack-Stale: 1` như `/result`.

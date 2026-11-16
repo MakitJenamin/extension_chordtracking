@@ -43,6 +43,53 @@
   const etaText = (eta) => (eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
     : `còn khoảng ${Math.round(eta / 60)} phút`);
   const sc = (code) => "Alt+Shift+" + SHORTCUTS.find((s) => s.code === code).key;
+
+  /* ---------------- Hủy job ---------------- */
+  /** Tên loại job cho người dùng: "Hợp âm" | "Giai điệu (Kỹ)". */
+  const jobKindText = (j) => (j.kind || "analyze") === "analyze" ? "Hợp âm"
+    : `Giai điệu (${(T().MELODY_MODELS[j.model] || T().MELODY_MODELS.combo).short})`;
+  // Panel vẽ lại mỗi lần poll (~1 s): giữ nguyên nút/danh sách khi nội dung không đổi, để cú bấm không rơi vào nút vừa
+  // bị thay, tooltip không tắt và nút vừa bấm vẫn mờ tới khi server báo đã hủy.
+  const memo = new Map();
+  function keep(slot, key, build) {
+    const m = memo.get(slot);
+    if (m && m.key === key) return m.el;
+    const el = build();
+    if (memo.size > 50) memo.clear();
+    memo.set(slot, { key, el });
+    return el;
+  }
+  /** Nút hủy một job; đang hủy (job chạy dở, chờ bước hiện tại dừng) thì mờ. */
+  function cancelBtn(j, opts = {}) {
+    return keep("btn:" + (opts.slot || j.job_id), [j.job_id, !!j.cancelling, opts.text, opts.tip, opts.cls].join("|"),
+      () => makeCancelBtn(j, opts));
+  }
+  function makeCancelBtn(j, { text = "Hủy", tip, cls = "ct-btn" } = {}) {
+    const busy = !!j.cancelling;
+    const b = h("button", { type: "button", class: cls + (busy ? " ct-dis" : ""), "aria-disabled": busy ? "true" : null,
+      title: busy ? "Đang hủy, chờ bước hiện tại dừng" : tip || "Hủy job này",
+      onclick: async () => {
+        if (b.getAttribute("aria-disabled") === "true" || !CT.app) return;
+        b.setAttribute("aria-disabled", "true");
+        b.classList.add("ct-dis");
+        if (!(await CT.app.cancelJob(j.job_id))) { b.removeAttribute("aria-disabled"); b.classList.remove("ct-dis"); }
+      } }, busy ? "Đang hủy…" : text);
+    return b;
+  }
+  /** Danh sách job xếp trước (`ahead` của GET /jobs/{id}), mỗi job một nút hủy: lỡ bấm nhầm bài nào thì hủy bài đó. */
+  function aheadList(job) {
+    const ahead = Array.isArray(job.ahead) ? job.ahead : [];
+    if (!ahead.length) return null;
+    const key = ahead.map((j) => [j.job_id, j.status, !!j.cancelling, j.title].join("|")).join(";") + "@" + CT.state.videoId;
+    return keep("ahead", key, () => h("ul", { class: "ct-ahead" }, ...ahead.map((j) => {
+      const same = j.song_id === CT.state.videoId;
+      const name = same ? "bài này" : (j.title || j.song_id);
+      return h("li", {},
+        h("span", { class: "ct-ahead-st", text: j.cancelling ? "Đang hủy" : j.status === "running" ? "Đang chạy" : "Đang chờ" }),
+        h("span", { class: "ct-ahead-name", title: j.title || j.song_id, text: `${jobKindText(j)} · ${name}` }),
+        cancelBtn(j, { tip: `Hủy ${jobKindText(j).toLowerCase()} của ${same ? "bài này" : "bài " + JSON.stringify(name)} để bài này được xử lý sớm hơn` }));
+    })));
+  }
   function stepTranspose(d) {
     const v = Math.max(-6, Math.min(6, (CT.settings.transpose | 0) + d));
     CT.setSettings({ transpose: v, mode: CT.settings.mode === "white" ? "orig" : CT.settings.mode });
@@ -251,6 +298,8 @@
           role: "status" },
           h("span", { class: "ct-spinner" }), h("span", { class: "ct-mel-txt", text: eta ? `${text} · ${eta}` : text }),
           h("span", { class: "ct-mel-bar" }, h("i", { style: `width:${queued ? 0 : pct}%` })))];
+        if (j.job_id) kids.push(cancelBtn(j, { text: "✕", cls: "ct-btn ct-icon ct-mel-cancel",
+          tip: queued ? "Hủy, không dò giai điệu bài này nữa" : "Dừng dò giai điệu (thường dừng trong 1–2 giây)" }));
       } else if (m.status === "error") {
         const msg = (m.error && m.error.message) || "Không dò được giai điệu";
         kids = [h("span", { class: "ct-chip ct-warn ct-mel-err", title: msg, text: "⚠ " + msg }),
@@ -416,7 +465,10 @@
             (cur >= 0 && i < cur ? "✓ " : "") + label))),
         h("div", { class: "ct-st-note" },
           [etaText && etaText[0].toUpperCase() + etaText.slice(1), "Video vẫn xem bình thường, hợp âm sẽ hiện khi xong. Lần sau mở lại bài này là có ngay."]
-            .filter(Boolean).join(" · ")));
+            .filter(Boolean).join(" · ")),
+        queued ? aheadList(job) : null,
+        job.job_id ? h("div", { class: "ct-st-actions" }, cancelBtn(job, { text: "Hủy phân tích bài này",
+          tip: "Hủy job hợp âm của bài này (vd lỡ bấm nhầm). Bấm nút ChordTrack lần nữa để phân tích lại" })) : null);
       this.show("loading");
     },
 
@@ -454,6 +506,9 @@
           code(SERVER_CMD + " -Cookies C:\\duong\\dan\\cookies.txt"),
           h("div", { class: "ct-st-actions" }, retry(false)),
         ];
+      } else if (err.code === "cancelled") {
+        kids = [h("div", { class: "ct-st-title" }, "Đã hủy phân tích bài này"),
+          h("div", { class: "ct-st-actions" }, retry(false, "Phân tích"))];
       } else if (err.code === "extension_reloaded") {
         kids = [h("div", { class: "ct-st-title" }, "Extension vừa được cập nhật"),
           h("div", { class: "ct-st-actions" }, h("button", { type: "button", class: "ct-btn ct-primary", onclick: () => location.reload() }, "Tải lại trang"))];

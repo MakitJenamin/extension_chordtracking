@@ -14,6 +14,10 @@
   của các job đã xong được lưu vào bảng `step_times` để ước tính `progress` và `eta_seconds`.
 - Lỗi trong job được đổi thành câu tiếng Việt dễ hiểu (`friendly_error`) và lưu vào `error`;
   worker không chết.
+- Hủy (`JobStore.cancel`, `POST /jobs/{id}/cancel`): job đang chờ chuyển ngay sang `cancelled`; job đang chạy được
+  đánh dấu `cancel_requested` và dừng ở điểm hủy gần nhất (`chordtrack.cancel`: đầu mỗi bước, lúc chờ khóa GPU, tiến trình con
+  YourMT3+ bị kill, MuScriptor dừng giữa vòng sinh token, BS-Roformer dừng ở đoạn audio kế tiếp). Bước không có điểm
+  hủy (các model hợp âm, mỗi bước vài giây) chạy hết bước đó rồi mới dừng.
 """
 from __future__ import annotations
 
@@ -30,6 +34,7 @@ from typing import Any, Callable
 
 log = logging.getLogger(__name__)
 
+from chordtrack import cancel
 from chordtrack.melody.pipeline import STEPS as MELODY_STEPS
 from chordtrack.melody.pipeline import VARIANTS as MELODY_VARIANTS
 from chordtrack.melody.pipeline import variant_key as melody_variant_key   # (model, vocals) -> biến thể
@@ -134,7 +139,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     error TEXT,
     created_at REAL NOT NULL,
     started_at REAL,
-    finished_at REAL
+    finished_at REAL,
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
+    title TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_status_created ON jobs (status, created_at);
 CREATE TABLE IF NOT EXISTS step_times (
@@ -162,6 +169,8 @@ class Job:
     started_at: float | None
     finished_at: float | None
     kind: str = "analyze"
+    cancel_requested: bool = False
+    title: str | None = None       # tên video (extension gửi kèm) để hiện trong danh sách bài phía trước
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Job":
@@ -170,7 +179,7 @@ class Job:
             status=row["status"], step=row["step"], step_started_at=row["step_started_at"],
             steps_done=[s for s in (row["steps_done"] or "").split(",") if s], error=row["error"],
             created_at=row["created_at"], started_at=row["started_at"], finished_at=row["finished_at"],
-            kind=row["kind"] or "analyze",
+            kind=row["kind"] or "analyze", cancel_requested=bool(row["cancel_requested"]), title=row["title"],
         )
 
 
@@ -191,6 +200,10 @@ class JobStore:
             cols = {r["name"] for r in self._db.execute("PRAGMA table_info(jobs)")}
             if "kind" not in cols:   # DB của bản cũ (chỉ có job hợp âm)
                 self._db.execute("ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'analyze'")
+            if "cancel_requested" not in cols:   # DB của bản trước khi có nút hủy
+                self._db.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+            if "title" not in cols:
+                self._db.execute("ALTER TABLE jobs ADD COLUMN title TEXT")
             self._db.execute("DROP INDEX IF EXISTS jobs_song_status")
             self._db.execute("CREATE INDEX IF NOT EXISTS jobs_song_kind_status ON jobs (song_id, kind, status)")
 
@@ -200,33 +213,39 @@ class JobStore:
 
     # --- tạo và đọc job ---
 
-    def submit(self, song_id: str, source: str, force: bool = False, kind: str = "analyze") -> tuple[Job, bool]:
+    def submit(self, song_id: str, source: str, force: bool = False, kind: str = "analyze",
+               title: str | None = None) -> tuple[Job, bool]:
         """Tạo job mới, hoặc trả lại job đang chờ/chạy cùng `song_id` và `kind`. Trả về (job, có tạo mới không).
-        Gửi `force` cho job đang chờ thì job đó chuyển sang `force`."""
+        Gửi `force` cho job đang chờ thì job đó chuyển sang `force`. Job đang chạy mà đã bị hủy thì không trả lại
+        (nó sắp dừng): tạo job mới xếp cuối hàng."""
         if kind not in KINDS:
             raise ValueError(f"kind phải là một trong {tuple(KINDS)}, nhận {kind!r}")
+        title = (title or "").strip()[:200] or None
         with self._lock:
             row = self._db.execute(
                 "SELECT * FROM jobs WHERE song_id = ? AND kind = ? AND status IN ('queued', 'running') "
-                "ORDER BY created_at LIMIT 1", (song_id, kind)).fetchone()
+                "AND cancel_requested = 0 ORDER BY created_at LIMIT 1", (song_id, kind)).fetchone()
             if row is not None:
+                if title and not row["title"]:
+                    self._db.execute("UPDATE jobs SET title = ? WHERE id = ?", (title, row["id"]))
+                    row = self._row(row["id"])
                 if force and row["status"] == "queued" and not row["force"]:
                     self._db.execute("UPDATE jobs SET force = 1 WHERE id = ?", (row["id"],))
                     row = self._row(row["id"])
                 return Job.from_row(row), False
             job_id = uuid.uuid4().hex[:16]
             self._db.execute(
-                "INSERT INTO jobs (id, kind, song_id, source, force, status, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'queued', ?)",
-                (job_id, kind, song_id, source, int(force), time.time()))
+                "INSERT INTO jobs (id, kind, song_id, source, force, status, created_at, title) "
+                "VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
+                (job_id, kind, song_id, source, int(force), time.time(), title))
             return Job.from_row(self._row(job_id)), True
 
     def active(self, song_id: str, kind: str = "analyze") -> Job | None:
-        """Job đang chờ hoặc đang chạy của `song_id` (loại `kind`), nếu có."""
+        """Job đang chờ hoặc đang chạy (chưa bị hủy) của `song_id` (loại `kind`), nếu có."""
         with self._lock:
             row = self._db.execute(
                 "SELECT * FROM jobs WHERE song_id = ? AND kind = ? AND status IN ('queued', 'running') "
-                "ORDER BY created_at LIMIT 1", (song_id, kind)).fetchone()
+                "AND cancel_requested = 0 ORDER BY created_at LIMIT 1", (song_id, kind)).fetchone()
         return None if row is None else Job.from_row(row)
 
     def get(self, job_id: str) -> Job | None:
@@ -247,6 +266,25 @@ class JobStore:
             row = self._db.execute("SELECT * FROM jobs WHERE status = 'running' LIMIT 1").fetchone()
         return None if row is None else Job.from_row(row)
 
+    def cancel(self, job_id: str) -> Job | None:
+        """Hủy job: đang chờ thì thành `cancelled` ngay; đang chạy thì đánh dấu `cancel_requested` để worker dừng ở
+        điểm hủy gần nhất; đã kết thúc thì giữ nguyên. Trả job sau khi đổi (None nếu không có)."""
+        with self._lock:
+            row = self._row(job_id)
+            if row is None:
+                return None
+            if row["status"] == "queued":
+                self._db.execute("UPDATE jobs SET status = 'cancelled', finished_at = ?, step_started_at = NULL "
+                                 "WHERE id = ?", (time.time(), job_id))
+            elif row["status"] == "running":
+                self._db.execute("UPDATE jobs SET cancel_requested = 1 WHERE id = ?", (job_id,))
+            return Job.from_row(self._row(job_id))
+
+    def cancel_requested(self, job_id: str) -> bool:
+        with self._lock:
+            row = self._db.execute("SELECT cancel_requested FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return bool(row and row[0])
+
     def queue_length(self) -> int:
         with self._lock:
             return int(self._db.execute("SELECT COUNT(*) FROM jobs WHERE status = 'queued'").fetchone()[0])
@@ -254,8 +292,11 @@ class JobStore:
     # --- chuyển trạng thái (chỉ worker gọi) ---
 
     def recover(self) -> int:
-        """Job còn `running` từ lần chạy trước (server tắt giữa chừng) quay về `queued`."""
+        """Job còn `running` từ lần chạy trước (server tắt giữa chừng) quay về `queued` (đã bấm hủy thì thành
+        `cancelled`)."""
         with self._lock:
+            self._db.execute("UPDATE jobs SET status = 'cancelled', finished_at = ?, step_started_at = NULL "
+                             "WHERE status = 'running' AND cancel_requested = 1", (time.time(),))
             cur = self._db.execute(
                 "UPDATE jobs SET status = 'queued', step = NULL, step_started_at = NULL, steps_done = '', "
                 "started_at = NULL WHERE status = 'running'")
@@ -289,13 +330,15 @@ class JobStore:
                 self._db.execute("INSERT INTO step_times (job_id, step, seconds, finished_at) VALUES (?, ?, ?, ?)",
                                  (job_id, step, max(0.0, time.time() - started), time.time()))
 
-    def finish(self, job_id: str, error: str | None = None) -> None:
+    def finish(self, job_id: str, error: str | None = None, cancelled: bool = False) -> None:
+        status = "cancelled" if cancelled else "error" if error else "done"
         with self._lock:
             self._db.execute(
                 "UPDATE jobs SET status = ?, error = ?, finished_at = ?, step_started_at = NULL WHERE id = ?",
-                ("error" if error else "done", error, time.time(), job_id))
-            if error:
-                # Thời gian các bước của job lỗi không đại diện, bỏ khỏi thống kê.
+                (status, error, time.time(), job_id))
+            if status == "error":
+                # Thời gian các bước của job lỗi không đại diện, bỏ khỏi thống kê. Job bị hủy thì giữ các bước đã
+                # xong trọn vẹn (bước đang chạy dở lúc hủy chưa được ghi).
                 self._db.execute("DELETE FROM step_times WHERE job_id = ?", (job_id,))
             # Chỉ giữ HISTORY lần gần nhất mỗi bước để bảng không phình mãi.
             self._db.execute(
@@ -317,7 +360,7 @@ class JobStore:
             for step in spec.steps:
                 rows = self._db.execute(
                     "SELECT t.seconds FROM step_times t JOIN jobs j ON j.id = t.job_id "
-                    "WHERE t.step = ? AND j.kind = ? AND j.status = 'done' ORDER BY t.finished_at DESC LIMIT ?",
+                    "WHERE t.step = ? AND j.kind = ? AND j.status IN ('done', 'cancelled') ORDER BY t.finished_at DESC LIMIT ?",
                     (step, kind, HISTORY)).fetchall()
                 if rows:
                     out[step] = sum(r[0] for r in rows) / len(rows)
@@ -332,30 +375,42 @@ def job_status(store: JobStore, job: Job, now: float | None = None) -> dict[str,
     spec = KINDS[kind]
     avg = store.step_averages(kind)
     total = sum(avg[s] for s in spec.steps) or 1.0
-    out: dict[str, Any] = {"job_id": job.id, "song_id": job.song_id, "kind": job.kind, "status": job.status,
-                           "step": None, "progress": 0.0, "message": None, "eta_seconds": None, "error": None}
-    if job.kind in MELODY_VARIANT_OF:
-        v = MELODY_VARIANTS[MELODY_VARIANT_OF[job.kind]]
-        out["model"], out["vocals"] = v.base, v.vocals
+    out: dict[str, Any] = {**_brief(job), "step": None, "progress": 0.0, "message": None, "eta_seconds": None,
+                           "error": None}
     if job.status == "done":
         out.update(progress=1.0, message="Xong", eta_seconds=0.0)
     elif job.status == "error":
         out.update(step=job.step, message="Lỗi", error=job.error)
+    elif job.status == "cancelled":
+        out.update(step=job.step, message="Đã hủy")
     elif job.status == "running":
         remaining, done_time = _running_remaining(job, avg, now, spec.steps)
-        out.update(step=job.step, message=spec.messages.get(job.step or "", "Đang bắt đầu"),
+        out.update(step=job.step, message="Đang hủy, chờ bước hiện tại dừng" if job.cancel_requested
+                   else spec.messages.get(job.step or "", "Đang bắt đầu"),
                    progress=round(min(0.99, done_time / total), 3), eta_seconds=round(remaining, 1))
     else:  # queued
         before = _jobs_ahead(store, job)
         ahead = len(before)
         running = store.running()
         wait = 0.0
-        if running is not None:
+        if running is not None and not running.cancel_requested:   # job đang hủy sắp dừng: không tính
             rk = kind_name(running.kind)
             wait = _running_remaining(running, store.step_averages(rk), now, KINDS[rk].steps)[0]
         eta = wait + sum(_kind_total(store, j.kind) for j in before) + total
         msg = "Đang chờ" + (f" ({ahead + (running is not None)} bài phía trước)" if ahead or running else "")
-        out.update(message=msg, eta_seconds=round(eta, 1))
+        # Các job xếp trước (job đang chạy đứng đầu), để extension cho hủy bài lỡ bấm nhầm.
+        out.update(message=msg, eta_seconds=round(eta, 1),
+                   ahead=[_brief(j) for j in ([running] if running is not None else []) + before])
+    return out
+
+
+def _brief(job: Job) -> dict[str, Any]:
+    """Phần nhận diện của một job (dùng cho `job_status` và danh sách `ahead`)."""
+    out = {"job_id": job.id, "song_id": job.song_id, "kind": job.kind, "status": job.status, "title": job.title,
+           "cancelling": job.status == "running" and job.cancel_requested}
+    if job.kind in MELODY_VARIANT_OF:
+        v = MELODY_VARIANTS[MELODY_VARIANT_OF[job.kind]]
+        out["model"], out["vocals"] = v.base, v.vocals
     return out
 
 
@@ -519,6 +574,8 @@ class JobWorker:
         current: list[str | None] = [None]
 
         def progress(step: str, fraction: float) -> None:
+            if fraction <= 0.0:
+                cancel.check(fresh=True)   # đầu mỗi bước là điểm hủy (ném `Cancelled` ra ngoài pipeline)
             try:
                 if fraction <= 0.0:
                     current[0] = step
@@ -535,7 +592,13 @@ class JobWorker:
             return
         t0 = time.perf_counter()
         try:
-            runner(job.source, force=job.force, progress=progress)
+            with cancel.watching(lambda: self.store.cancel_requested(job.id)):
+                cancel.check()
+                runner(job.source, force=job.force, progress=progress)
+        except cancel.Cancelled:
+            log.info("Đã hủy job %s (%s) ở bước %s", job.id, job.song_id, current[0])
+            _free_vram()
+            self.store.finish(job.id, cancelled=True)
         except Exception as e:
             log.exception("Job %s (%s) lỗi ở bước %s", job.id, job.song_id, current[0])
             _free_vram()

@@ -473,3 +473,28 @@ def test_melody_vocals_flag(fake, tmp_path):
         st = c.get(f"/jobs/{r['job_id']}").json()
         assert jobs.KINDS[st["kind"]].steps == ("fetch", "melody_separate", "melody_voice", "melody_fill", "melody_line")
     assert mel.calls == [(VID, False, "yourmt3_vocals"), (VID, False, "combo_vocals")]
+
+
+def test_cancel_endpoint(fake, tmp_path):
+    fake.gate.clear()
+    with make_client(fake, tmp_path) as c:
+        a = c.post("/analyze", json={"source": VID, "title": "Bài nhầm"}).json()
+        assert fake.in_chords.wait(5)
+        b = c.post("/analyze", json={"source": VID2}).json()
+        st = c.get(f"/jobs/{b['job_id']}").json()
+        assert st["ahead"][0]["job_id"] == a["job_id"] and st["ahead"][0]["title"] == "Bài nhầm"
+        r = c.post(f"/jobs/{a['job_id']}/cancel")
+        assert r.status_code == 200 and r.json()["cancelling"] is True
+        fake.gate.set()
+        wait_status(c, a["job_id"], "cancelled")
+        wait_status(c, b["job_id"], "done")
+        assert c.post("/jobs/khongco/cancel").status_code == 404
+    assert fake.calls == [(VID, False), (VID2, False)]
+
+
+def test_cancel_queued_job_endpoint(fake, tmp_path):
+    with make_client(fake, tmp_path, start_worker=False) as c:
+        a = c.post("/analyze", json={"source": VID}).json()
+        st = c.post(f"/jobs/{a['job_id']}/cancel").json()
+        assert st["status"] == "cancelled" and st["message"] == "Đã hủy"
+        assert c.get("/health").json()["queue"] == 0

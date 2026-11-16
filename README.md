@@ -263,7 +263,8 @@ Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ 
 |---|---|
 | `GET /health` | Trạng thái server, GPU, hàng đợi, ffmpeg, Deno, cookies, các cách dò giai điệu chạy được |
 | `POST /analyze` | `{"source": "<videoId hoặc URL>", "force": false}` → kết quả nếu đã cache, không thì `job_id` |
-| `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error` |
+| `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error`; job đang chờ có thêm `ahead` (các job xếp trước) |
+| `POST /jobs/{job_id}/cancel` | Hủy job: đang chờ thì hủy ngay, đang chạy thì dừng ở điểm hủy gần nhất (thường 1–2 giây), `status` thành `cancelled` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
 | `GET /songs` | Danh sách bài đã phân tích |
 | `POST /melody` | Dò giai điệu; `"model": "combo"` (Kỹ) hoặc `"yourmt3"` (Bình thường), `"vocals": true` để tách giọng trước. Chi tiết: [docs/melody_api.md](docs/melody_api.md) |

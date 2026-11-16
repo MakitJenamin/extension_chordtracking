@@ -177,6 +177,13 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-status p { margin: 6px 0; }
 .ct-howto { margin: 6px 0; padding-left: 20px; }
 .ct-st-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; }
+/* Các job xếp trước (đang chờ tới lượt), mỗi job một nút hủy */
+.ct-ahead { margin: 10px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.ct-ahead li { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 0; }
+.ct-ahead li + li { border-top: 1px solid var(--ct-layer); }
+.ct-ahead-st { flex: none; padding: 2px 8px; border-radius: 6px; background: var(--ct-layer); color: var(--ct-text2); font-size: 12px; }
+.ct-ahead-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct-ahead .ct-btn { flex: none; }
 .ct-code {
   display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 6px 6px 6px 12px; border-radius: 8px;
   background: var(--ct-bg); font-size: 13px;
@@ -425,6 +432,7 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-mel-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; }
 .ct-mel-bar i { display: block; height: 100%; background: var(--ct-red); transition: width 0.8s linear; }
 .ct-mel-err { max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.ct-btn.ct-icon.ct-mel-cancel { width: 28px; height: 28px; font-size: 13px; line-height: 28px; }
 .ct-mel-sw {
   display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px;
   cursor: pointer; color: var(--ct-text2); font-size: 13px; font-weight: 500; white-space: nowrap;

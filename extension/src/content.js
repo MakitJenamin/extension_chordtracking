@@ -10,6 +10,8 @@
  *
  * CT.app.reload(force)   phân tích lại video hiện tại (nút "Thử lại" của panel dùng)
  * CT.app.toggle()        bật/tắt ChordTrack cho video hiện tại
+ * CT.app.cancelJob(id)  hủy một job trên server (của bài này hoặc bài phía trước trong hàng đợi). Tab nào đang theo
+ *                       dõi job đó sẽ thấy status "cancelled" ở lần poll kế tiếp.
  * Sự kiện "app" {videoId, visible, status, cached, progress} cho nút trên thanh điều khiển.
  * Server tắt: khi đang hiện thì tự thử lại mỗi 5 giây cho tới khi kết nối được (chỉ khi tab đang hiện).
  *
@@ -134,7 +136,12 @@
       return;
     } catch (e) {
       if (m.ctrl !== my || e.code === "aborted") return;
-      Object.assign(m, { ctrl: null, status: "error", job: null, error: { code: e.code || "unknown", message: e.message } });
+      if (e.code === "cancelled") {
+        // Hủy: quay về như trước khi bấm dò (dò lại thì còn dòng nốt cũ).
+        Object.assign(m, { ctrl: null, status: m.melody ? "ready" : "none", job: null, error: null });
+      } else {
+        Object.assign(m, { ctrl: null, status: "error", job: null, error: { code: e.code || "unknown", message: e.message } });
+      }
     }
     emitMelody(c);
   }
@@ -312,6 +319,11 @@
     toggle,
     check,
     detectMelody(force = false) { if (cur) detectMelody(cur, force); },
+    async cancelJob(jobId) {
+      if (!jobId) return false;
+      const r = await CT.api.cancelJob(jobId);
+      return !!r.ok;
+    },
   };
 
   async function start() {
