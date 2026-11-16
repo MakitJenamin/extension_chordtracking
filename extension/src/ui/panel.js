@@ -293,7 +293,7 @@
         const queued = j.status === "queued";
         const what = j.message || MELODY_STEPS[j.step] || (queued ? "Đang chờ tới lượt" : "Đang dò");
         const text = queued ? `Giai điệu (${name}): ${what}` : `Giai điệu (${name}) ${pct}% · ${what}`;
-        const eta = etaText(j.eta_seconds);
+        const eta = j.cancelling ? "" : etaText(j.eta_seconds);   // đang hủy: thời gian còn lại không còn nghĩa
         kids = [h("span", { class: "ct-chip ct-mel-prog", title: [MELODY_STEPS[j.step], j.message, eta].filter(Boolean).join(" · "),
           role: "status" },
           h("span", { class: "ct-spinner" }), h("span", { class: "ct-mel-txt", text: eta ? `${text} · ${eta}` : text }),
@@ -450,13 +450,14 @@
         ["beats", "Tìm phách"], ["chords", "Nhận hợp âm"], ["fusion", "Ghép kết quả"], ["analysis", "Giọng và đoạn"]];
       const pct = Math.round((job.progress || 0) * 100);
       const cur = STEPS.findIndex(([k]) => k === job.step);
-      const eta = job.eta_seconds;
+      const eta = job.cancelling ? null : job.eta_seconds;
       const etaText = eta == null ? "" : eta < 60 ? `còn khoảng ${Math.max(5, Math.round(eta / 5) * 5)} giây`
         : `còn khoảng ${Math.round(eta / 60)} phút`;
       const queued = job.status === "queued";
       this.status.replaceChildren(
         h("div", { class: "ct-st-title" },
-          h("span", { class: "ct-spinner" }), queued ? (job.message || "Đang chờ tới lượt") : "Đang phân tích hợp âm bài này",
+          h("span", { class: "ct-spinner" }), job.cancelling ? "Đang hủy phân tích bài này"
+            : queued ? (job.message || "Đang chờ tới lượt") : "Đang phân tích hợp âm bài này",
           h("span", { class: "ct-st-pct", text: queued ? "" : `${pct}%` })),
         h("div", { class: "ct-progress", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 },
           h("div", { style: `width:${queued ? 2 : Math.max(2, pct)}%` })),

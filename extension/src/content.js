@@ -40,7 +40,7 @@
   function notify() {
     const c = cur;
     CT.bus.emit("app", c ? { videoId: c.id, visible: c.visible, status: c.status, cached: !!c.cached,
-      serverDown: !!c.serverDown, progress: c.job ? c.job.progress || 0 : 0 } : { videoId: null, visible: false, status: "off", cached: false, progress: 0 });
+      serverDown: !!c.serverDown, cancelled: c.status === "error" && c.error?.code === "cancelled", progress: c.job ? c.job.progress || 0 : 0 } : { videoId: null, visible: false, status: "off", cached: false, progress: 0 });
   }
 
   function stopRetry() { clearTimeout(retryTimer); retryTimer = 0; }
