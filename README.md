@@ -110,7 +110,7 @@ Cột phải liệt kê **từng đoạn**: vòng hợp âm, bậc La Mã, giọ
 - Mỗi bài chiếm khoảng 170 MB trong `data\audio` và `data\cache`, xóa được khi cần chỗ.
 - Chưa hỗ trợ macOS, Linux.
 
-### 1. Tải mã nguồn và cài
+### 1. Cài
 
 Mở **PowerShell** ở thư mục muốn đặt dự án:
 
@@ -120,10 +120,8 @@ cd extension_chordtracking
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
-Script tự cài Python 3.11, PyTorch (bản CUDA nếu có GPU NVIDIA), thư viện, model (kiểm SHA-256), ffmpeg và Deno, rồi
-chạy thử và in tóm tắt. Tải khoảng 5 GB, mất khoảng 14 phút với mạng 12 MB/s. Chạy lại nhiều lần không sao.
-
-Tùy chọn: `-Cpu` (PyTorch bản CPU), `-NoMelody` (bỏ dò giai điệu), `-NoTools` (không tự cài ffmpeg, Deno), `-Full` (cho dev).
+Tự cài mọi thứ cần dùng (Python, PyTorch, model, ffmpeg, Deno). Tải ~5 GB, ~15 phút.
+Tùy chọn: `-Cpu` (máy không có GPU NVIDIA), `-NoMelody` (bỏ dò giai điệu).
 
 ### 2. Bật server
 
@@ -131,23 +129,17 @@ Tùy chọn: `-Cpu` (PyTorch bản CPU), `-NoMelody` (bỏ dò giai điệu), `-
 powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background
 ```
 
-Server chạy ẩn ở `http://127.0.0.1:8765`, chỉ máy bạn gọi được. Mỗi lần mở máy chạy lại lệnh này. Bỏ `-Background` để
-xem log trong cửa sổ.
+Chạy lại mỗi lần mở máy.
 
-### 3. Nạp extension vào Chrome (một lần)
+### 3. Nạp extension
 
-1. Mở `chrome://extensions`, bật **Developer mode**.
-2. Bấm **Load unpacked**, chọn thư mục `extension` trong thư mục dự án.
+Mở `chrome://extensions`, bật **Developer mode**, bấm **Load unpacked**, chọn thư mục `extension`.
 
 ### 4. Dùng
 
-Mở video YouTube, bấm nút **ChordTrack** trên thanh điều khiển player (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>).
-Lần đầu mỗi bài mất 10–20 giây trên GPU, lần sau có ngay. Các nút và phím tắt: [extension/README.md](extension/README.md).
-
-Server xử lý **lần lượt từng bài** (GPU chỉ chạy được một việc mỗi lúc). Bài phải chờ thì panel ghi "Đang chờ tới
-lượt" và khung **Đang làm trước bài này** cho biết bài nào đang chạy, kèm nút **Dừng bài đó** (lỡ bấm nhầm dò giai
-điệu bài khác chẳng hạn). Chữ **Hủy** ở góc panel hủy việc của chính bài đang xem, nút ✕ cạnh tiến độ dò giai điệu thì
-dừng dò. Hủy thường có tác dụng sau 1–2 giây.
+Mở video YouTube, bấm nút **ChordTrack** trên player (<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>). Lần đầu ~15 giây,
+lần sau có ngay. Đang phải chờ bài khác thì bấm **Dừng bài đó** để bỏ bài lỡ bấm nhầm.
+Chi tiết các nút: [extension/README.md](extension/README.md).
 
 ### 5. (Tùy chọn) Bật cách dò Kỹ
 
