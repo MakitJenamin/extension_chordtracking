@@ -18,6 +18,7 @@ import time
 import warnings
 from pathlib import Path
 
+from chordtrack import cancel
 from chordtrack.gpu import gpu_lock
 from chordtrack.paths import MODELS_DIR
 from chordtrack.types import Stems
@@ -120,6 +121,10 @@ def _run_roformer(mix: Path, vocals: Path, instrumental: Path) -> dict:
         def run():
             try:
                 sep.load_model(ROFORMER_MODEL)
+                # Job bị hủy (chordtrack.cancel): dừng ở đoạn audio kế tiếp (mỗi đoạn khoảng 8 s audio).
+                net = getattr(sep.model_instance, "model_run", None)
+                if net is not None and hasattr(net, "register_forward_pre_hook"):
+                    net.register_forward_pre_hook(lambda *_: cancel.check())
                 # Bản 0.30.2 ghi theo đường dẫn tương đối với cwd, nên truyền đường dẫn tuyệt đối.
                 sep.separate(str(mix), custom_output_names={"Vocals": str(tmp / "vocals"),
                                                             "Instrumental": str(tmp / "instrumental")})

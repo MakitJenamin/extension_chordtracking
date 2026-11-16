@@ -10,6 +10,7 @@ import contextlib
 import gc
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from filelock import FileLock
@@ -19,12 +20,28 @@ LOCK_PATH = Path(tempfile.gettempdir()) / "chordtrack_gpu.lock"
 
 @contextlib.contextmanager
 def gpu_lock(timeout: float = 1800):
-    lock = FileLock(str(LOCK_PATH), timeout=timeout)
-    with lock:
+    """Giữ khóa GPU. Trong lúc chờ khóa, job bị hủy (`chordtrack.cancel`) thì thôi chờ ngay."""
+    from filelock import Timeout
+
+    from chordtrack import cancel
+
+    lock = FileLock(str(LOCK_PATH))
+    deadline = time.monotonic() + timeout
+    while True:
+        cancel.check()
         try:
-            yield
-        finally:
+            lock.acquire(timeout=max(0.0, min(1.0, deadline - time.monotonic())))
+            break
+        except Timeout:
+            if time.monotonic() >= deadline:
+                raise
+    try:
+        yield
+    finally:
+        try:
             free_vram()
+        finally:
+            lock.release()
 
 
 def free_vram() -> None:

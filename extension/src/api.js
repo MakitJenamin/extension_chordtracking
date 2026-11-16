@@ -4,7 +4,10 @@
  * CT.api.loadSong(videoId, {onProgress, signal}) -> result JSON
  *   POST /analyze; có kết quả thì trả ngay, chưa có thì poll GET /jobs/{id} mỗi ~1 s
  *   (onProgress(job) mỗi lần), xong thì GET /result/{song_id}.
- *   Lỗi ném ra là CT.api.ApiError với `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "aborted".
+ *   Lỗi ném ra là CT.api.ApiError với `code`: "server_down" | "youtube_blocked" | "job_error" | "http" | "aborted"
+ *   | "cancelled" (job bị hủy trên server, từ tab này hay tab khác).
+ * CT.api.cancelJob(jobId) -> {ok, status, data}   POST /jobs/{id}/cancel (job đang chạy dừng ở điểm hủy gần nhất)
+ * CT.api.videoTitle(id)   tên video đang mở (chỉ khi trang đã chuyển hẳn sang video `id`), gửi kèm POST để danh sách "bài phía trước" hiện tên bài
  * CT.api.getMelody(id, model) -> {melody, stale} | {melody: null, status}   GET /melody/{id}?model= (không tạo job)
  * CT.api.loadMelody(videoId, {onProgress, signal, force, model, models}) -> <Melody>
  *   POST /melody, theo dõi GET /jobs/{id}, xong thì GET /melody/{song_id}?model= (docs/melody_api.md).
@@ -63,7 +66,7 @@
   /** Theo dõi job (GET /jobs/{id} mỗi ~1 s) tới khi xong; trả job cuối (status "done"). `fail(msg)` tạo lỗi job. */
   async function waitJob(first, { onProgress, signal, fail = jobError } = {}) {
     const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
-    let job = { status: first.status, progress: 0, step: null, message: "Đang chờ", eta_seconds: null };
+    let job = { job_id: first.job_id, status: first.status, progress: 0, step: null, message: "Đang chờ", eta_seconds: null };
     onProgress?.(job);
     let failures = 0;
     for (;;) {
@@ -82,6 +85,7 @@
       failures = 0;
       job = r.data;
       if (job.status === "error") throw fail(job.error || job.message);
+      if (job.status === "cancelled") throw new ApiError("cancelled", "Đã hủy", { job });
       if (job.status === "done") return job;
       onProgress?.(job);
     }
@@ -89,7 +93,7 @@
 
   async function loadSong(videoId, { onProgress, signal, force = false } = {}) {
     const check = () => { if (signal?.aborted) throw new ApiError("aborted", "Đã hủy"); };
-    const res = await request("/analyze", { method: "POST", body: { source: videoId, force } });
+    const res = await request("/analyze", { method: "POST", body: { source: videoId, force, title: videoTitle(videoId) } });
     check();
     if (!res.ok) throw toError(res);
     const first = res.data || {};
@@ -160,7 +164,7 @@
         }
       }
       const res = await request("/melody", { method: "POST",
-        body: { source: videoId, force, model: parts.model, ...(parts.vocals ? { vocals: true } : {}) } });
+        body: { source: videoId, force, title: videoTitle(videoId), model: parts.model, ...(parts.vocals ? { vocals: true } : {}) } });
       check();
       if (!res.ok) throw Object.assign(toError(res), { post: true });
       const first = res.data || {};
@@ -176,11 +180,25 @@
       if (!isMelody(rr.data)) throw new ApiError("http", "kết quả giai điệu không đọc được");
       return ok(rr.data);
     } catch (e) {
-      if (e && e.code === "aborted") throw e;
+      if (e && (e.code === "aborted" || e.code === "cancelled")) throw e;
       if (e && e.code === "extension_reloaded") throw e;
       throw melodyError(e);
     }
   }
 
-  CT.api = { request, loadSong, waitJob, getMelody, loadMelody, ApiError };
+  function cancelJob(jobId) {
+    return request(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+  }
+
+  /** Tên video `videoId` đang mở (bỏ "(3) " số thông báo và " - YouTube"); không chắc thì undefined. Lúc YouTube vừa
+   * điều hướng SPA, tiêu đề còn là của video trước: chỉ đọc khi ytd-watch-flexy đã mang đúng video-id. */
+  function videoTitle(videoId) {
+    const flexy = document.querySelector("ytd-watch-flexy");
+    if (!flexy || flexy.getAttribute("video-id") !== videoId) return undefined;
+    const el = document.querySelector("ytd-watch-metadata h1 yt-formatted-string, h1.ytd-watch-metadata");
+    const t = ((el && el.textContent) || document.title || "").replace(/^\(\d+\+?\)\s*/, "").replace(/\s*-\s*YouTube$/, "").trim();
+    return t ? t.slice(0, 200) : undefined;
+  }
+
+  CT.api = { request, loadSong, waitJob, getMelody, loadMelody, cancelJob, videoTitle, ApiError };
 })();

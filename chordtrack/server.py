@@ -6,7 +6,8 @@ Chỉ lắng nghe 127.0.0.1, không mở ra mạng ngoài. Endpoint:
 - `POST /analyze`             `{"source": "<videoId hoặc URL YouTube>", "force": false}`
                               -> `{"status": "done", "result": {...}}` nếu có cache, ngược lại
                               `{"status": "queued"|"running", "job_id", "song_id"}`
-- `GET  /jobs/{job_id}`       tiến độ job (xem `jobs.job_status`)
+- `GET  /jobs/{job_id}`       tiến độ job (xem `jobs.job_status`); job đang chờ có thêm `ahead` (các job xếp trước)
+- `POST /jobs/{job_id}/cancel` hủy job (đang chờ: hủy ngay; đang chạy: dừng ở điểm hủy gần nhất), trả tiến độ job
 - `GET  /result/{song_id}`    JSON kết quả hoặc 404
 - `GET  /songs`               danh sách bài đã phân tích (cho popup của extension)
 - `POST /melody`              dò giai điệu, cùng cách dùng với `/analyze`, thêm `"model": "combo" | "yourmt3"` và
@@ -65,6 +66,7 @@ class UTF8JSONResponse(JSONResponse):
 class AnalyzeRequest(BaseModel):
     source: str
     force: bool = False
+    title: str | None = None    # tên video, chỉ để hiện trong danh sách bài đang chờ (JobStore cắt còn 200 ký tự)
 
 
 MelodyModel = Literal["combo", "yourmt3"]     # = `chordtrack.melody.pipeline.BASE_MODELS`
@@ -309,7 +311,8 @@ def create_app(
             if result is not None:
                 return {"status": "done", "song_id": video_id, key: result}
         # Truyền URL chuẩn, không truyền videoId trần: pipeline coi chuỗi trùng tên file trong cwd là file local.
-        job, created = store().submit(video_id, youtube_url(video_id), force=body.force, kind=kind)
+        job, created = store().submit(video_id, youtube_url(video_id), force=body.force, kind=kind,
+                                      title=body.title)
         if created:
             store_holder["worker"].notify()
         return {"status": job.status, "job_id": job.id, "song_id": job.song_id}
@@ -349,6 +352,13 @@ def create_app(
     @app.get("/jobs/{job_id}")
     def job_endpoint(job_id: str) -> dict:
         job = store().get(job_id)
+        if job is None:
+            raise HTTPException(404, "Không có job này")
+        return jobs.job_status(store(), job)
+
+    @app.post("/jobs/{job_id}/cancel")
+    def cancel_endpoint(job_id: str) -> dict:
+        job = store().cancel(job_id)
         if job is None:
             raise HTTPException(404, "Không có job này")
         return jobs.job_status(store(), job)

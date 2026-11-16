@@ -35,6 +35,7 @@ chỉ lên GPU trong `gpu_lock()` (xem `chordtrack/melody/muscriptor.py`).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import hashlib
 import json
@@ -50,6 +51,7 @@ from typing import Callable
 import numpy as np
 
 from chordtrack import audio as audio_mod
+from chordtrack import cancel
 from chordtrack import paths
 from chordtrack.audio import read_json, write_json
 from chordtrack.melody import line as L
@@ -299,9 +301,18 @@ def run_yourmt3(audio_path: Path, out_path: Path) -> MelodyModelOutput:
     with tempfile.TemporaryFile() as out_f, tempfile.TemporaryFile() as err_f:
         proc = subprocess.Popen(cmd, cwd=str(root), env=env, stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f,
                                 creationflags=flags)
+        deadline = time.monotonic() + YOURMT3_TIMEOUT
         try:
-            returncode = proc.wait(timeout=YOURMT3_TIMEOUT)
-        except subprocess.TimeoutExpired:
+            # Chờ từng nhịp ngắn để người dùng hủy job (chordtrack.cancel) thì dừng tiến trình con ngay.
+            while True:
+                try:
+                    returncode = proc.wait(timeout=min(0.5, max(0.01, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired(cmd, YOURMT3_TIMEOUT) from None
+                    cancel.check()
+        except BaseException:
             proc.kill()
             proc.wait()
             raise
@@ -322,7 +333,35 @@ def run_muscriptor(audio_path: Path) -> MelodyModelOutput:
     """MuScriptor small trong tiến trình hiện tại (hàm tự lấy `gpu_lock()`, model trả về CPU khi xong)."""
     from chordtrack.melody import muscriptor
 
-    return muscriptor.transcribe(audio_path, MUSCRIPTOR_SIZE)
+    with _muscriptor_cancellable():
+        return muscriptor.transcribe(audio_path, MUSCRIPTOR_SIZE)
+
+
+_MUSCRIPTOR_HOOKED = False
+
+
+@contextlib.contextmanager
+def _muscriptor_cancellable():
+    """Cho MuScriptor dừng giữa chừng khi job bị hủy: mỗi lần sinh token gọi `cancel.check()` trước. Bọc ở đây (không
+    sửa `muscriptor.py`) để hash mã wrapper không đổi, đầu ra thô đã lưu vẫn dùng lại được. Lớp bọc gắn một lần cho cả
+    tiến trình (không gỡ, nên không lo gọi lồng nhau hay song song); ngoài `cancel.watching` nó không làm gì."""
+    global _MUSCRIPTOR_HOOKED
+    if not _MUSCRIPTOR_HOOKED:
+        try:
+            from muscriptor.models.lm import LMModel
+        except ImportError:
+            pass
+        else:
+            orig = LMModel.__dict__["_compute_logits"]
+
+            @functools.wraps(orig)
+            def wrapped(self, *args, **kwargs):
+                cancel.check()
+                return orig(self, *args, **kwargs)
+
+            LMModel._compute_logits = wrapped
+            _MUSCRIPTOR_HOOKED = True
+    yield
 
 
 def _prepare_audio(source: str) -> tuple[str, Path]:

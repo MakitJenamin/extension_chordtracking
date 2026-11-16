@@ -316,3 +316,132 @@ def test_friendly_error_melody_not_youtube():
     assert "YouTube" not in msg and msg.startswith("Lỗi khi dò giai điệu")
     # bước fetch của job melody vẫn là lỗi tải YouTube
     assert "YouTube" in jobs.friendly_error(RuntimeError("getaddrinfo failed"), "fetch", "melody")
+
+
+# --- hủy job ---
+
+def test_cancel_queued_job(store):
+    a, _ = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa", title="Bài A")
+    b, _ = store.submit("bbbbbbbbbbb", "bbbbbbbbbbb")
+    j = store.cancel(a.id)
+    assert j.status == "cancelled" and j.finished_at is not None
+    assert store.queue_length() == 1 and store.claim_next().id == b.id
+    st = jobs.job_status(store, store.get(a.id))
+    assert st["status"] == "cancelled" and st["message"] == "Đã hủy" and st["title"] == "Bài A"
+    # Gửi lại bài đã hủy: job mới.
+    c, created = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa")
+    assert created and c.id != a.id
+    assert store.cancel("khongco") is None
+
+
+def test_cancel_running_job_marks_request(store):
+    a, _ = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa", kind="melody")
+    store.claim_next()
+    j = store.cancel(a.id)
+    assert j.status == "running" and j.cancel_requested and store.cancel_requested(a.id)
+    st = jobs.job_status(store, j)
+    assert st["cancelling"] and "hủy" in st["message"].lower()
+    # Job sắp dừng không được gộp với lần gửi mới.
+    assert store.active("aaaaaaaaaaa", "melody") is None
+    b, created = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa", kind="melody")
+    assert created and b.id != a.id
+    store.finish(a.id, cancelled=True)
+    assert store.get(a.id).status == "cancelled"
+    # Job đã kết thúc: hủy không đổi gì.
+    assert store.cancel(a.id).status == "cancelled"
+
+
+def test_recover_cancelled_running_job(tmp_path):
+    path = tmp_path / "jobs.sqlite"
+    s = jobs.JobStore(path)
+    a, _ = s.submit("aaaaaaaaaaa", "aaaaaaaaaaa")
+    s.claim_next()
+    s.cancel(a.id)
+    s.close()
+    s2 = jobs.JobStore(path)
+    assert s2.recover() == 0 and s2.get(a.id).status == "cancelled"
+    s2.close()
+
+
+def test_queued_status_lists_jobs_ahead(store):
+    a, _ = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa", kind="melody", title="  Bài A  ")
+    b, _ = store.submit("bbbbbbbbbbb", "bbbbbbbbbbb")
+    c, _ = store.submit("ccccccccccc", "ccccccccccc")
+    store.claim_next()
+    st = jobs.job_status(store, store.get(c.id))
+    assert [x["job_id"] for x in st["ahead"]] == [a.id, b.id]
+    assert st["ahead"][0]["status"] == "running" and st["ahead"][0]["title"] == "Bài A"
+    assert st["ahead"][0]["model"] == "combo" and st["ahead"][0]["vocals"] is False
+    assert "2 bài phía trước" in st["message"]
+    # Gửi trùng kèm tên khi job chưa có tên: lưu tên.
+    store.submit("bbbbbbbbbbb", "bbbbbbbbbbb", title="Bài B")
+    assert jobs.job_status(store, store.get(c.id))["ahead"][1]["title"] == "Bài B"
+
+
+def test_cancel_check_is_throttled_and_scoped():
+    from chordtrack import cancel
+
+    cancel.check()     # ngoài `watching`: không làm gì
+    calls = []
+    flag = [False]
+
+    def fn():
+        calls.append(1)
+        return flag[0]
+
+    with cancel.watching(fn, interval=60):
+        cancel.check()
+        flag[0] = True
+        cancel.check()          # chưa tới lượt đọc lại cờ
+        assert len(calls) == 1
+    with cancel.watching(fn, interval=0):
+        with pytest.raises(cancel.Cancelled):
+            cancel.check()
+    assert not cancel.requested()
+
+
+def test_worker_cancels_between_steps(store):
+    from chordtrack import cancel
+
+    started = threading.Event()
+    gate = threading.Event()
+    seen = []
+
+    def analyze(source, *, force=False, progress=None):
+        for step in jobs.STEPS:
+            progress(step, 0.0)
+            seen.append(step)
+            if step == "beats":
+                started.set()
+                assert gate.wait(5)
+            progress(step, 1.0)
+        return {}
+
+    a, _ = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa")
+    worker = jobs.JobWorker(store, analyze, poll_interval=0.05)
+    t = threading.Thread(target=worker.run_job, args=(store.claim_next(),))
+    t.start()
+    assert started.wait(5)
+    store.cancel(a.id)
+    gate.set()
+    t.join(5)
+    assert store.get(a.id).status == "cancelled"
+    assert seen[-1] == "beats"
+    assert not cancel.requested()
+    # Bước chưa chạy (chords) giữ mặc định, các bước đã xong trước khi hủy thì vào thống kê.
+    avg = store.step_averages()
+    assert avg["chords"] == jobs.DEFAULT_STEP_SECONDS["chords"] and avg["beats"] < 1.0
+
+
+def test_queued_eta_skips_cancelling_job_and_keeps_finished_step_times(store):
+    a, _ = store.submit("aaaaaaaaaaa", "aaaaaaaaaaa")
+    b, _ = store.submit("bbbbbbbbbbb", "bbbbbbbbbbb")
+    store.claim_next()
+    store.step_started(a.id, "fetch")
+    store.step_finished(a.id, "fetch")
+    total = sum(jobs.DEFAULT_STEP_SECONDS.values())
+    assert jobs.job_status(store, store.get(b.id))["eta_seconds"] > total
+    store.cancel(a.id)
+    assert jobs.job_status(store, store.get(b.id))["eta_seconds"] == pytest.approx(total)
+    store.finish(a.id, cancelled=True)
+    assert store.step_averages()["fetch"] < 1.0      # bước đã xong trước khi hủy vẫn vào thống kê
