@@ -91,9 +91,7 @@ Cột phải liệt kê **từng đoạn**: vòng hợp âm, bậc La Mã, giọ
 
 <img src="docs/img/theater.png" alt="Chế độ rạp phim: dải hợp âm và cấu trúc bài dưới video">
 
-## 🚀 Cài đặt (Windows)
-
-### Cấu hình máy
+## 💻 Cấu hình máy
 
 | | Tối thiểu | Khuyến nghị | Máy đã thử |
 |---|---|---|---|
@@ -106,9 +104,23 @@ Cột phải liệt kê **từng đoạn**: vòng hợp âm, bậc La Mã, giọ
 
 - Cột "Tối thiểu" ước tính từ số đo, chưa thử trên máy yếu. Đo trên máy đã thử: phân tích hợp âm ~16 giây (RAM 2,1 GB,
   VRAM 0,7 GB); dò giai điệu ~2 phút (RAM 3,4 GB, VRAM 3,0 GB).
-- GPU dưới 4 GB: dò giai điệu có thể hết VRAM, cài lại với `setup.ps1 -Cpu`.
-- Mỗi bài chiếm khoảng 170 MB trong `data\audio` và `data\cache`, xóa được khi cần chỗ.
+- GPU dưới 4 GB: dò giai điệu có thể hết VRAM, cài bằng `setup.ps1 -Cpu`.
 - Chưa hỗ trợ macOS, Linux.
+
+### Dung lượng sau khi cài
+
+Đo trên máy đã thử, cài mặc định (có GPU NVIDIA):
+
+| Phần | Dung lượng |
+|---|---|
+| Thư viện Python (`.venv`, phần lớn là PyTorch bản CUDA) | ~5 GB |
+| Model (`data\models`) | ~1,2 GB (thêm 0,4 GB nếu bật cách dò Kỹ) |
+| Mã model bên thứ ba (`third_party_src`) | ~0,7 GB |
+| **Tổng thư mục dự án** | **~7 GB** |
+| Python 3.11, ffmpeg, Deno (cài ngoài thư mục dự án) | ~1 GB |
+| Mỗi bài đã phân tích (`data\audio`, `data\cache`) | ~170 MB, xóa được khi cần chỗ |
+
+## 🚀 Cài đặt (Windows)
 
 ### 1. Cài
 
