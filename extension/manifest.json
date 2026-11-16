@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ChordTrack",
+  "name": "ChordTrack – Hợp Âm & Giai Điệu Theo Video YouTube",
   "short_name": "ChordTrack",
   "version": "0.2.0",
   "description": "Hợp âm, giai điệu, nhịp và cấu trúc bài chạy theo video YouTube, tự dịch về phím trắng. AI phân tích ngay trên máy bạn.",
