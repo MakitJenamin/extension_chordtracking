@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "ChordTrack – hợp âm theo video YouTube",
+  "name": "ChordTrack – hợp âm & giai điệu theo video YouTube",
   "short_name": "ChordTrack",
-  "version": "0.1.0",
-  "description": "Hiện hợp âm, nhịp và vòng hợp âm chạy theo video YouTube. Phân tích bằng AI chạy local trên máy bạn.",
+  "version": "0.2.0",
+  "description": "Hợp âm, giai điệu, nhịp và cấu trúc bài chạy theo video YouTube, tự dịch về phím trắng. AI phân tích ngay trên máy bạn.",
   "permissions": ["storage"],
   "host_permissions": ["http://127.0.0.1:8765/*", "https://www.youtube.com/*"],
   "background": { "service_worker": "src/background.js" },
