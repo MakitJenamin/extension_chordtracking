@@ -63,7 +63,8 @@
 <img src="docs/img/melody.png" alt="Dòng nốt giai điệu dưới dải hợp âm">
 
 Bấm **♪ Dò giai điệu** khi hợp âm đã hiện. Nốt chạy dưới hợp âm kiểu piano-roll: viên càng cao thì nốt càng cao, dài
-theo độ dài nốt, tên nốt ghi trong viên. Ô bên trái ghi to nốt đang hát và nốt kế tiếp. Giọng hát
+theo độ dài nốt, tên nốt ghi trong viên (↑/↓ ở đầu tên khi nốt cùng tên với nốt trước nhưng lên/xuống một quãng tám).
+Ô bên trái ghi to nốt đang hát và nốt kế tiếp. Giọng hát
 được tách riêng trước khi dò; nốt tự khớp phách và dịch giọng theo hợp âm. Bài 4 phút mất khoảng 2–3 phút ở lần đầu.
 
 | Cách | Model | Hợp với |
@@ -143,6 +144,11 @@ xem log trong cửa sổ.
 Mở video YouTube, bấm nút **ChordTrack** trên thanh điều khiển player (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>).
 Lần đầu mỗi bài mất 10–20 giây trên GPU, lần sau có ngay. Các nút và phím tắt: [extension/README.md](extension/README.md).
 
+Server xử lý **lần lượt từng bài** (GPU chỉ chạy được một việc mỗi lúc). Bài phải chờ thì panel ghi "Đang chờ tới
+lượt" và khung **Đang làm trước bài này** cho biết bài nào đang chạy, kèm nút **Dừng bài đó** (lỡ bấm nhầm dò giai
+điệu bài khác chẳng hạn). Chữ **Hủy** ở góc panel hủy việc của chính bài đang xem, nút ✕ cạnh tiến độ dò giai điệu thì
+dừng dò. Hủy thường có tác dụng sau 1–2 giây.
+
 ### 5. (Tùy chọn) Bật cách dò Kỹ
 
 Weights MuScriptor theo license CC BY-NC 4.0 (chỉ dùng phi thương mại) và cần tài khoản Hugging Face miễn phí.
@@ -184,6 +190,13 @@ powershell -ExecutionPolicy Bypass -File scripts\start_server.ps1 -Background -C
 <summary><b>Thiếu ffmpeg hoặc Deno</b></summary>
 
 Cài tay: `winget install Gyan.FFmpeg` và `winget install DenoLand.Deno`, rồi **mở PowerShell mới** và chạy lại server.
+</details>
+
+<details>
+<summary><b>"Đang chờ tới lượt" lâu, bài khác chạy trước</b></summary>
+
+Server chạy lần lượt từng bài, dò giai điệu một bài mất 2–3 phút. Bấm **Dừng bài đó** trong khung "Đang làm trước bài
+này" để bỏ bài không cần, bài đang xem sẽ được làm ngay. Bài vừa dừng muốn làm lại thì mở bài đó và bấm lại.
 </details>
 
 <details>
@@ -262,7 +275,7 @@ Server FastAPI, chỉ nghe `127.0.0.1:8765` (đổi bằng `-Port`). CORS chỉ 
 | Endpoint | Mô tả |
 |---|---|
 | `GET /health` | Trạng thái server, GPU, hàng đợi, ffmpeg, Deno, cookies, các cách dò giai điệu chạy được |
-| `POST /analyze` | `{"source": "<videoId hoặc URL>", "force": false}` → kết quả nếu đã cache, không thì `job_id` |
+| `POST /analyze` | `{"source": "<videoId hoặc URL>", "force": false, "title": "<tên video, tùy chọn>"}` → kết quả nếu đã cache, không thì `job_id` |
 | `GET /jobs/{job_id}` | `status`, `progress`, `step`, `eta_seconds`, `error`; job đang chờ có thêm `ahead` (các job xếp trước) |
 | `POST /jobs/{job_id}/cancel` | Hủy job: đang chờ thì hủy ngay, đang chạy thì dừng ở điểm hủy gần nhất (thường 1–2 giây), `status` thành `cancelled` |
 | `GET /result/{song_id}` | JSON kết quả (header `X-Chordtrack-Stale: 1` nếu do mã cũ tạo) |
