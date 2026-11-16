@@ -2,7 +2,8 @@
  *
  * CT.ui.ctlButton.mount() / unmount()   gắn / gỡ nút (content.js gọi khi đang ở trang video và extension bật)
  * Nút đọc trạng thái từ sự kiện "app" (content.js phát):
- *   {videoId, visible, status: "off"|"loading"|"ready"|"error", cached, progress}
+ *   {videoId, visible, status: "off"|"loading"|"ready"|"error", cached, progress, cancelled}
+ *   (cancelled: người dùng tự hủy job, không coi là lỗi)
  * Hình thức theo trạng thái (data-state trên nút):
  *   off       icon trắng như nút của YouTube; cached = true thì có chấm nhỏ ("bấm là có ngay")
  *   loading   vòng tròn tiến độ quanh icon
@@ -121,7 +122,7 @@
     render(st) {
       this.state = st;
       if (!this.el) return;
-      const view = st.status === "error" ? "error" : st.status === "loading" ? "loading" : st.visible ? "on" : "off";
+      const view = st.status === "error" && !st.cancelled ? "error" : st.status === "loading" ? "loading" : st.visible ? "on" : "off";
       this.el.dataset.state = view;
       this.el.classList.toggle("ct-ctl-down", !!st.serverDown && view === "off");
       this.el.classList.toggle("ct-ctl-cached", !!st.cached && !st.visible && view === "off");
@@ -131,6 +132,7 @@
       let text;
       if (view === "loading") text = `ChordTrack: đang phân tích ${Math.round((st.progress || 0) * 100)}%` + (st.visible ? " (bấm để ẩn)" : " (bấm để xem)");
       else if (view === "error") text = st.visible ? "ChordTrack: lỗi, bấm để ẩn" : "ChordTrack: lỗi, bấm để thử lại";
+      else if (st.cancelled) text = st.visible ? "ChordTrack: đã hủy phân tích, bấm để ẩn" : "ChordTrack: đã hủy, bấm để phân tích";
       else if (st.serverDown) text = "ChordTrack: chưa kết nối được server";
       else if (view === "on") text = "ChordTrack: ẩn hợp âm";
       else text = st.cached ? "ChordTrack: hiện hợp âm (đã có kết quả)" : "ChordTrack: hiện hợp âm";
