@@ -64,10 +64,7 @@
         this.bursts.push(b);
       }
       this.hitZone.append(this.flare, ...this.bursts);
-      // Hợp âm chạm vạch đỏ: sóng xung kích (b) tỏa ngang và tàn lửa (i) bay lên từ đáy hàng hợp âm.
       this.chordFlash = el("div", "ct-chordflash");
-      this.chordFlash.append(el("b"));
-      for (let i = 0; i < Strip.EMBERS; i++) this.chordFlash.append(el("i"));
       this.fx = { beat: -1, flip: false, pop: false, cf: false, soon: null, np: -1, playing: null, burst: 0 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
@@ -375,20 +372,6 @@
       b.classList.add(on ? "ct-gb" : "ct-ga");
     }
 
-    /** Hợp âm vừa tới lượt (phát bình thường): tàn lửa bay lên với vị trí, độ cao, độ trôi ngẫu nhiên, rồi chạy lại
-     * hoạt ảnh sóng xung kích + tàn lửa. */
-    chordBurst() {
-      if (CT.settings.fx === false) return;
-      for (const s of this.chordFlash.children) {
-        if (s.tagName !== "I") continue;
-        s.style.setProperty("--x", `${(Math.random() * 36 - 18).toFixed(1)}px`);
-        s.style.setProperty("--dx", `${(Math.random() * 30 - 20).toFixed(1)}px`);
-        s.style.setProperty("--dy", `${(-28 - Math.random() * 48).toFixed(1)}px`);
-        s.style.setProperty("--d", `${(0.6 + Math.random() * 0.5).toFixed(2)}s`);
-      }
-      this.retrigger(this.chordFlash, "cf", "ct-fa", "ct-fb");
-    }
-
     /** Mỗi khung hình: nhịp đập của vạch đỏ theo phách (phách 1 mạnh hơn) và trạng thái phát/dừng.
      * Chỉ nháy khi phách tăng đúng 1 (phát bình thường), tua hay kéo thì không. */
     beatFx(t) {
@@ -662,7 +645,7 @@
         els[j].classList.remove("ct-past");
         els[j].classList.add("ct-cur");
         // Hợp âm tới lượt khi đang phát bình thường (không phải tua): cột sáng lóe ở vạch đỏ.
-        if (j === old + 1 && old >= 0 && this.playing) this.chordBurst();
+        if (j === old + 1 && old >= 0 && this.playing) this.retrigger(this.chordFlash, "cf", "ct-fa", "ct-fb");
       }
       this.idx = j;
       // Cho harness đo độ lệch đồng bộ (t hiển thị và currentTime thật lúc đổi hợp âm).
@@ -689,7 +672,6 @@
   Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
   Strip.BURSTS = 4;        // số chùm tia lửa dùng xoay vòng (nốt nhanh hơn ~0,15 s vẫn mỗi nốt một chùm)
   Strip.SPARKS = 10;       // số tia mỗi chùm
-  Strip.EMBERS = 12;       // số tàn lửa khi hợp âm chạm vạch đỏ
   CT.ui = CT.ui || {};
   CT.ui.Strip = Strip;
   CT.ui.strip = new Strip();

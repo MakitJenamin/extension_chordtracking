@@ -555,21 +555,22 @@ html.ct-fx-on .ct-strip-wrap::after { right: 0; width: 64px; background: linear-
 
 /* Ô hợp âm: chuyển trạng thái mềm (đã qua mờ dần thay vì tắt phụt). */
 html.ct-fx-on .ct-chord { transition: opacity 0.45s ease, background-color 0.3s ease, box-shadow 0.3s ease; }
-/* Hợp âm đang vang: ô được "nạp sáng" từ trái sang theo tiến độ (--ct-p, mép sáng trùng vạch đỏ, như tô karaoke
- * của nốt) và tên hợp âm có quầng neon: bùng sáng lúc vào rồi dịu xuống, giữ suốt lúc vang. */
+/* Hợp âm vừa tới: tên nảy nhẹ kèm quầng sáng, rồi một vệt sáng quét ngang ô. */
 html.ct-fx-on .ct-chord.ct-cur {
-  box-shadow: inset 0 0 0 1px var(--ct-cur-border), 0 0 22px -6px color-mix(in srgb, var(--ct-accent) 75%, transparent);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--ct-accent) 8%, transparent),
-      color-mix(in srgb, var(--ct-accent) 30%, transparent) calc(var(--ct-p, 0) * 100% - 1px),
-      transparent calc(var(--ct-p, 0) * 100% + 6px)),
-    var(--ct-cur-bg);
+  box-shadow: inset 0 0 0 1px var(--ct-cur-border), 0 0 20px -6px color-mix(in srgb, var(--ct-accent) 70%, transparent);
 }
-html.ct-fx-on .ct-chord.ct-cur .ct-sym { animation: ct-neon 0.8s ease-out both; }
-@keyframes ct-neon {
-  0% { text-shadow: 0 0 2px #fff, 0 0 16px var(--ct-accent), 0 0 32px var(--ct-accent); }
-  100% { text-shadow: 0 0 10px color-mix(in srgb, var(--ct-accent) 55%, transparent); }
+html.ct-fx-on .ct-chord.ct-cur .ct-sym { transform-origin: 0 70%; animation: ct-chord-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1.25) both; }
+@keyframes ct-chord-in {
+  0% { transform: scale(0.86); text-shadow: 0 0 0 transparent; }
+  45% { transform: scale(1.07); text-shadow: 0 0 14px color-mix(in srgb, var(--ct-accent) 85%, transparent); }
+  100% { transform: none; text-shadow: 0 0 0 transparent; }
 }
+html.ct-fx-on .ct-chord.ct-cur::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: -1; background-repeat: no-repeat;
+  background-image: linear-gradient(100deg, transparent 0%, color-mix(in srgb, var(--ct-cur-border) 55%, transparent) 50%, transparent 100%);
+  background-size: 140px 100%; background-position: -140px 0; animation: ct-sheen 0.9s ease-out 0.05s both;
+}
+@keyframes ct-sheen { to { background-position: calc(100% + 140px) 0; } }
 /* Thanh tiến độ trong ô: dải đỏ chuyển sắc, đầu thanh phát sáng. */
 html.ct-fx-on .ct-chord.ct-cur::after {
   background: linear-gradient(90deg, color-mix(in srgb, var(--ct-red) 20%, transparent), var(--ct-red) 75%, #ff8fa6);
@@ -606,17 +607,16 @@ html.ct-fx-on .ct-hitzone {
   display: block; position: absolute; left: 0; top: 0; width: 0; height: 100%; z-index: 0; pointer-events: none;
 }
 .ct-flare, .ct-burst { position: absolute; left: 0; top: 0; }
-/* Quầng sáng lúc nốt ngân: elip dẹt quanh điểm chạm, sáng dịu, chỉ thở rất chậm (không chập chờn), lướt mượt khi
- * đổi cao độ. */
+/* Quầng sáng cháy lúc nốt ngân: elip dẹt quanh điểm chạm, chập chờn nhẹ. */
 .ct-flare {
   width: 74px; height: 38px; margin: -19px 0 0 -37px; border-radius: 50%; opacity: 0;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.55), color-mix(in srgb, var(--ct-hit) 50%, transparent) 40%, transparent);
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.95), color-mix(in srgb, var(--ct-hit) 75%, transparent) 38%, transparent);
   transform: translateY(calc(3px + var(--oy, 0.5) * (var(--ct-mel-h) - var(--ct-pill-h) - 6px) + var(--ct-pill-h) / 2));
-  transition: transform 0.22s cubic-bezier(0.25, 0.8, 0.3, 1), opacity 0.3s ease;
+  transition: transform 0.1s ease-out, opacity 0.18s ease;
 }
-html.ct-fx-on .ct-playing .ct-hitzone:not(.ct-rest) .ct-flare { opacity: 0.6; animation: ct-breathe 1.6s ease-in-out infinite alternate; }
-html.ct-fx-on .ct-playing .ct-hitzone.ct-unc:not(.ct-rest) .ct-flare { opacity: 0.3; }
-@keyframes ct-breathe { from { scale: 0.96; } to { scale: 1.03; } }
+html.ct-fx-on .ct-playing .ct-hitzone:not(.ct-rest) .ct-flare { opacity: 0.9; animation: ct-flicker 0.16s ease-in-out infinite alternate; }
+html.ct-fx-on .ct-playing .ct-hitzone.ct-unc:not(.ct-rest) .ct-flare { opacity: 0.45; }
+@keyframes ct-flicker { from { scale: 0.92 0.85; } to { scale: 1.06 1.05; } }
 /* Lóe sáng + tia lửa khi nốt vừa chạm vạch đỏ. */
 .ct-burst { transform: translateY(calc(3px + var(--by, 0.5) * (var(--ct-mel-h) - var(--ct-pill-h) - 6px) + var(--ct-pill-h) / 2)); }
 .ct-burst b {
@@ -639,39 +639,20 @@ html.ct-fx-on .ct-playing .ct-burst.ct-gb i { animation: ct-spark-b var(--d, 0.5
 @keyframes ct-spark-b { from { opacity: 1; transform: none; } 70% { opacity: 0.8; } to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.3); } }
 .ct-fs .ct-flare { width: 90px; height: 46px; margin: -23px 0 0 -45px; }
 
-/* Hợp âm chạm vạch đỏ (trong track, strip.js dịch tới vạch đỏ; z 2: sau chữ, ô hiện tại z 3 nền mờ nên vẫn thấy):
- * cột sáng lóe dọc vạch, sóng xung kích tỏa ngang hai bên và tàn lửa bay lên từ đáy hàng như tia lửa từ phím đàn. */
+/* Hợp âm vừa tới lượt: cột sáng lóe ở vạch đỏ trên hàng hợp âm (trong track, strip.js dịch tới vạch đỏ), sau chữ
+ * (z 2 < ô hiện tại z 3; ô hiện tại nền mờ nên ánh sáng vẫn xuyên qua). */
 html.ct-fx-on .ct-chordflash {
   display: block; position: absolute; left: 0; width: 0; z-index: 2; pointer-events: none;
   top: var(--ct-lane-top); bottom: calc(var(--ct-lane-bottom) + var(--ct-mel-h));
 }
 .ct-chordflash::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: -22px; width: 44px; opacity: 0;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.8), color-mix(in srgb, var(--ct-accent) 70%, transparent) 45%, transparent);
+  content: ""; position: absolute; top: 0; bottom: 0; left: -60px; width: 120px; opacity: 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ct-accent) 70%, transparent), transparent);
 }
-.ct-chordflash b {
-  position: absolute; top: 8%; bottom: 8%; left: -16px; width: 32px; border-radius: 50%; opacity: 0;
-  background: radial-gradient(closest-side, transparent 55%, color-mix(in srgb, var(--ct-accent) 85%, transparent) 78%, transparent);
-}
-.ct-chordflash i {
-  position: absolute; top: 100%; left: var(--x, 0px); width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%;
-  opacity: 0; background: #fff;
-  box-shadow: 0 0 4px 1px var(--ct-accent), 0 0 10px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
-}
-.ct-chordflash i:nth-of-type(3n) { width: 4px; height: 4px; margin: -2px 0 0 -2px; }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fa::before { animation: ct-cbeam-a 0.5s ease-out; }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fb::before { animation: ct-cbeam-b 0.5s ease-out; }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fa b { animation: ct-wave-a 0.65s cubic-bezier(0.15, 0.7, 0.3, 1); }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fb b { animation: ct-wave-b 0.65s cubic-bezier(0.15, 0.7, 0.3, 1); }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fa i { animation: ct-ember-a var(--d, 0.8s) cubic-bezier(0.2, 0.6, 0.4, 1); }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fb i { animation: ct-ember-b var(--d, 0.8s) cubic-bezier(0.2, 0.6, 0.4, 1); }
-@keyframes ct-cbeam-a { from { opacity: 1; transform: scaleX(0.4); } to { opacity: 0; transform: scaleX(1.6); } }
-@keyframes ct-cbeam-b { from { opacity: 1; transform: scaleX(0.4); } to { opacity: 0; transform: scaleX(1.6); } }
-@keyframes ct-wave-a { from { opacity: 1; transform: scale(0.5, 0.8); } to { opacity: 0; transform: scale(6, 1.1); } }
-@keyframes ct-wave-b { from { opacity: 1; transform: scale(0.5, 0.8); } to { opacity: 0; transform: scale(6, 1.1); } }
-@keyframes ct-ember-a { from { opacity: 1; transform: none; } 60% { opacity: 0.9; } to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.4); } }
-@keyframes ct-ember-b { from { opacity: 1; transform: none; } 60% { opacity: 0.9; } to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.4); } }
-.ct-fs .ct-chordflash i { top: 100%; }
+html.ct-fx-on .ct-playing .ct-chordflash.ct-fa::before { animation: ct-cflash-a 0.55s ease-out; }
+html.ct-fx-on .ct-playing .ct-chordflash.ct-fb::before { animation: ct-cflash-b 0.55s ease-out; }
+@keyframes ct-cflash-a { from { opacity: 1; transform: scaleX(0.3); } to { opacity: 0; transform: scaleX(1.4); } }
+@keyframes ct-cflash-b { from { opacity: 1; transform: scaleX(0.3); } to { opacity: 0; transform: scaleX(1.4); } }
 
 /* Ô "đang hát": tên nốt mới nảy ra kèm quầng đỏ. */
 html.ct-fx-on .ct-mel-now.ct-pop-a b { animation: ct-pop-a 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.3); }
