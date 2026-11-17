@@ -217,7 +217,7 @@
       this.tval = h("span", { class: "ct-tval" });
       this.tkey = h("span", { class: "ct-tkey" });
       this.tnext = h("span", { class: "ct-tnext" });
-      this.tbox = h("div", { class: "ct-tbox", title: "Hợp âm đã dịch về giọng toàn phím trắng. Số trong ngoặc: mức Transpose đặt trên đàn (đàn đang để 0) để đàn phát đúng tông bài" },
+      this.tbox = h("div", { class: "ct-tbox", title: "Hợp âm đã dịch về giọng toàn phím trắng. Muốn đàn phát đúng tông bài thì dịch đàn ngược lại số nửa cung trong ngoặc (nút Transpose của đàn)" },
         h("span", {}, "Chơi như"), this.tval, this.tkey, this.tnext);
 
       this.slot = h("div", { class: "ct-strip-slot" });
@@ -437,17 +437,17 @@
         this.keySel.disabled = !k;
         this.keyMark.textContent = auto ? "✎▾" : "▾";
         this.keyMark.title = auto ? `Giọng bạn chọn. ChordTrack đoán: ${T().keyName(auto)}` : "";
-        const w = k ? T().whiteTranspose(k) : 0;   // mức Transpose của đàn
+        const w = k ? -T().whiteShift(k) : 0;   // mức Transpose của đàn (chỉ cho chú thích)
         this.tval.textContent = k ? T().whiteKeyName(k) : "";   // giọng toàn phím trắng
-        this.tkey.textContent = k ? `(${T().signed(w)})` : "";    // mức Transpose đặt trên đàn
-        this.tkey.title = k ? `Đặt Transpose của đàn ${T().signed(w)} (${T().whiteHint(k)} thành ${T().whiteKeyName(k)}, đàn bù lại cho đúng tông)` : "";
+        this.tkey.textContent = k ? `(${T().whiteHint(k)})` : "";  // giọng của bài và số nửa cung dịch tới đó
+        this.tkey.title = w ? `Đàn có nút Transpose: đặt ${T().signed(w)} để đàn phát đúng tông bài` : "";
         this.tbox.hidden = !k;
       }
       // Chế độ phím trắng: cảnh báo nằm trong ô transpose (đếm ngược), không lặp lại ở hàng đầu.
       const white = CT.settings.mode === "white";
       // Chỗ đổi giọng kế tiếp: giọng mới và cách dịch của nó về phím trắng ("C# thứ hạ 4 nửa cung → A thứ").
       const nk = i.next && T().parseKeyText(i.next.to);
-      const nextHint = nk ? `${T().keyName(nk)} → chơi như ${T().whiteShort(nk)}` : "";
+      const nextHint = nk ? `${T().whiteHint(nk)} → ${T().whiteKeyName(nk)}` : "";
       const nextText = !i.next ? (s.modulations.length ? "Không còn chỗ đổi giọng" : "")
         : i.soonIn != null
           ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${nextHint}`

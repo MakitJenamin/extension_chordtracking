@@ -44,7 +44,7 @@
 
 ### Ba cách đọc hợp âm
 
-**🎹 Phím trắng** (mặc định): đổi về giọng chỉ dùng phím trắng (C trưởng hoặc A thứ), kèm mức Transpose đặt trên đàn (đàn đang để 0) để đàn vẫn phát đúng tông bài. Thanh vàng đếm ngược trước chỗ đổi giọng.
+**🎹 Phím trắng** (mặc định): đổi về giọng chỉ dùng phím trắng (C trưởng hoặc A thứ), ghi rõ giọng của bài cần hạ hay nâng bao nhiêu nửa cung để tới đó. Thanh vàng đếm ngược trước chỗ đổi giọng.
 
 <img src="docs/img/chord-bar.png" alt="Chế độ Phím trắng">
 
