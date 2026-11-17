@@ -437,7 +437,7 @@
         this.keySel.disabled = !k;
         this.keyMark.textContent = auto ? "✎▾" : "▾";
         this.keyMark.title = auto ? `Giọng bạn chọn. ChordTrack đoán: ${T().keyName(auto)}` : "";
-        const w = k ? k.white_key_transpose | 0 : 0;
+        const w = k ? -T().whiteShift(k) : 0;   // mức Transpose của đàn (chỉ cho chú thích)
         this.tval.textContent = k ? T().whiteKeyName(k) : "";   // giọng toàn phím trắng
         this.tkey.textContent = k ? `(${T().whiteHint(k)})` : "";  // giọng của bài và số nửa cung dịch tới đó
         this.tkey.title = w ? `Đàn có nút Transpose: đặt ${T().signed(w)} để đàn phát đúng tông bài` : "";
