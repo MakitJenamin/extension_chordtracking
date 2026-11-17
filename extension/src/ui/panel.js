@@ -96,7 +96,8 @@
       })));
   }
   function stepTranspose(d) {
-    const v = Math.max(-6, Math.min(6, (CT.settings.transpose | 0) + d));
+    // −6..+5 là đủ 12 tông: +6 và −6 cùng một tông (cách đúng nửa quãng tám), giống mức dịch phím trắng.
+    const v = Math.max(-6, Math.min(5, (CT.settings.transpose | 0) + d));
     CT.setSettings({ transpose: v, mode: CT.settings.mode === "white" ? "orig" : CT.settings.mode });
   }
   window.addEventListener("keydown", (e) => {
