@@ -319,8 +319,8 @@
       e.textContent = text;
     }
 
-    /** Nốt vừa rời vạch khi đang phát: gắn ct-out trong 0,95 s để CSS chạy hoạt ảnh ct-cool (đỏ tối dần rồi về xanh
-     * ngọc mờ). Nốt rời lần nữa khi hoạt ảnh chưa xong (tua lại) thì chạy lại từ đầu. */
+    /** Nốt vừa rời vạch khi đang phát: gắn ct-out trong 0,7 s để CSS chạy hoạt ảnh ct-note-out (đỏ rút khỏi viên từ
+     * trái sang phải, xanh ngọc hiện lại sau nó). Nốt rời lần nữa khi hoạt ảnh chưa xong (tua lại) thì chạy lại từ đầu. */
     coolDown(e) {
       if (!this.playing) return;
       clearTimeout(e._ctCool);
@@ -329,7 +329,7 @@
         void e.offsetWidth;   // bỏ rồi gắn lại trong cùng khung thì hoạt ảnh không chạy lại
       }
       e.classList.add("ct-out");
-      e._ctCool = setTimeout(() => e.classList.remove("ct-out"), 950);
+      e._ctCool = setTimeout(() => e.classList.remove("ct-out"), 700);
     }
 
     /** Nốt đang phát: lớp ct-cur; các nốt đã qua: ct-past (chỉ sửa đoạn giữa chỉ số cũ và mới). */
@@ -351,7 +351,7 @@
       if (past > prev) for (let k = prev; k < past; k++) els[k].classList.add("ct-past");
       else for (let k = past; k < prev; k++) els[k].classList.remove("ct-past");
       this.nPast = past;
-      if (j >= 0) els[j].classList.add("ct-cur");
+      if (j >= 0) { clearTimeout(els[j]._ctCool); els[j].classList.remove("ct-out"); els[j].classList.add("ct-cur"); }
       const fresh = j >= 0 && j !== this.nIdx;
       this.nIdx = j;
       this.showNow(j, past);
