@@ -37,6 +37,7 @@
  *                    | "ready" (có melody) | "error" (có error {code, message})
  *   CT.state.melody                  <Melody> đang hiện (hoặc null)
  *   CT.settings.showMelody           hiện dòng giai điệu dưới dải hợp âm (mặc định bật, nhớ lựa chọn)
+ *   CT.settings.fx                   hiệu ứng chuyển động của dải (mặc định bật; html.ct-fx-on, strip.js)
  *   Tách giọng (`vocals: true` của POST /melody) và căn nốt về phách (theory.snapNotes + autoSnapDiv) luôn bật,
  *   không có công tắc (người dùng chốt 2026-11-11). Server thiếu gói tách giọng thì tự dùng bản không tách giọng
  *   (CT.theory.melodyEffective theo `melody_models` của GET /health).
@@ -71,6 +72,7 @@
     modulationWarnSeconds: 8,
     snapToBeats: true,        // kéo mép hợp âm về phách gần nhất (CT.theory.snapChords), chỉ để hiển thị
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
+    fx: true,                 // hiệu ứng chuyển động của dải (nhịp vạch đỏ, quả cầu giai điệu, hợp âm bật sáng)
     melodyModel: "yourmt3",   // cách dò giai điệu: "yourmt3" ("Bình thường", mặc định) | "combo" ("Kỹ": YourMT3+ ghép MuScriptor)
     settingsRev: 4,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
