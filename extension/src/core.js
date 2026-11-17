@@ -62,7 +62,7 @@
   const DEFAULTS = {
     enabled: true,
     mode: "white",            // "orig" | "white" | "roman"  (mặc định phím trắng: người dùng chơi piano)
-    transpose: 0,             // chỉ dùng ở mode "orig", -6..+6
+    transpose: 0,             // chỉ dùng ở mode "orig", -6..+5 (+6 trùng tông với -6)
     hideInversions: false,
     simplify: false,
     metronome: false,
@@ -103,6 +103,8 @@
           try { await chrome.storage.sync.set({ settings: CT.settings }); } catch {}
         }
       } catch { CT.settings = { ...DEFAULTS }; }
+      // Bản cũ cho lên tới +6: đổi thành −6 (cùng tông).
+      if ((CT.settings.transpose | 0) > 5) CT.settings = { ...CT.settings, transpose: (CT.settings.transpose | 0) - 12 };
       try {
         const o = await chrome.storage.local.get("keyOverrides");
         CT.keyOverrides = (o.keyOverrides && typeof o.keyOverrides === "object") ? o.keyOverrides : {};
