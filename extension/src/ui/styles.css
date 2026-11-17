@@ -138,7 +138,8 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 .ct-tval { color: var(--ct-text); font-size: 18px; font-weight: 700; min-width: 28px; }
 .ct-tnext { margin-left: auto; font-size: 13px; color: var(--ct-text2); }
 .ct-tbox.ct-soon { background: var(--ct-warn-bg); color: var(--ct-warn-text); }
-.ct-tbox.ct-soon .ct-tkey, .ct-tbox.ct-soon .ct-tnext { color: var(--ct-warn-text); opacity: 0.8; }
+.ct-tbox.ct-soon .ct-tkey, .ct-tbox.ct-soon .ct-tval { color: var(--ct-warn-text); }
+.ct-tbox.ct-soon .ct-tnext { color: var(--ct-warn-text); opacity: 0.8; }
 
 /* Hàng điều khiển và tùy chọn */
 .ct-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
