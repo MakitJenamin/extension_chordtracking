@@ -302,7 +302,9 @@
       this.noteFill(j, t);
       this.nearNote(j >= 0 ? j + 1 : past, t);
       if (j === this.nIdx && past === this.nPast && !force) return;
-      if (this.nIdx >= 0 && els[this.nIdx]) { els[this.nIdx].classList.remove("ct-cur"); els[this.nIdx].style.removeProperty("--np"); }
+      // Giữ --np trên nốt vừa rời đi: phần tô đỏ mờ dần tại chỗ (CSS) thay vì co về 0. noteFill() ghi lại giá trị
+      // trước khi nốt thành ct-cur lần nữa nên giá trị cũ không bao giờ hiện ra.
+      if (this.nIdx >= 0 && els[this.nIdx]) els[this.nIdx].classList.remove("ct-cur");
       const prev = this.nPast;
       if (past > prev) for (let k = prev; k < past; k++) els[k].classList.add("ct-past");
       else for (let k = past; k < prev; k++) els[k].classList.remove("ct-past");

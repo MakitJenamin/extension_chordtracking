@@ -561,7 +561,8 @@ html.ct-fx-on .ct-strip-wrap::after { right: 0; width: 96px; background: linear-
 /* Ô hợp âm. Lớp sáng ::before: ánh sáng dâng từ đáy ô kèm viền mảnh; độ sáng theo --ct-near (ô kế tiếp sáng dần),
  * ô hiện tại sáng hẳn rồi thở chậm. Viền và nền của ô hiện tại cũng chuyển mềm. */
 html.ct-fx-on .ct-chord {
-  transition: opacity 1s var(--ct-ease), background-color 0.8s var(--ct-ease), box-shadow 0.8s var(--ct-ease);
+  transition: opacity 1s var(--ct-ease), background-color 0.8s var(--ct-ease), box-shadow 0.8s var(--ct-ease),
+    color 0.6s var(--ct-ease);
 }
 html.ct-fx-on .ct-chord::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
@@ -577,7 +578,8 @@ html.ct-fx-on .ct-chord.ct-cur {
   box-shadow: inset 0 0 0 1px var(--ct-cur-border), 0 0 26px -8px color-mix(in srgb, var(--ct-light) 45%, transparent);
 }
 /* Tên hợp âm: ánh sáng nhẹ quanh chữ, chuyển cùng ô. */
-html.ct-fx-on .ct-chord .ct-sym { transition: text-shadow 0.9s var(--ct-ease); }
+html.ct-fx-on .ct-chord .ct-sym { transition: text-shadow 0.9s var(--ct-ease), color 0.6s var(--ct-ease); }
+html.ct-fx-on .ct-chord .ct-rn { transition: color 0.6s var(--ct-ease), opacity 0.6s var(--ct-ease); }
 html.ct-fx-on .ct-chord.ct-cur .ct-sym { text-shadow: 0 0 14px color-mix(in srgb, var(--ct-light) 40%, transparent); }
 /* Thanh tiến độ: dải sáng mảnh, đậm dần về phía vạch đỏ. */
 html.ct-fx-on .ct-chord.ct-cur::after {
@@ -597,6 +599,10 @@ html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 
  * Nốt đang hát: tên nốt giữ nguyên nền đỏ đặc nên luôn sắc nét; phần thân viên tô dần kiểu karaoke (--np):
  * phần đã hát đỏ đặc, phần chưa hát đỏ trong mờ; quanh viên chỉ một quầng đỏ rất nhẹ (thay quầng đậm mặc định). */
 html.ct-fx-on .ct-note { transition: opacity 0.8s var(--ct-ease); }
+html.ct-fx-on .ct-note .ct-nbar, html.ct-fx-on .ct-note .ct-nl {
+  transition: background-color 0.5s var(--ct-ease), color 0.5s var(--ct-ease), border-color 0.5s var(--ct-ease),
+    box-shadow 0.7s var(--ct-ease);
+}
 html.ct-fx-on .ct-note::after {
   content: ""; position: absolute; inset: 0 1px 0 0; border-radius: 5px; pointer-events: none;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-light) 55%, transparent);
@@ -604,10 +610,15 @@ html.ct-fx-on .ct-note::after {
 }
 html.ct-fx-on .ct-note.ct-cur::after { opacity: 0; }
 html.ct-fx-on .ct-note.ct-cur .ct-nbar {
-  background: linear-gradient(90deg, var(--ct-red) calc(var(--np, 0) * 100%),
-    color-mix(in srgb, var(--ct-red) 38%, transparent) calc(var(--np, 0) * 100%));
+  background: color-mix(in srgb, var(--ct-red) 38%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--ct-red) 35%, transparent);
 }
+/* Phần đã hát: lớp đỏ đặc rộng --np, hiện/tắt mờ dần cùng màu viên. */
+html.ct-fx-on .ct-note .ct-nbar::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--np, 0) * 100%);
+  border-radius: inherit; background: var(--ct-red); opacity: 0; transition: opacity 0.5s var(--ct-ease);
+}
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { opacity: 1; }
 html.ct-fx-on .ct-note.ct-cur .ct-nl { box-shadow: none; }
 
 /* Đóa sáng khi vào nốt mới: lớp nằm trong .ct-mel-lane, trước các viên (vẽ bên dưới, không che tên nốt); strip.js
@@ -632,7 +643,8 @@ html.ct-fx-on .ct-playing .ct-bloom.ct-long::before { animation-duration: 1.1s; 
 @keyframes ct-bloom-a { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 @keyframes ct-bloom-b { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 
-/* Ô "đang hát": nốt mới thì chữ rõ dần, trồi lên nhẹ. */
+/* Ô "đang hát": nốt mới thì chữ rõ dần, trồi lên nhẹ; đổi màu (đang hát / nghỉ) mờ dần. */
+html.ct-fx-on .ct-mel-now b { transition: color 0.5s var(--ct-ease), opacity 0.5s var(--ct-ease); }
 html.ct-fx-on .ct-mel-now.ct-pop-a b { animation: ct-pop-a 0.6s var(--ct-ease); }
 html.ct-fx-on .ct-mel-now.ct-pop-b b { animation: ct-pop-b 0.6s var(--ct-ease); }
 @keyframes ct-pop-a { from { opacity: 0.35; transform: translateY(2px); } to { opacity: 1; transform: none; } }
