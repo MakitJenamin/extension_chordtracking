@@ -319,8 +319,8 @@
       e.textContent = text;
     }
 
-    /** Nốt vừa rời vạch khi đang phát: gắn ct-out trong 0,7 s để CSS chạy hoạt ảnh ct-note-out (đỏ rút khỏi viên từ
-     * trái sang phải, xanh ngọc hiện lại sau nó). Nốt rời lần nữa khi hoạt ảnh chưa xong (tua lại) thì chạy lại từ đầu. */
+    /** Nốt vừa rời vạch khi đang phát: gắn ct-out trong 0,7 s để CSS chạy hoạt ảnh ct-note-out (lớp đỏ mờ dần về
+     * xanh ngọc). Nốt rời lần nữa khi hoạt ảnh chưa xong (tua lại) thì chạy lại từ đầu. */
     coolDown(e) {
       if (!this.playing) return;
       clearTimeout(e._ctCool);
