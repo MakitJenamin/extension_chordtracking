@@ -56,11 +56,44 @@ html[dark] .ct-root {
 .ct-btn:has(> .ct-ic) { padding-left: 10px; }
 .ct-keywrap { color: var(--ct-text2); }
 .ct-key { color: var(--ct-text); font-weight: 500; }
-.ct-keywrap { position: relative; display: inline-flex; align-items: baseline; gap: 4px; border-radius: 6px; cursor: pointer; }
-.ct-keywrap:hover .ct-key, .ct-keywrap:focus-within .ct-key { text-decoration: underline; text-underline-offset: 3px; }
+.ct-keywrap { position: relative; display: inline-flex; }
+.ct-keybtn {
+  display: inline-flex; align-items: baseline; gap: 4px; height: 28px; padding: 4px 8px 0; margin: 0 -8px;
+  border: 0; border-radius: 8px; background: none; color: var(--ct-text2); font-size: 14px; cursor: pointer;
+}
+.ct-keybtn:hover:not(:disabled), .ct-keybtn[aria-expanded="true"] { background: var(--ct-layer); }
+.ct-keybtn:disabled { cursor: default; }
 .ct-key-mark { font-size: 11px; color: var(--ct-text2); }
-.ct-key-sel { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 13px; }
-.ct-key-sel:disabled { cursor: default; }
+
+/* Bảng chọn giọng: hai lưới 4 x 3 (trưởng, thứ), mỗi ô là tên giọng + mức Transpose của đàn. */
+.ct-keypop {
+  position: absolute; top: calc(100% + 6px); left: -8px; z-index: 2100; width: 292px; padding: 10px 12px;
+  border-radius: 12px; background: var(--ct-bg); color: var(--ct-text); line-height: normal;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--ct-layer);
+}
+.ct-kp-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.ct-kp-x { width: 26px; height: 26px; border: 0; border-radius: 50%; background: none; color: var(--ct-text2); cursor: pointer; font-size: 13px; }
+.ct-kp-x:hover { background: var(--ct-layer); color: var(--ct-text); }
+.ct-kp-auto {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: var(--ct-card); color: var(--ct-text); font-size: 13px; font-weight: 500; cursor: pointer; text-align: left;
+}
+.ct-kp-auto small { margin-left: auto; color: var(--ct-text2); font-size: 12px; font-weight: 400; }
+.ct-kp-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ct-red); flex: none; }
+.ct-kp-label { margin: 10px 0 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; color: var(--ct-text2); }
+.ct-kp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.ct-kc {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  height: 42px; border: 0; border-radius: 8px; background: var(--ct-card); color: var(--ct-text); cursor: pointer;
+}
+.ct-kc b { font-size: 15px; font-weight: 600; line-height: 18px; }
+.ct-kc small { font-size: 11px; line-height: 13px; color: var(--ct-text2); font-variant-numeric: tabular-nums; }
+.ct-kc:hover, .ct-kp-auto:hover { background: var(--ct-layer); }
+.ct-kc:focus-visible, .ct-kp-auto:focus-visible, .ct-kp-x:focus-visible, .ct-keybtn:focus-visible { outline: 2px solid var(--ct-accent); outline-offset: 1px; }
+.ct-kc-guess::after { content: ""; position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--ct-red); }
+.ct-kc.ct-kc-on, .ct-kp-auto.ct-kc-on { background: var(--ct-accent); color: var(--ct-inverse); }
+.ct-kc.ct-kc-on small, .ct-kp-auto.ct-kc-on small { color: inherit; opacity: 0.8; }
+.ct-kp-foot { margin-top: 9px; font-size: 11px; line-height: 15px; color: var(--ct-text2); }
 .ct-grow { flex: 1; }
 .ct-chip {
   display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px;
