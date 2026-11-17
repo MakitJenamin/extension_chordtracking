@@ -286,10 +286,30 @@
       const key = `${cur}|${next}|${j >= 0 && ns[j].uncertain ? 1 : 0}`;
       if (key === this.nowKey) return;
       this.nowKey = key;
-      this.nowName.textContent = cur || "–";
-      this.nowNext.textContent = next ? `→ ${next}` : "";
+      this.swapText(this.nowName, cur || "–", "nowNameIn");
+      this.swapText(this.nowNext, next ? `→ ${next}` : "", "nowNextIn");
       this.now.classList.toggle("ct-rest", !cur);
       this.now.classList.toggle("ct-nunc", j >= 0 && !!ns[j].uncertain);
+    }
+
+    /** Đổi chữ trong ô "đang hát" kiểu chuyển chồng: chữ cũ (bản sao đặt đè đúng chỗ) mờ đi và thu nhỏ, chữ mới hiện
+     * lên, nên lúc nào cũng có chữ, không nhấp nháy dù giai điệu nhanh. Chỉ khi bật hiệu ứng và đang phát; tua/dừng thì
+     * đổi ngay. Đọc layout (offsetLeft...) chỉ lúc đổi nốt, không phải mỗi khung hình. */
+    swapText(e, text, key) {
+      if (e.textContent === text) return;
+      if (this.playing && e.textContent && document.documentElement.classList.contains("ct-fx-on")) {
+        const g = e.cloneNode(true);
+        g.classList.remove("ct-now-in-a", "ct-now-in-b");
+        g.classList.add("ct-now-ghost");
+        g.style.left = `${e.offsetLeft}px`;
+        g.style.top = `${e.offsetTop}px`;
+        g.style.width = `${e.offsetWidth}px`;
+        g.style.color = getComputedStyle(e).color;
+        this.now.append(g);
+        setTimeout(() => g.remove(), 400);
+        this.retrigger(e, key, "ct-now-in-a", "ct-now-in-b");
+      }
+      e.textContent = text;
     }
 
     /** Nốt đang phát: lớp ct-cur; các nốt đã qua: ct-past (chỉ sửa đoạn giữa chỉ số cũ và mới). */
@@ -301,7 +321,7 @@
       this.noteFill(j, t);
       this.nearNote(j >= 0 ? j + 1 : past, t);
       if (j === this.nIdx && past === this.nPast && !force) return;
-      // Giữ --np trên nốt vừa rời đi: phần tô đỏ mờ dần tại chỗ (CSS) thay vì co về 0. noteFill() ghi lại giá trị
+      // Giữ --np trên nốt vừa rời đi: lớp sáng phần đã hát mờ dần tại chỗ (CSS) thay vì co về 0. noteFill() ghi lại giá trị
       // trước khi nốt thành ct-cur lần nữa nên giá trị cũ không bao giờ hiện ra.
       if (this.nIdx >= 0 && els[this.nIdx]) els[this.nIdx].classList.remove("ct-cur");
       const prev = this.nPast;
