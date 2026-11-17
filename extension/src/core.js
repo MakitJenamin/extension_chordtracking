@@ -44,7 +44,7 @@
  *
  * GIỌNG NGƯỜI DÙNG CHỌN (khi bộ đoán giọng sai):
  *   CT.keyOverrides                  {videoId: {chỉ số vùng giọng: "D major"}}, lưu chrome.storage.local "keyOverrides"
- *   CT.setKeyOverride(id, i, text)   chọn giọng cho vùng i của video id (text null: về giọng tự đoán), phát
+ *   CT.setKeyOverride(id, i, text)   chọn giọng cho vùng i của video id, dời cả bài theo (text null: về giọng tự đoán), phát
  *   "keyOverride" {videoId}          content.js áp vào kết quả (CT.theory.withKeyOverride) và phát lại song:ready
  */
 (() => {
@@ -113,8 +113,8 @@
     },
     async setKeyOverride(videoId, index, text) {
       if (!videoId) return;
-      const cur = { ...(CT.keyOverrides[videoId] || {}) };
-      if (text) cur[index] = text; else delete cur[index];
+      // Một mục mỗi video: giọng chọn cho vùng `index` dời cả bài (CT.theory.withKeyOverride). null: về giọng tự đoán.
+      const cur = text ? { [index]: text } : {};
       const all = { ...CT.keyOverrides };
       delete all[videoId];                                   // xóa rồi thêm: video vừa sửa về cuối
       if (Object.keys(cur).length) all[videoId] = cur;

@@ -280,20 +280,30 @@
   const harteRootPc = (label) => { const m = /^([A-G][#b]*)/.exec(label || ""); return m ? pcOf(m[1]) : null; };
   const symRootPc = (sym) => { const p = parse(sym); return p ? pcOf(p.root) : null; };
 
-  /** Kết quả (dạng build_result) với giọng do người dùng chọn: `ov` = {chỉ số vùng giọng: "D major"}.
-   * Vùng được chọn đổi tonic/mode, white_key_transpose, confidence = null và thêm `auto` (giọng server đoán);
-   * hợp âm, đoạn trong vùng đó viết lại tên nốt theo giọng mới, tính lại bậc La Mã, bỏ white_key_symbol (chordLabels
-   * tự dịch theo white_key_transpose); chỗ đổi giọng tính lại from/to/semitones/transpose_*. Không đổi `result`.
-   * `ov` rỗng hoặc không khớp vùng nào: trả nguyên `result`. */
+  /** Kết quả (dạng build_result) với giọng do người dùng chọn: `ov` = {chỉ số vùng giọng: "D major"} (một mục; có nhiều
+   * thì lấy vùng nhỏ nhất). Giọng chọn cho vùng i dời **cả bài**: mọi vùng dời cùng số nửa cung (giữ các chỗ lên tông),
+   * và nếu đổi trưởng/thứ thì mọi vùng cùng đổi theo kiểu đó (giọng tương đối: B thứ → D trưởng thì D thứ → F trưởng).
+   * Vùng đổi có tonic/mode, white_key_transpose mới, confidence = null và `auto` (giọng server đoán); hợp âm, đoạn
+   * trong vùng viết lại tên nốt theo giọng mới, tính lại bậc La Mã, bỏ white_key_symbol (chordLabels tự dịch theo
+   * white_key_transpose); chỗ đổi giọng tính lại from/to/semitones/transpose_*. Không đổi `result`.
+   * `ov` rỗng, sai hoặc trùng giọng đoán: trả nguyên `result`. */
   function withKeyOverride(result, ov) {
     if (!result || !ov) return result;
     const base = (result.keys && result.keys.length) ? result.keys
       : (result.key ? [{ start: 0, end: result.duration, ...result.key, white_key_transpose: whiteOffset(result.key) }] : []);
+    const idx = Object.keys(ov).map(Number).filter((i) => Number.isInteger(i) && base[i] && ov[i]).sort((a, b) => a - b)[0];
+    const want = idx === undefined ? null : parseKeyText(ov[idx]);
+    if (!want || pcOf(want.tonic || "") === null || !["major", "minor"].includes(want.mode)) return result;
+    const delta = mod12(pcOf(want.tonic) - pcOf(base[idx].tonic));
+    const flip = want.mode !== base[idx].mode;
+    if (!delta && !flip) return result;
     const changed = new Map();
     const keys = base.map((k, i) => {
-      const want = ov[i] && parseKeyText(ov[i]);
-      if (!want || pcOf(want.tonic || "") === null || !["major", "minor"].includes(want.mode) || sameKey(k, want)) return k;
-      const nk = { ...k, tonic: want.tonic, mode: want.mode, confidence: null, white_key_transpose: whiteOffset(want),
+      const t = pcOf(k.tonic);
+      if (t === null) return k;
+      const mode = flip ? (k.mode === "minor" ? "major" : "minor") : k.mode;
+      const tonic = i === idx ? want.tonic : (mode === "minor" ? MINOR_TONICS : MAJOR_TONICS)[mod12(t + delta)];
+      const nk = { ...k, tonic, mode, confidence: null, white_key_transpose: whiteOffset({ tonic, mode }),
                    auto: { tonic: k.tonic, mode: k.mode } };
       changed.set(i, nk);
       return nk;
