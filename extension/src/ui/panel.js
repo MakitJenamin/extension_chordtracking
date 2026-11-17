@@ -144,9 +144,12 @@
   function soonText(i, withTranspose) {
     if (i.soonIn == null) return "";
     const to = T().keyName(T().parseKeyText(i.next.to));
-    let s = `Sắp đổi giọng sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${to}`;
-    if (withTranspose) s += ` · đổi sang ${T().transposeLabel(i.next.transpose_to)}`;
-    return s;
+    const sec = Math.max(1, Math.ceil(i.soonIn));
+    if (withTranspose) {
+      const w = i.next.transpose_to | 0;
+      return `Chuẩn bị bấm ${T().transposeKey(w)} (${T().signed(w)}) · còn ${sec} s → ${to}`;
+    }
+    return `Sắp đổi giọng sau ${sec} s → ${to}`;
   }
 
   /** Chữ ký các cài đặt quyết định nhãn hợp âm và việc hiện bảng (dùng chung với sections.js). */
@@ -278,8 +281,16 @@
       this.tval = h("span", { class: "ct-tval" });
       this.tkey = h("span", { class: "ct-tkey" });
       this.tnext = h("span", { class: "ct-tnext" });
+      // Sắp đổi giọng: thay hẳn phần bên trái bằng lời nhắc ngắn "Chuẩn bị bấm G (−5) · còn 4 s",
+      // để người chơi không đọc lẫn mức dịch hiện tại với mức sắp tới.
+      this.tsval = h("span", { class: "ct-tsval" });
+      this.tsdelta = h("span", { class: "ct-tsdelta" });
+      this.tscount = h("span", { class: "ct-tscount" });
+      this.tcur = h("span", { class: "ct-tgrp" }, h("span", {}, "Transpose"), this.tkey, h("span", {}, "bấm"), this.tval);
+      this.tsoon = h("span", { class: "ct-tgrp", hidden: true },
+        h("span", {}, "Chuẩn bị bấm"), this.tsval, this.tsdelta, h("span", {}, "· còn"), this.tscount);
       this.tbox = h("div", { class: "ct-tbox", title: "Giữ nút Transpose của đàn và bấm phím này, rồi chơi hợp âm trên phím trắng. Số trong ngoặc là mức dịch thật của đàn" },
-        h("span", {}, "Transpose"), this.tkey, h("span", {}, "bấm"), this.tval, this.tnext);
+        this.tcur, this.tsoon, this.tnext);
 
       this.slot = h("div", { class: "ct-strip-slot" });
       this.fsNote = h("div", { class: "ct-fs-note", text: "Dải hợp âm đang hiện trên video (toàn màn hình)." });
@@ -507,19 +518,33 @@
       }
       // Chế độ phím trắng: cảnh báo nằm trong ô transpose (đếm ngược), không lặp lại ở hàng đầu.
       const white = CT.settings.mode === "white";
+      const isSoon = i.soonIn != null;
       const nextText = !i.next ? (s.modulations.length ? "Không còn chỗ đổi giọng" : "")
-        : i.soonIn != null
-          ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${T().keyName(T().parseKeyText(i.next.to))}: ${T().transposeLabel(i.next.transpose_to)}`
+        : isSoon ? `→ ${T().keyName(T().parseKeyText(i.next.to))}`
           : `Kế tiếp ${fmt(i.next.time)}: ${T().transposeLabel(i.next.transpose_to)}`;
       if (L.next !== nextText) { L.next = nextText; this.tnext.textContent = nextText; }
+      const soonKey = isSoon ? `${i.next.transpose_to | 0}|${Math.max(1, Math.ceil(i.soonIn))}` : "";
+      if (L.soonKey !== soonKey) {
+        L.soonKey = soonKey;
+        if (isSoon) {
+          const w = i.next.transpose_to | 0;
+          this.tsval.textContent = T().transposeKey(w);
+          this.tsdelta.textContent = `(${T().signed(w)})`;
+          this.tscount.textContent = `${Math.max(1, Math.ceil(i.soonIn))} s`;
+        }
+      }
       const soon = white ? "" : soonText(i, false);
       if (L.soon !== soon) {
         L.soon = soon;
         this.soonEl.textContent = soon;
         this.soonEl.hidden = !soon;
       }
-      const isSoon = i.soonIn != null;
-      if (L.isSoon !== isSoon) { L.isSoon = isSoon; this.tbox.classList.toggle("ct-soon", isSoon); }
+      if (L.isSoon !== isSoon) {
+        L.isSoon = isSoon;
+        this.tbox.classList.toggle("ct-soon", isSoon);
+        this.tcur.hidden = isSoon;
+        this.tsoon.hidden = !isSoon;
+      }
       // Hợp âm hiện tại khi thu gọn.
       const ci = CT.ui.strip.idx;
       if (L.ci !== ci) {
