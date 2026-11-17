@@ -122,8 +122,8 @@
    * −6 F#, −5 G, −4 G#, −3 A, −2 A#, −1 B. Giọng thứ dùng tông trưởng song song (Cm → Eb → bấm D#). */
   const TRANSPOSE_KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const transposeKey = (w) => TRANSPOSE_KEYS[(((w | 0) % 12) + 12) % 12];
-  /** "D# (+3)" */
-  const transposeLabel = (w) => `${transposeKey(w)} (${signed(w | 0)})`;
+  /** "Transpose (+3), bấm D#": mức dịch của đàn trước, phím cần bấm (khi giữ nút Transpose) sau. */
+  const transposeLabel = (w) => `Transpose (${signed(w | 0)}), bấm ${transposeKey(w)}`;
 
   /* ---------------- Tìm kiếm theo thời gian ---------------- */
 
