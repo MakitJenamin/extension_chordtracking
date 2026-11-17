@@ -596,14 +596,16 @@ html.ct-fx-on .ct-beats i {
 html.ct-fx-on .ct-beats i.ct-on { box-shadow: 0 0 8px color-mix(in srgb, var(--ct-text) 30%, transparent); }
 html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 0 14px color-mix(in srgb, var(--ct-red) 45%, transparent); }
 
-/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát sáng lên thành viên đỏ, nốt đã hát nguội thành xám.
+/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát sáng lên thành viên đỏ, nốt đã hát tối lại về xanh ngọc mờ như cũ.
  * Xanh ngọc (nốt sắp tới) và đỏ gần đối nhau: trộn hai màu theo bất kỳ cách nào (chuyển background-color, lớp đỏ mờ
  * dần đè lên nền xanh, xoay sắc độ) đều đi qua màu nâu xám đục hoặc màu lạ (tím, xanh dương). Nên:
  * - Vào nốt: lớp đỏ (::after) QUÉT từ trái sang phải trong 0,25 s (mask có mép mềm trượt qua viên), quầng sáng hiện
  *   dần; mỗi điểm trên viên chỉ là xanh hoặc đỏ, không pha. Quét xong, màu nền viên (ba biến @property --ct-nL/C/H,
  *   oklch) đổi ngay sang đỏ, nằm khuất dưới lớp đỏ.
- * - Rời nốt: lớp đỏ tắt ngay (nền bên dưới đã đỏ y hệt nên không thấy), nền chuyển đỏ -> xám trong 0,9 s (giữ sắc
- *   độ, chỉ giảm độ rực nên không đi qua màu khác), viên lặn xuống (opacity của ct-past).
+ * - Rời nốt: lớp đỏ tắt ngay (nền bên dưới đã đỏ y hệt nên không thấy). strip.js gắn ct-out trong 0,95 s, chạy
+ *   ct-cool: đỏ tối dần gần như tắt (vẫn sắc đỏ), đổi sắc độ sang xanh ngọc đúng lúc tối nhất (ở độ sáng đó mắt không
+ *   phân biệt được sắc màu), rồi xanh ngọc hiện lại; cùng lúc viên lặn xuống (opacity của ct-past). Không có khung
+ *   hình nào là tím, xanh dương hay nâu xám.
  * - Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near.
  * - Phần đã hát (--np): lớp sáng hồng nhạt, mép phải tan dần, nằm trên lớp đỏ. */
 @property --ct-nL { syntax: "<number>"; inherits: true; initial-value: 0.437; }
@@ -611,13 +613,19 @@ html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 
 @property --ct-nH { syntax: "<number>"; inherits: true; initial-value: 188.2; }
 .ct-strip-wrap { --ct-mel-on: var(--ct-red); }
 html.ct-fx-on .ct-note {
-  --ct-nL: 0.437; --ct-nC: 0.071; --ct-nH: 188.2;   /* = --ct-mel #115e59 */
-  /* --ct-nH không transition: sắc độ đổi ngay, chỉ độ sáng/độ rực chuyển. Nốt ngắn hơn 0,25 s rời vạch khi nền còn
-   * xanh: đi hồng xỉn -> xám, không xoay qua xanh dương/tím. */
+  --ct-tL: 0.437; --ct-tC: 0.071; --ct-tH: 188.2;   /* xanh ngọc = --ct-mel #115e59 */
+  --ct-nL: var(--ct-tL); --ct-nC: var(--ct-tC); --ct-nH: var(--ct-tH);
+  /* --ct-nH không transition: sắc độ đổi ngay, chỉ độ sáng/độ rực chuyển (khi tua). */
   transition: opacity 1s var(--ct-fade), --ct-nL 0.9s var(--ct-fade), --ct-nC 0.9s var(--ct-fade);
 }
-html.ct-fx-on[dark] .ct-note { --ct-nL: 0.511; --ct-nC: 0.086; --ct-nH: 186.4; }   /* = --ct-mel #0f766e */
-html.ct-fx-on .ct-note.ct-past { --ct-nL: 0.5; --ct-nC: 0; --ct-nH: 23.6; }         /* xám: đỏ bớt dần độ rực về 0 */
+html.ct-fx-on[dark] .ct-note { --ct-tL: 0.511; --ct-tC: 0.086; --ct-tH: 186.4; }   /* = --ct-mel #0f766e */
+html.ct-fx-on .ct-note.ct-out:not(.ct-cur) { animation: ct-cool 0.9s linear forwards; }
+@keyframes ct-cool {
+  0% { --ct-nL: 0.631; --ct-nC: 0.255; --ct-nH: 23.6; animation-timing-function: cubic-bezier(0.3, 0, 0.6, 1); }
+  45% { --ct-nL: 0.2; --ct-nC: 0.035; --ct-nH: 23.6; }
+  45.1% { --ct-nL: 0.2; --ct-nC: 0.02; --ct-nH: var(--ct-tH); animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
+  100% { --ct-nL: var(--ct-tL); --ct-nC: var(--ct-tC); --ct-nH: var(--ct-tH); }
+}
 html.ct-fx-on .ct-note.ct-cur {
   --ct-nL: 0.631; --ct-nC: 0.255; --ct-nH: 23.6;                                    /* = --ct-red #f03 */
   transition: opacity 0.25s var(--ct-ease), --ct-nL 0s linear 0.25s, --ct-nC 0s linear 0.25s, --ct-nH 0s linear 0.25s;

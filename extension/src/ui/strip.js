@@ -319,6 +319,19 @@
       e.textContent = text;
     }
 
+    /** Nốt vừa rời vạch khi đang phát: gắn ct-out trong 0,95 s để CSS chạy hoạt ảnh ct-cool (đỏ tối dần rồi về xanh
+     * ngọc mờ). Nốt rời lần nữa khi hoạt ảnh chưa xong (tua lại) thì chạy lại từ đầu. */
+    coolDown(e) {
+      if (!this.playing) return;
+      clearTimeout(e._ctCool);
+      if (e.classList.contains("ct-out")) {
+        e.classList.remove("ct-out");
+        void e.offsetWidth;   // bỏ rồi gắn lại trong cùng khung thì hoạt ảnh không chạy lại
+      }
+      e.classList.add("ct-out");
+      e._ctCool = setTimeout(() => e.classList.remove("ct-out"), 950);
+    }
+
     /** Nốt đang phát: lớp ct-cur; các nốt đã qua: ct-past (chỉ sửa đoạn giữa chỉ số cũ và mới). */
     updateMelody(t, force) {
       if (!this.lane) return;
@@ -330,7 +343,10 @@
       if (j === this.nIdx && past === this.nPast && !force) return;
       // Giữ --np trên nốt vừa rời đi: lớp sáng phần đã hát mờ dần tại chỗ (CSS) thay vì co về 0. noteFill() ghi lại giá trị
       // trước khi nốt thành ct-cur lần nữa nên giá trị cũ không bao giờ hiện ra.
-      if (this.nIdx >= 0 && els[this.nIdx]) els[this.nIdx].classList.remove("ct-cur");
+      if (this.nIdx >= 0 && els[this.nIdx]) {
+        els[this.nIdx].classList.remove("ct-cur");
+        this.coolDown(els[this.nIdx]);
+      }
       const prev = this.nPast;
       if (past > prev) for (let k = prev; k < past; k++) els[k].classList.add("ct-past");
       else for (let k = past; k < prev; k++) els[k].classList.remove("ct-past");
