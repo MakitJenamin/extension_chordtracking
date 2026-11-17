@@ -595,11 +595,13 @@ html.ct-fx-on .ct-beats i {
 html.ct-fx-on .ct-beats i.ct-on { box-shadow: 0 0 8px color-mix(in srgb, var(--ct-text) 30%, transparent); }
 html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 0 14px color-mix(in srgb, var(--ct-red) 45%, transparent); }
 
-/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát sáng lên thành viên đỏ
- * Mọi thay đổi chỉ là background-color/opacity có transition nên mờ dần, không giật.
+/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát sáng lên thành viên đỏ.
+ * Nền viên luôn giữ màu xanh gốc; màu đỏ là lớp ::after riêng hiện/mờ dần bằng opacity. Không chuyển thẳng
+ * background-color xanh ngọc -> đỏ: hai màu gần đối nhau nên đường chuyển đi qua màu xám đục, trông như viên tắt
+ * phụt rồi bật lên. Trộn bằng opacity thì đi xanh -> hồng -> đỏ, mượt như hồi còn sáng trong tông xanh.
  * - Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near.
- * - Nốt đang hát: viên sáng lên (--ct-mel-on) kèm quầng cùng màu; phần đã hát (--np) phủ thêm một lớp sáng trắng
- *   nhạt, nên viên "đầy ánh sáng" dần từ trái sang phải; tên nốt không có nền riêng, nằm trên viên, luôn trắng.
+ * - Nốt đang hát: lớp đỏ hiện lên kèm quầng cùng màu; phần đã hát (--np) phủ thêm một lớp sáng hồng nhạt, mép phải
+ *   tan dần, nên viên "đầy ánh sáng" dần từ trái sang phải mà không chia thành hai mảng màu.
  * - Đã qua: lặn dần. */
 .ct-strip-wrap { --ct-mel-on: var(--ct-red); }
 html.ct-fx-on .ct-note { transition: opacity 0.8s var(--ct-ease); }
@@ -614,23 +616,34 @@ html.ct-fx-on .ct-note::after {
 }
 html.ct-fx-on .ct-note.ct-cur::after { opacity: 0; }
 html.ct-fx-on .ct-note.ct-cur .ct-nbar {
-  background: var(--ct-mel-on); border-color: transparent;
+  background: var(--ct-mel); border-color: transparent;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-light) 45%, transparent),
     0 0 12px color-mix(in srgb, var(--ct-mel-on) 50%, transparent);
 }
+html.ct-fx-on .ct-note.ct-nunc.ct-cur .ct-nbar { background: none; }
 html.ct-fx-on .ct-note.ct-cur .ct-nl {
   background: transparent; color: #fff; box-shadow: none; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
 }
-/* Phần đã hát: lớp sáng trắng nhạt rộng --np, mép phải mềm; hiện/tắt mờ dần. */
+/* Lớp đỏ. isolation để hai lớp giả nằm gọn trong viên, không đè lên tên nốt. */
+html.ct-fx-on .ct-note .ct-nbar { isolation: isolate; }
+html.ct-fx-on .ct-note .ct-nbar::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: var(--ct-mel-on); opacity: 0; transition: opacity 0.6s var(--ct-ease);
+}
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::after { opacity: 1; }
+/* Phần đã hát: lớp sáng hồng nhạt rộng --np, mép phải tan dần (mask); hiện/tắt mờ dần. Nằm trên lớp đỏ. */
 html.ct-fx-on .ct-note .ct-nbar::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--np, 0) * 100%);
-  border-radius: inherit; opacity: 0; transition: opacity 0.45s var(--ct-ease);
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.3));
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--np, 0) * 100%); z-index: 1;
+  border-radius: inherit; opacity: 0; transition: opacity 0.6s var(--ct-ease);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ct-mel-light) 10%, transparent),
+    color-mix(in srgb, #fff 22%, transparent));
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
 }
 html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { opacity: 1; }
-/* Vào nốt: sáng lên nhanh (0,12 s) để nốt ngắn vẫn kịp sáng; rời nốt: tắt chậm theo các transition ở trên. */
+/* Vào nốt: sáng lên nhanh (0,15 s) để nốt ngắn vẫn kịp sáng; rời nốt: tắt chậm (0,6 s) theo các transition ở trên. */
 html.ct-fx-on .ct-note.ct-cur .ct-nbar, html.ct-fx-on .ct-note.ct-cur .ct-nl,
-html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { transition-duration: 0.12s; }
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::before, html.ct-fx-on .ct-note.ct-cur .ct-nbar::after { transition-duration: 0.15s; }
 /* Nốt lặp chỉ hiện tên khi đang hát: tên hiện/ẩn mờ dần thay vì bật tắt (bản gốc dùng visibility). */
 html.ct-fx-on .ct-note.ct-nrep:not(.ct-nbare) .ct-nl { visibility: visible; opacity: 0; }
 html.ct-fx-on .ct-note.ct-cur.ct-nrep:not(.ct-nbare) .ct-nl { opacity: 1; }
