@@ -668,9 +668,9 @@ html.ct-fx-on .ct-playing .ct-bloom.ct-long::before { animation-duration: 1.1s; 
 @keyframes ct-bloom-a { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 @keyframes ct-bloom-b { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 
-/* Ô "đang hát": tên nốt đỏ (cùng màu viên đang hát). Chữ đổi ngay, không hoạt ảnh: giai điệu nhanh (~0,2 s/nốt)
+/* Ô "đang hát": tên nốt đỏ hồng như viên đang hát. Chữ đổi ngay, không hoạt ảnh: giai điệu nhanh (~0,2 s/nốt)
  * mà cho chữ hiện mờ dần thì nhấp nháy liên tục. Chỉ màu (đang hát / nghỉ) chuyển mờ dần. */
-html.ct-fx-on .ct-mel-now b { color: var(--ct-red); transition: color 0.5s var(--ct-ease), opacity 0.5s var(--ct-ease); }
+html.ct-fx-on .ct-mel-now b { color: var(--ct-mel-hot); transition: color 0.5s var(--ct-ease), opacity 0.5s var(--ct-ease); }
 html.ct-fx-on .ct-mel-now.ct-rest b { color: var(--ct-text2); }
 html:not([dark]) .ct-root:not(.ct-fs) .ct-strip-wrap { --ct-mel-hot: var(--ct-red); }
 
