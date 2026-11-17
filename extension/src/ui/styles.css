@@ -613,8 +613,17 @@ html.ct-fx-on .ct-note::after {
   opacity: var(--ct-near, 0);
 }
 html.ct-fx-on .ct-note.ct-cur::after { opacity: 0; }
+/* Màu đỏ của viên đang hát là lớp ::after riêng hiện/mờ dần bằng opacity, nền viên giữ màu xanh gốc: chuyển thẳng
+ * background-color xanh ngọc -> đỏ (hai màu gần đối nhau) đi qua màu xám đục, rời nốt nhìn như vệt bẩn; trộn bằng
+ * opacity thì đi xanh -> hồng -> đỏ. isolation để hai lớp giả nằm gọn trong viên, không đè lên tên nốt. */
+html.ct-fx-on .ct-note .ct-nbar { isolation: isolate; }
+html.ct-fx-on .ct-note .ct-nbar::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: var(--ct-mel-on); opacity: 0; transition: opacity 0.45s var(--ct-ease);
+}
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::after { opacity: 1; }
 html.ct-fx-on .ct-note.ct-cur .ct-nbar {
-  background: var(--ct-mel-on); border-color: transparent;
+  background: var(--ct-mel); border-color: transparent;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-hot) 45%, transparent),
     0 0 12px color-mix(in srgb, var(--ct-mel-on) 50%, transparent);
 }
@@ -627,10 +636,12 @@ html.ct-fx-on .ct-note .ct-nbar::before {
   border-radius: inherit; opacity: 0; transition: opacity 0.45s var(--ct-ease);
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.3));
 }
+html.ct-fx-on .ct-note .ct-nbar::before { z-index: 1; }   /* trên lớp đỏ */
 html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { opacity: 1; }
+html.ct-fx-on .ct-note.ct-nunc.ct-cur .ct-nbar { background: none; }
 /* Vào nốt: sáng lên nhanh (0,12 s) để nốt ngắn vẫn kịp sáng; rời nốt: tắt chậm theo các transition ở trên. */
 html.ct-fx-on .ct-note.ct-cur .ct-nbar, html.ct-fx-on .ct-note.ct-cur .ct-nl,
-html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { transition-duration: 0.12s; }
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::before, html.ct-fx-on .ct-note.ct-cur .ct-nbar::after { transition-duration: 0.12s; }
 /* Nốt lặp chỉ hiện tên khi đang hát: tên hiện/ẩn mờ dần thay vì bật tắt (bản gốc dùng visibility). */
 html.ct-fx-on .ct-note.ct-nrep:not(.ct-nbare) .ct-nl { visibility: visible; opacity: 0; }
 html.ct-fx-on .ct-note.ct-cur.ct-nrep:not(.ct-nbare) .ct-nl { opacity: 1; }
