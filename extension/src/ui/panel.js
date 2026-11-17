@@ -180,34 +180,35 @@
       const auto = k.auto || k;
       const same = (a, b) => a.mode === b.mode && Th.pcOf(a.tonic) === Th.pcOf(b.tonic);
       const pick = (text) => { CT.setKeyOverride(CT.state.videoId, i.ki, text); this.toggleKeyPop(false); this.keyBtn.focus(); };
-      const chip = (c) => {
-        const on = same(c, k), guess = same(c, auto);
-        return h("button", { type: "button", class: "ct-kc" + (on ? " ct-kc-on" : "") + (guess ? " ct-kc-guess" : ""),
-          title: `${Th.keyName(c)}: Transpose (${Th.signed(c.white)}), bấm ${Th.transposeKey(c.white)}` + (guess ? " · ChordTrack đoán" : ""),
-          "aria-pressed": on ? "true" : "false", onclick: () => pick(guess ? null : c.text) },
-          h("b", {}, c.tonic + (c.mode === "minor" ? "m" : "")), h("small", {}, Th.signed(c.white)));
-      };
-      const grid = (mode, title) => [h("div", { class: "ct-kp-label" }, title),
-        h("div", { class: "ct-kp-grid" }, ...Th.KEY_CHOICES.filter((c) => c.mode === mode).map(chip))];
-      this.keyPop.replaceChildren(
-        h("div", { class: "ct-kp-head" }, h("span", {}, "Chọn giọng"),
-          h("button", { type: "button", class: "ct-kp-x", title: "Đóng (Esc)", "aria-label": "Đóng", onclick: () => this.toggleKeyPop(false) }, "✕")),
-        h("button", { type: "button", class: "ct-kp-auto" + (k.auto ? "" : " ct-kc-on"), "aria-pressed": k.auto ? "false" : "true",
-          onclick: () => pick(null) },
-          h("span", { class: "ct-kp-dot" }), `Tự động: ${Th.keyName(auto)}`,
-          h("small", {}, `Transpose (${Th.signed(Th.whiteOffset(auto))})`)),
-        ...grid("major", "Trưởng"), ...grid("minor", "Thứ"),
-        h("div", { class: "ct-kp-foot" }, "Số nhỏ: mức Transpose của đàn để chơi phím trắng. Chấm đỏ: giọng ChordTrack đoán."));
+      // Như danh sách cũ ("Tự động", rồi Trưởng và Thứ), nhưng Trưởng và Thứ là hai cột cạnh nhau (cùng nốt chủ một hàng);
+      // mỗi dòng tên giọng và mức Transpose của đàn.
+      const row = (label, w, on, guess, text) => h("button", { type: "button", role: "option",
+        class: "ct-kc" + (on ? " ct-kc-on" : ""), "aria-selected": on ? "true" : "false",
+        title: (guess ? "ChordTrack đoán · " : "") + `Transpose (${Th.signed(w)}), bấm ${Th.transposeKey(w)}`,
+        onclick: () => pick(text) },
+        h("span", { class: "ct-kc-name" }, label), guess ? h("span", { class: "ct-kc-dot", title: "ChordTrack đoán" }) : null,
+        h("span", { class: "ct-kc-w" }, `(${Th.signed(w)})`));
+      const cell = (c) => row(Th.keyName(c), c.white, !!k.auto && same(c, k), same(c, auto), same(c, auto) ? null : c.text);
+      const maj = Th.KEY_CHOICES.filter((c) => c.mode === "major"), min = Th.KEY_CHOICES.filter((c) => c.mode === "minor");
+      const autoRow = row(`Tự động (${Th.keyName(auto)})`, Th.whiteOffset(auto), !k.auto, false, null);
+      autoRow.classList.add("ct-kc-auto");
+      this.keyPop.replaceChildren(autoRow,
+        h("div", { class: "ct-kp-label" }, "Trưởng"), h("div", { class: "ct-kp-label" }, "Thứ"),
+        ...maj.flatMap((c, j) => [cell(c), cell(min[j])]));
+      this.keyPop.querySelector(".ct-kc-on")?.scrollIntoView({ block: "nearest" });
     },
-    /** Esc đóng; mũi tên đi giữa các ô (lưới 4 cột). Chặn phím để YouTube không tua hay đổi âm lượng. */
+    /** Esc đóng; mũi tên đi giữa các ô (2 cột, ô đầu là "Tự động"). Chặn phím để YouTube không tua hay đổi âm lượng. */
     keyPopKey(e) {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); this.toggleKeyPop(false); this.keyBtn.focus(); return; }
-      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -4, ArrowDown: 4 }[e.key];
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -2, ArrowDown: 2 }[e.key];
       if (!step) return;
       e.preventDefault(); e.stopPropagation();
       const btns = [...this.keyPop.querySelectorAll(".ct-kc")];
       const j = btns.indexOf(document.activeElement);
-      btns[j < 0 ? 0 : Math.max(0, Math.min(btns.length - 1, j + step))].focus();
+      // Ô 0 ("Tự động") trải hai cột: từ đó đi xuống vào cột Trưởng; từ hàng đầu đi lên về "Tự động".
+      let n = j <= 0 ? (step > 0 ? 1 : 0) : j + step;
+      if (j > 0 && n < 1) n = 0;
+      btns[Math.max(0, Math.min(btns.length - 1, n))].focus();
     },
 
     build() {
@@ -217,10 +218,10 @@
       // Chọn giọng khi bộ đoán sai: bấm tên giọng mở bảng chọn (keyPop). Chọn cho vùng giọng đang phát;
       // "Tự động" bỏ lựa chọn (CT.setKeyOverride).
       this.keyMark = h("span", { class: "ct-key-mark", text: "▾" });
-      this.keyBtn = h("button", { type: "button", class: "ct-keybtn", "aria-haspopup": "dialog", "aria-expanded": "false",
+      this.keyBtn = h("button", { type: "button", class: "ct-keybtn", "aria-haspopup": "listbox", "aria-expanded": "false",
         title: "Bấm để chọn giọng nếu ChordTrack đoán sai", onclick: () => this.toggleKeyPop() },
         "Giọng ", this.keyEl, this.keyMark);
-      this.keyPop = h("div", { class: "ct-keypop", role: "dialog", "aria-label": "Chọn giọng của bài", hidden: true,
+      this.keyPop = h("div", { class: "ct-keypop", role: "listbox", "aria-label": "Chọn giọng của bài", hidden: true,
         onkeydown: (e) => this.keyPopKey(e) });
       this.tempoEl = h("span", { class: "ct-chip", title: "Tốc độ (phách mỗi phút)" });
       this.meterEl = h("span", { class: "ct-chip", title: "Số chỉ nhịp: số phách trong một ô nhịp" });
