@@ -56,6 +56,11 @@ html[dark] .ct-root {
 .ct-btn:has(> .ct-ic) { padding-left: 10px; }
 .ct-keywrap { color: var(--ct-text2); }
 .ct-key { color: var(--ct-text); font-weight: 500; }
+.ct-keywrap { position: relative; display: inline-flex; align-items: baseline; gap: 4px; border-radius: 6px; cursor: pointer; }
+.ct-keywrap:hover .ct-key, .ct-keywrap:focus-within .ct-key { text-decoration: underline; text-underline-offset: 3px; }
+.ct-key-mark { font-size: 11px; color: var(--ct-text2); }
+.ct-key-sel { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 13px; }
+.ct-key-sel:disabled { cursor: default; }
 .ct-grow { flex: 1; }
 .ct-chip {
   display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 8px;

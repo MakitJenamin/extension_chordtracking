@@ -677,7 +677,10 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
   - ⚠️ Đánh đổi (người dùng chọn): Isophonics 0,870 → 0,836 (đúng tuyệt đối 0,848 → 0,815; mất chủ yếu ở bài rock/blues có
     bVII, ví dụ Get Back, The End nhận thành D). Kajiura (17 bài, nhãn căn thời gian) đúng giá trị transpose 53% → 65%.
     Bộ Kajiura nhỏ, nên cần thêm bài J-pop có đáp án giọng để chỉnh cho chắc. Giọng theo vùng không đổi.
-  - Lỗi đoán giọng vẫn có thể xảy ra (Yosuga: B thứ 2,07 so với G 2,04 trước khi giảm maj7), nên extension cần nút tự chọn giọng.
+  - Lỗi đoán giọng vẫn có thể xảy ra (Yosuga: B thứ 2,07 so với G 2,04 trước khi giảm maj7), nên extension có thêm
+    nút tự chọn giọng: bấm tên giọng ở đầu panel, chọn 1 trong 24 giọng (kèm Transpose) cho vùng giọng đang phát. Lưu
+    theo video ở `chrome.storage.local` (`keyOverrides`); `CT.theory.withKeyOverride` tính lại tên nốt, bậc La Mã, phím
+    trắng và chỗ đổi giọng ngay trên extension, không gọi server.
 
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 

@@ -158,6 +158,20 @@
       const modeBtn = (m, text, tip, icon) => h("button", { "data-m": m, type: "button", title: tip, onclick: () => CT.setSettings({ mode: m }) }, icon, text);
       this.dots = new BeatDots();
       this.keyEl = h("b", { class: "ct-key", text: "–" });
+      // Chọn giọng khi bộ đoán sai: <select> trong suốt phủ lên tên giọng (danh sách gốc của trình duyệt, hiện tên giọng
+      // theo kiểu của panel). Chọn cho vùng giọng đang phát; "Tự động" bỏ lựa chọn (CT.setKeyOverride).
+      const T0 = T();
+      const opt = (k) => h("option", { value: k.text }, `${T0.keyName(k)} (${T0.signed(k.white)})`);
+      this.keyAuto = h("option", { value: "" }, "Tự động");
+      this.keySel = h("select", { class: "ct-key-sel", "aria-label": "Chọn giọng của bài",
+        onchange: (e) => {
+          const i = this.song ? info(this.song, CT.ui.lastTime ? CT.ui.lastTime.t : 0).ki : 0;
+          CT.setKeyOverride(CT.state.videoId, i, e.target.value || null);
+        } },
+        this.keyAuto,
+        h("optgroup", { label: "Trưởng (Transpose đàn)" }, ...T0.KEY_CHOICES.filter((k) => k.mode === "major").map(opt)),
+        h("optgroup", { label: "Thứ (Transpose đàn)" }, ...T0.KEY_CHOICES.filter((k) => k.mode === "minor").map(opt)));
+      this.keyMark = h("span", { class: "ct-key-mark", text: "▾" });
       this.tempoEl = h("span", { class: "ct-chip", title: "Tốc độ (phách mỗi phút)" });
       this.meterEl = h("span", { class: "ct-chip", title: "Số chỉ nhịp: số phách trong một ô nhịp" });
       this.soonEl = h("span", { class: "ct-chip ct-warn", hidden: true });
@@ -193,7 +207,7 @@
       this.head = h("div", { class: "ct-head" },
         h("span", { class: "ct-brand", title: "ChordTrack: hợp âm chạy theo video" }, CT.icons.avatar(18), "ChordTrack"),
         this.miniEl,
-        h("span", { class: "ct-keywrap" }, "Giọng ", this.keyEl),
+        h("span", { class: "ct-keywrap", title: "Bấm để chọn giọng nếu ChordTrack đoán sai" }, "Giọng ", this.keyEl, this.keyMark, this.keySel),
         this.tempoEl, this.meterEl, this.dots.el, this.soonEl,
         h("span", { class: "ct-grow" }),
         h("span", { class: "ct-metro" }, this.metroBtn, this.volEl),
@@ -415,6 +429,13 @@
         L.ki = i.ki; L.mode = CT.settings.mode;
         const k = i.key;
         this.keyEl.textContent = T().keyName(k);
+        // Giọng tự chọn: k.auto là giọng ChordTrack đoán (CT.theory.withKeyOverride).
+        const auto = k && k.auto;
+        this.keyAuto.textContent = `Tự động (${T().keyName(auto || k)})`;
+        this.keySel.value = auto ? T().keyText(k) : "";
+        this.keySel.disabled = !k;
+        this.keyMark.textContent = auto ? "✎▾" : "▾";
+        this.keyMark.title = auto ? `Giọng bạn chọn. ChordTrack đoán: ${T().keyName(auto)}` : "";
         const w = k ? k.white_key_transpose | 0 : 0;
         this.tval.textContent = T().transposeKey(w);      // phím cần bấm khi giữ Transpose
         this.tkey.textContent = `(${T().signed(w)})`;     // mức dịch thật của đàn (giọng đã ghi ở hàng trên)

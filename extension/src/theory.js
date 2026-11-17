@@ -252,6 +252,84 @@
     return wrap(t - (key.mode === "minor" ? 9 : 0));
   }
 
+  /* ---------------- Giọng do người dùng chọn ---------------- */
+
+  const MAJOR_TONICS = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+  const MINOR_TONICS = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"];
+  /** 24 giọng để chọn: [{text: "D major", tonic, mode, white}] (trưởng trước, theo nốt chủ C..B). */
+  const KEY_CHOICES = [["major", MAJOR_TONICS], ["minor", MINOR_TONICS]].flatMap(([mode, names]) =>
+    names.map((tonic) => ({ text: `${tonic} ${mode}`, tonic, mode, white: wrap(pcOf(tonic) - (mode === "minor" ? 9 : 0)) })));
+  const keyText = (k) => (k ? `${k.tonic} ${k.mode}` : "");
+  const sameKey = (a, b) => !!a && !!b && a.mode === b.mode && pcOf(a.tonic) === pcOf(b.tonic);
+
+  // Bậc La Mã theo khoảng cách tới nốt chủ, như chordtrack/analysis.py (_MAJOR_DEGREES, _MINOR_DEGREES).
+  const MAJOR_DEGREES = ["I", "bII", "II", "bIII", "III", "IV", "#IV", "V", "bVI", "VI", "bVII", "VII"];
+  const MINOR_DEGREES = ["I", "bII", "II", "III", "#III", "IV", "#IV", "V", "VI", "#VI", "VII", "#VII"];
+  const ROMAN_RE = /^([b#]?)(VII|VI|V|IV|III|II|I)(.*)$/i;
+  /** Đổi bậc La Mã `roman` (server tính theo giọng cũ) sang giọng `key`, giữ chữ hoa/thường, hậu tố và bass
+   * (phần này không phụ thuộc giọng). `rootPc`: nốt gốc của hợp âm. "N.C.", "?" hay chuỗi lạ giữ nguyên. */
+  function rekeyRoman(roman, rootPc, key) {
+    const m = roman && ROMAN_RE.exec(roman);
+    const t = key && pcOf(key.tonic);
+    if (!m || rootPc == null || t == null) return roman;
+    const num = (key.mode === "minor" ? MINOR_DEGREES : MAJOR_DEGREES)[mod12(rootPc - t)];
+    const acc = num.replace(/[IV]+$/, "");
+    const base = num.slice(acc.length);
+    return acc + (m[2] === m[2].toLowerCase() ? base.toLowerCase() : base) + m[3];
+  }
+  const harteRootPc = (label) => { const m = /^([A-G][#b]*)/.exec(label || ""); return m ? pcOf(m[1]) : null; };
+  const symRootPc = (sym) => { const p = parse(sym); return p ? pcOf(p.root) : null; };
+
+  /** Kết quả (dạng build_result) với giọng do người dùng chọn: `ov` = {chỉ số vùng giọng: "D major"}.
+   * Vùng được chọn đổi tonic/mode, white_key_transpose, confidence = null và thêm `auto` (giọng server đoán);
+   * hợp âm, đoạn trong vùng đó viết lại tên nốt theo giọng mới, tính lại bậc La Mã, bỏ white_key_symbol (chordLabels
+   * tự dịch theo white_key_transpose); chỗ đổi giọng tính lại from/to/semitones/transpose_*. Không đổi `result`.
+   * `ov` rỗng hoặc không khớp vùng nào: trả nguyên `result`. */
+  function withKeyOverride(result, ov) {
+    if (!result || !ov) return result;
+    const base = (result.keys && result.keys.length) ? result.keys
+      : (result.key ? [{ start: 0, end: result.duration, ...result.key, white_key_transpose: whiteOffset(result.key) }] : []);
+    const changed = new Map();
+    const keys = base.map((k, i) => {
+      const want = ov[i] && parseKeyText(ov[i]);
+      if (!want || pcOf(want.tonic || "") === null || !["major", "minor"].includes(want.mode) || sameKey(k, want)) return k;
+      const nk = { ...k, tonic: want.tonic, mode: want.mode, confidence: null, white_key_transpose: whiteOffset(want),
+                   auto: { tonic: k.tonic, mode: k.mode } };
+      changed.set(i, nk);
+      return nk;
+    });
+    if (!changed.size) return result;
+    const single = base.length === 1;
+    const keyOf = (ki) => changed.get(ki ?? (single ? 0 : -1));
+    const chords = (result.chords || []).map((c) => {
+      const k = keyOf(c.key_index);
+      if (!k) return c;
+      return { ...c, symbol: shiftSym(c.symbol, 0, k), roman: c.roman == null ? c.roman : rekeyRoman(c.roman, harteRootPc(c.label), k),
+               white_key_symbol: null };
+    });
+    const sections = (result.sections || []).map((sec) => {
+      const k = keyOf(sec.key_index);
+      if (!k) return sec;
+      const prog = sec.progression || [];
+      return { ...sec, progression: prog.map((x) => shiftSym(x, 0, k)),
+               roman: sec.roman ? sec.roman.map((r, j) => rekeyRoman(r, symRootPc(prog[j]), k)) : sec.roman };
+    });
+    // Chỗ đổi giọng thứ j nằm ở đầu vùng j + 1 (chordtrack/pipeline.py modulations_to_json).
+    const modulations = (result.modulations || []).map((m) => {
+      let j = keys.findIndex((k, i) => i > 0 && Math.abs(k.start - m.time) < 0.05);
+      if (j < 0) return m;
+      const a = keys[j - 1], b = keys[j];
+      if (!changed.has(j - 1) && !changed.has(j)) return m;
+      return { ...m, from: keyText(a), to: keyText(b), semitones: wrap(pcOf(b.tonic) - pcOf(a.tonic)),
+               transpose_from: whiteOffset(a), transpose_to: whiteOffset(b) };
+    }).filter((m) => m.semitones !== 0 || m.from !== m.to);
+    let key = result.key;
+    const mainIdx = single ? 0 : base.findIndex((k) => sameKey(k, result.key));
+    if (changed.has(mainIdx)) { const { start, end, white_key_transpose, auto, ...rest } = changed.get(mainIdx); key = rest; }
+    return { ...result, key, keys,
+             chords, sections, modulations };
+  }
+
   function keyIndexAt(song, t) {
     const i = lastLE(song.keys, t, (k) => k.start);
     return Math.max(0, i);
@@ -558,6 +636,7 @@
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
+    KEY_CHOICES, keyText, rekeyRoman, withKeyOverride,
     DEGREES, melodyName, melodyArrow, octaveMark, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,
     MELODY_VOCALS_RESULT, melodyAvail, melodyEffective, melodyMissingText, MELODY_KY_HINT, MELODY_SETUP_HINT,
