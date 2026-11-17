@@ -53,12 +53,11 @@
       // Hiệu ứng (CT.settings.fx, CSS trong khối "Hiệu ứng" của styles.css): vạch đỏ là nguồn sáng, thứ gì tiến lại gần
       // nó thì sáng dần lên. Lớp điểm chạm nằm TRONG làn nốt, đứng trước các viên trong DOM nên được vẽ bên dưới, không
       // che tên nốt (track có will-change nên z-index chỉ có nghĩa trong track); update() dịch nó theo vạch đỏ.
-      // Quầng (ct-halo) đứng ở cao độ nốt đang ngân; đóa sáng (ct-bloom) nở ra khi vào nốt mới, vài đóa xoay vòng.
+      // Khi vào nốt mới, một đóa sáng đỏ nhạt nở ra ở cao độ của nốt rồi tan (ct-bloom), vài đóa xoay vòng.
       this.hitZone = el("div", "ct-hitzone");
-      this.halo = el("div", "ct-halo");
       this.blooms = [];
       for (let k = 0; k < Strip.BLOOMS; k++) this.blooms.push(el("div", "ct-bloom"));
-      this.hitZone.append(this.halo, ...this.blooms);
+      this.hitZone.append(...this.blooms);
       this.fx = { beat: -1, flip: false, pop: false, playing: null, bloom: 0, np: -1,
                   nearChord: null, nearChordV: -1, nearNote: null, nearNoteV: -1 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
@@ -312,7 +311,7 @@
       const fresh = j >= 0 && j !== this.nIdx;
       this.nIdx = j;
       this.showNow(j, past);
-      this.moveHalo(j, fresh && !force);
+      if (fresh && !force) this.bloomAt(j);
     }
 
     /* ---------------- Hiệu ứng (CT.settings.fx) ----------------
@@ -369,17 +368,11 @@
       e.style.setProperty("--np", p);
     }
 
-    /** Quầng sáng ở điểm nốt j chạm vạch đỏ (nghỉ thì tắt), trượt mềm theo cao độ. hit: vừa vào nốt mới khi đang
-     * phát thì một đóa sáng nở ra từ điểm chạm (lấy đóa kế tiếp trong vòng xoay). */
-    moveHalo(j, hit) {
-      const z = this.hitZone;
-      z.classList.toggle("ct-rest", j < 0);
-      if (j < 0) return;
+    /** Vừa vào nốt j khi đang phát: một đóa sáng nở ra ở điểm nốt chạm vạch đỏ (lấy đóa kế tiếp trong vòng xoay). */
+    bloomAt(j) {
+      if (!this.playing || CT.settings.fx === false) return;
       const n = this.notes[j];
       const y = T().pitchY(n.pitch, this.range).toFixed(3);
-      z.style.setProperty("--oy", y);
-      z.classList.toggle("ct-unc", !!n.uncertain);
-      if (!hit || !this.playing || CT.settings.fx === false) return;
       const b = this.blooms[this.fx.bloom = (this.fx.bloom + 1) % this.blooms.length];
       b.style.setProperty("--by", y);
       b.classList.toggle("ct-long", n.end - n.start >= 0.35);   // nốt ngân dài: đóa nở rộng và chậm hơn
