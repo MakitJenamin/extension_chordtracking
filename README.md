@@ -44,7 +44,7 @@
 
 ### Ba cách đọc hợp âm
 
-**🎹 Phím trắng** (mặc định): đổi về giọng chỉ dùng phím trắng (C trưởng hoặc A thứ), ghi rõ giọng của bài cần hạ hay nâng bao nhiêu nửa cung để tới đó. Thanh vàng đếm ngược trước chỗ đổi giọng.
+**🎹 Phím trắng** (mặc định): đổi về giọng chỉ dùng phím trắng, kèm số nút transpose cần bấm. Thanh vàng đếm ngược trước chỗ đổi giọng.
 
 <img src="docs/img/chord-bar.png" alt="Chế độ Phím trắng">
 
@@ -79,7 +79,7 @@ theo độ dài nốt, tên nốt ghi trong viên (↑/↓ ở đầu tên khi n
 <td width="45%"><img src="docs/img/song-structure.png" alt="Cấu trúc bài ở cột phải"></td>
 <td>
 
-Cột phải liệt kê **từng đoạn**: vòng hợp âm, bậc La Mã, giọng, giọng phím trắng tương ứng.
+Cột phải liệt kê **từng đoạn**: vòng hợp âm, bậc La Mã, giọng, nút transpose.
 
 🎨 Cùng màu là cùng đoạn nhạc lặp lại. ⏩ Bấm vào đoạn để tua tới đó.
 
