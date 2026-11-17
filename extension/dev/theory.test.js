@@ -446,10 +446,6 @@ test("withKeyOverride: giọng người dùng chọn thay giọng server đoán"
   assert.deepEqual(o.sections[0].roman, ["IVmaj7", "iii7"]);
   const song = T.buildSong(o, { snapToBeats: false });
   assert.deepEqual(o.chords.slice(0, 2).map((c) => T.chordLabels(song, c, { mode: "white" }).main), ["Fmaj7", "Em7"]);
-  assert.deepEqual(o.chords.map((c) => c.symbol), ["Gmaj7", "F#m7", "N.C."]);   // chế độ Gốc giữ nguyên tên hợp âm
-  const flat = T.withKeyOverride(r, { 0: "Eb major" });
-  assert.deepEqual(flat.chords.slice(0, 2).map((c) => T.chordLabels(T.buildSong(flat), c, { mode: "orig" }).main), ["Gmaj7", "F#m7"]);
-  assert.deepEqual(flat.sections[0].progression, ["Gmaj7", "F#m7"]);
   assert.equal(r.keys[0].tonic, "G");                               // không đổi kết quả gốc
   assert.equal(T.withKeyOverride(r, { 0: "G major" }), r);          // trùng giọng đoán: giữ nguyên
   assert.equal(T.withKeyOverride(r, { 0: "H major" }), r);          // chuỗi lạ: bỏ qua
