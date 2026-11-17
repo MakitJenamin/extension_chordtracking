@@ -50,16 +50,16 @@
       this.nowKey = null;
       this.labels = [];
       this.range = null;
-      // Hiệu ứng (CT.settings.fx), phong cách tối giản: ánh sáng mờ, chuyển động chậm và không nảy. Ở điểm nốt chạm
-      // vạch đỏ có một đốm sáng dịu (lúc nốt ngân) và một vòng mảnh lan ra rồi tan khi vào nốt mới. Lớp này nằm TRONG
+      // Hiệu ứng (CT.settings.fx), phong cách phát sáng dịu: quầng sáng mềm, thở chậm, chuyển sáng từ từ. Ở điểm nốt
+      // chạm vạch đỏ có quầng sáng (lúc nốt ngân) và một đóa sáng nở ra rồi tan khi vào nốt mới. Lớp này nằm TRONG
       // làn nốt, đứng trước các viên trong DOM nên được vẽ bên dưới, không che tên nốt (track có will-change nên
-      // z-index chỉ có nghĩa trong track); update() dịch nó theo vạch đỏ. Vài vòng xoay vòng để giai điệu nhanh không bị cắt.
+      // z-index chỉ có nghĩa trong track); update() dịch nó theo vạch đỏ. Vài đóa xoay vòng để giai điệu nhanh không bị cắt.
       this.hitZone = el("div", "ct-hitzone");
       this.glow = el("div", "ct-glow");
-      this.rings = [];
-      for (let k = 0; k < Strip.RINGS; k++) this.rings.push(el("div", "ct-ring"));
-      this.hitZone.append(this.glow, ...this.rings);
-      this.fx = { beat: -1, flip: false, pop: false, soon: null, np: -1, playing: null, ring: 0 };
+      this.blooms = [];
+      for (let k = 0; k < Strip.BLOOMS; k++) this.blooms.push(el("div", "ct-bloom"));
+      this.hitZone.append(this.glow, ...this.blooms);
+      this.fx = { beat: -1, flip: false, pop: false, soon: null, np: -1, playing: null, bloom: 0 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
       this.scale = Strip.BASE_SCALE;
@@ -336,8 +336,8 @@
 
     get playing() { const v = CT.state.video; return !!(v && !v.paused); }
 
-    /** Đốm sáng dịu ở điểm nốt j chạm vạch đỏ (nghỉ thì tắt), trượt mềm theo cao độ. hit: vừa vào nốt mới khi đang
-     * phát, thì một vòng mảnh lan ra từ điểm chạm rồi tan (lấy vòng kế tiếp trong vòng xoay). */
+    /** Quầng sáng ở điểm nốt j chạm vạch đỏ (nghỉ thì tắt), trượt mềm theo cao độ. hit: vừa vào nốt mới khi đang
+     * phát, thì một đóa sáng nở ra từ điểm chạm rồi tan (lấy đóa kế tiếp trong vòng xoay). */
     moveGlow(j, hit) {
       const z = this.hitZone;
       z.classList.toggle("ct-rest", j < 0);
@@ -347,12 +347,12 @@
       z.style.setProperty("--oy", y);
       z.classList.toggle("ct-unc", !!n.uncertain);
       if (!hit || !this.playing || CT.settings.fx === false) return;
-      const r = this.rings[this.fx.ring = (this.fx.ring + 1) % this.rings.length];
-      r.style.setProperty("--ry", y);
-      r.classList.toggle("ct-long", n.end - n.start >= 0.35);   // nốt ngân dài: vòng lan rộng và chậm hơn
-      const on = r.classList.contains("ct-ra");
-      r.classList.remove("ct-ra", "ct-rb");
-      r.classList.add(on ? "ct-rb" : "ct-ra");
+      const r = this.blooms[this.fx.bloom = (this.fx.bloom + 1) % this.blooms.length];
+      r.style.setProperty("--gy", y);
+      r.classList.toggle("ct-long", n.end - n.start >= 0.35);   // nốt ngân dài: đóa nở rộng và chậm hơn
+      const on = r.classList.contains("ct-ga");
+      r.classList.remove("ct-ga", "ct-gb");
+      r.classList.add(on ? "ct-gb" : "ct-ga");
     }
 
     /** Mỗi khung hình: vạch đỏ "thở" nhẹ theo phách (phách 1 rõ hơn) và trạng thái phát/dừng.
@@ -370,7 +370,7 @@
       this.retrigger(this.head, "flip", "ct-ba", "ct-bb");
     }
 
-    /** Hợp âm kế tiếp "chờ vào" khi hợp âm hiện tại đã qua 75%: viền mảnh hiện dần (tĩnh, không nhấp nháy). */
+    /** Hợp âm kế tiếp "chờ vào" khi hợp âm hiện tại đã qua 75%: quầng sáng nhạt hiện dần. */
     soonFx(p) {
       const next = p >= 0.75 && this.idx >= 0 ? this.chordEls[this.idx + 1] || null : null;
       if (next === this.fx.soon) return;
@@ -650,7 +650,7 @@
   Strip.FS_SCALE = 2;
   Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua
   Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
-  Strip.RINGS = 3;         // số vòng lan dùng xoay vòng (nốt nhanh vẫn mỗi nốt một vòng)
+  Strip.BLOOMS = 3;        // số đóa sáng dùng xoay vòng (nốt nhanh vẫn mỗi nốt một đóa)
   CT.ui = CT.ui || {};
   CT.ui.Strip = Strip;
   CT.ui.strip = new Strip();
