@@ -117,23 +117,13 @@
     return { tonic, mode: mode || "major" };
   }
   const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v);
-  /* Chế độ Phím trắng, cách ghi không phụ thuộc loại đàn: giọng toàn phím trắng (C trưởng / A thứ) và số nửa cung
-   * dịch từ giọng của bài tới đó. Hợp âm hiển thị = gốc dịch whiteShift(key) = -white_key_transpose (−6..+6).
-   * Ví dụ B thứ: hạ 2 nửa cung → A thứ; G trưởng: nâng 5 nửa cung → C trưởng. */
-  const whiteKeyName = (key) => (key && key.mode === "minor" ? "A thứ" : "C trưởng");
-  const whiteShift = (key) => (key ? -((key.white_key_transpose ?? whiteOffset(key)) | 0) : 0);
-  /** "hạ 2 nửa cung" / "nâng 5 nửa cung" / "giữ nguyên" */
-  const shiftWords = (s) => (s ? `${s < 0 ? "hạ" : "nâng"} ${Math.abs(s)} nửa cung` : "giữ nguyên");
-  /** "B thứ hạ 2 nửa cung" (giọng của bài và cách dịch về phím trắng) */
-  const whiteHint = (key) => (key ? `${keyName(key)} ${shiftWords(whiteShift(key))}` : "");
-  /** Mức Transpose đàn cần đặt (đàn đang để 0) để chơi phím trắng mà vẫn đúng tông bài: B thứ +2, G trưởng −5. */
-  const whiteTranspose = (key) => -whiteShift(key);
-  /** "A thứ (+2)", "C trưởng (−5)", "C trưởng" khi bài đã ở phím trắng. Số trong ngoặc là mức Transpose của đàn. */
-  function whiteShort(key) {
-    if (!key) return "";
-    const w = whiteTranspose(key);
-    return whiteKeyName(key) + (w ? ` (${signed(w)})` : "");
-  }
+  /* Phím cần bấm khi giữ nút Transpose của đàn (đàn của người dùng: giữ Transpose rồi bấm phím tên tông
+   * trưởng; mức dịch −6..+5). Tên suy thẳng từ mức dịch: 0 C, +1 C#, +2 D, +3 D#, +4 E, +5 F,
+   * −6 F#, −5 G, −4 G#, −3 A, −2 A#, −1 B. Giọng thứ dùng tông trưởng song song (Cm → Eb → bấm D#). */
+  const TRANSPOSE_KEYS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const transposeKey = (w) => TRANSPOSE_KEYS[(((w | 0) % 12) + 12) % 12];
+  /** "D# (+3)" */
+  const transposeLabel = (w) => `${transposeKey(w)} (${signed(w | 0)})`;
 
   /* ---------------- Tìm kiếm theo thời gian ---------------- */
 
@@ -644,7 +634,7 @@
 
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
-    keyName, parseKeyText, signed, whiteKeyName, whiteShift, shiftWords, whiteHint, whiteShort, whiteTranspose, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
+    keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
     KEY_CHOICES, keyText, rekeyRoman, withKeyOverride,
     DEGREES, melodyName, melodyArrow, octaveMark, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,

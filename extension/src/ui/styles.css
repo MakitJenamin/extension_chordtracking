@@ -108,8 +108,8 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
   border-radius: 8px; background: color-mix(in srgb, var(--ct-accent) 14%, transparent);
 }
 .ct-panel:not([data-mode="white"]) .ct-tbox { display: none; }
-.ct-tval { font-size: 20px; font-weight: 700; white-space: nowrap; }
-.ct-tkey { color: var(--ct-text); font-weight: 700; font-size: 16px; white-space: nowrap; }
+.ct-tval { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 40px; }
+.ct-tkey { color: var(--ct-text); font-weight: 700; font-size: 16px; }
 .ct-tnext { margin-left: auto; font-size: 13px; color: var(--ct-text2); }
 .ct-tbox.ct-soon { background: var(--ct-warn-bg); color: var(--ct-warn-text); }
 .ct-tbox.ct-soon .ct-tkey, .ct-tbox.ct-soon .ct-tnext { color: var(--ct-warn-text); opacity: 0.8; }

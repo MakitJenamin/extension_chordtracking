@@ -144,7 +144,7 @@
     if (i.soonIn == null) return "";
     const to = T().keyName(T().parseKeyText(i.next.to));
     let s = `Sắp đổi giọng sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${to}`;
-    if (withTranspose) s += ` · chơi như ${T().whiteShort(T().parseKeyText(i.next.to))}`;
+    if (withTranspose) s += ` · bấm ${T().transposeLabel(i.next.transpose_from)} → ${T().transposeLabel(i.next.transpose_to)}`;
     return s;
   }
 
@@ -161,8 +161,7 @@
       // Chọn giọng khi bộ đoán sai: <select> trong suốt phủ lên tên giọng (danh sách gốc của trình duyệt, hiện tên giọng
       // theo kiểu của panel). Chọn cho vùng giọng đang phát; "Tự động" bỏ lựa chọn (CT.setKeyOverride).
       const T0 = T();
-      const opt = (k) => h("option", { value: k.text },
-        T0.whiteShift(k) ? `${T0.keyName(k)} → ${T0.whiteShort(k)}` : `${T0.keyName(k)} (sẵn phím trắng)`);
+      const opt = (k) => h("option", { value: k.text }, `${T0.keyName(k)} (${T0.signed(k.white)})`);
       this.keyAuto = h("option", { value: "" }, "Tự động");
       this.keySel = h("select", { class: "ct-key-sel", "aria-label": "Chọn giọng của bài",
         onchange: (e) => {
@@ -170,8 +169,8 @@
           CT.setKeyOverride(CT.state.videoId, i, e.target.value || null);
         } },
         this.keyAuto,
-        h("optgroup", { label: "Trưởng (→ giọng phím trắng)" }, ...T0.KEY_CHOICES.filter((k) => k.mode === "major").map(opt)),
-        h("optgroup", { label: "Thứ (→ giọng phím trắng)" }, ...T0.KEY_CHOICES.filter((k) => k.mode === "minor").map(opt)));
+        h("optgroup", { label: "Trưởng (Transpose đàn)" }, ...T0.KEY_CHOICES.filter((k) => k.mode === "major").map(opt)),
+        h("optgroup", { label: "Thứ (Transpose đàn)" }, ...T0.KEY_CHOICES.filter((k) => k.mode === "minor").map(opt)));
       this.keyMark = h("span", { class: "ct-key-mark", text: "▾" });
       this.tempoEl = h("span", { class: "ct-chip", title: "Tốc độ (phách mỗi phút)" });
       this.meterEl = h("span", { class: "ct-chip", title: "Số chỉ nhịp: số phách trong một ô nhịp" });
@@ -217,8 +216,8 @@
       this.tval = h("span", { class: "ct-tval" });
       this.tkey = h("span", { class: "ct-tkey" });
       this.tnext = h("span", { class: "ct-tnext" });
-      this.tbox = h("div", { class: "ct-tbox", title: "Hợp âm đã dịch về giọng toàn phím trắng. Số trong ngoặc: mức Transpose đặt trên đàn (đàn đang để 0) để đàn phát đúng tông bài" },
-        h("span", {}, "Chơi như"), this.tval, this.tkey, this.tnext);
+      this.tbox = h("div", { class: "ct-tbox", title: "Giữ nút Transpose của đàn và bấm phím này, rồi chơi hợp âm trên phím trắng. Số trong ngoặc là mức dịch thật của đàn" },
+        h("span", {}, "Giữ Transpose, bấm"), this.tval, this.tkey, this.tnext);
 
       this.slot = h("div", { class: "ct-strip-slot" });
       this.fsNote = h("div", { class: "ct-fs-note", text: "Dải hợp âm đang hiện trên video (toàn màn hình)." });
@@ -437,21 +436,18 @@
         this.keySel.disabled = !k;
         this.keyMark.textContent = auto ? "✎▾" : "▾";
         this.keyMark.title = auto ? `Giọng bạn chọn. ChordTrack đoán: ${T().keyName(auto)}` : "";
-        const w = k ? T().whiteTranspose(k) : 0;   // mức Transpose của đàn
-        this.tval.textContent = k ? T().whiteKeyName(k) : "";   // giọng toàn phím trắng
-        this.tkey.textContent = k ? `(${T().signed(w)})` : "";    // mức Transpose đặt trên đàn
-        this.tkey.title = k ? `Đặt Transpose của đàn ${T().signed(w)} (${T().whiteHint(k)} thành ${T().whiteKeyName(k)}, đàn bù lại cho đúng tông)` : "";
+        const w = k ? k.white_key_transpose | 0 : 0;
+        this.tval.textContent = T().transposeKey(w);      // phím cần bấm khi giữ Transpose
+        this.tkey.textContent = `(${T().signed(w)})`;     // mức dịch thật của đàn (giọng đã ghi ở hàng trên)
+        this.tkey.title = k ? `Chơi như ${k.mode === "minor" ? "A thứ" : "C trưởng"} trên phím trắng` : "";
         this.tbox.hidden = !k;
       }
       // Chế độ phím trắng: cảnh báo nằm trong ô transpose (đếm ngược), không lặp lại ở hàng đầu.
       const white = CT.settings.mode === "white";
-      // Chỗ đổi giọng kế tiếp: giọng mới và cách dịch của nó về phím trắng ("C# thứ hạ 4 nửa cung → A thứ").
-      const nk = i.next && T().parseKeyText(i.next.to);
-      const nextHint = nk ? `${T().keyName(nk)} → chơi như ${T().whiteShort(nk)}` : "";
       const nextText = !i.next ? (s.modulations.length ? "Không còn chỗ đổi giọng" : "")
         : i.soonIn != null
-          ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${nextHint}`
-          : `Kế tiếp ${fmt(i.next.time)}: ${nextHint}`;
+          ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${T().keyName(T().parseKeyText(i.next.to))}: bấm ${T().transposeLabel(i.next.transpose_to)}`
+          : `Kế tiếp ${fmt(i.next.time)}: bấm ${T().transposeLabel(i.next.transpose_to)}`;
       if (L.next !== nextText) { L.next = nextText; this.tnext.textContent = nextText; }
       const soon = white ? "" : soonText(i, false);
       if (L.soon !== soon) {
