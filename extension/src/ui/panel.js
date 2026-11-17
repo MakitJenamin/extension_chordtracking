@@ -156,7 +156,8 @@
   const panel = {
     el: null, state: "hidden", song: null, last: {},
     /* ----- Bảng chọn giọng ----- */
-    toggleKeyPop(open = this.keyPop.hidden) {
+    toggleKeyPop(open = !!this.keyPop && this.keyPop.hidden) {
+      if (!this.keyPop) return;
       if (!open) {
         this.keyPop.hidden = true;
         this.keyBtn.setAttribute("aria-expanded", "false");
@@ -169,7 +170,7 @@
       this.renderKeyPop();
       this.keyPopOutside ||= (e) => { if (!this.keyBtn.parentNode.contains(e.target)) this.toggleKeyPop(false); };
       document.addEventListener("pointerdown", this.keyPopOutside, true);
-      (this.keyPop.querySelector(".ct-kc-on") || this.keyPop.querySelector(".ct-kc"))?.focus();
+      (this.keyPop.querySelector(".ct-kc-on") || this.keyPop.querySelector(".ct-kc"))?.focus({ preventScroll: true });
     },
     /** Dựng lại nội dung theo vùng giọng đang phát: giọng đang dùng tô màu, giọng ChordTrack đoán có chấm đỏ. */
     renderKeyPop() {
@@ -192,10 +193,16 @@
       const maj = Th.KEY_CHOICES.filter((c) => c.mode === "major"), min = Th.KEY_CHOICES.filter((c) => c.mode === "minor");
       const autoRow = row(`Tự động (${Th.keyName(auto)})`, Th.whiteOffset(auto), !k.auto, false, null);
       autoRow.classList.add("ct-kc-auto");
+      // Dựng lại khi đang mở (qua chỗ đổi giọng): giữ ô đang được chọn bằng bàn phím và vị trí cuộn.
+      const focused = [...this.keyPop.querySelectorAll(".ct-kc")].indexOf(document.activeElement);
+      const top = this.keyPop.scrollTop;
       this.keyPop.replaceChildren(autoRow,
         h("div", { class: "ct-kp-label" }, "Trưởng"), h("div", { class: "ct-kp-label" }, "Thứ"),
         ...maj.flatMap((c, j) => [cell(c), cell(min[j])]));
-      this.keyPop.querySelector(".ct-kc-on")?.scrollIntoView({ block: "nearest" });
+      if (focused >= 0) { this.keyPop.querySelectorAll(".ct-kc")[focused].focus({ preventScroll: true }); this.keyPop.scrollTop = top; return; }
+      // Mới mở: cuộn trong danh sách tới giọng đang dùng (không dùng scrollIntoView để trang YouTube không bị cuộn theo).
+      const on = this.keyPop.querySelector(".ct-kc-on");
+      if (on && on.offsetTop + on.offsetHeight > this.keyPop.clientHeight) this.keyPop.scrollTop = on.offsetTop - this.keyPop.clientHeight / 2;
     },
     /** Esc đóng; mũi tên đi giữa các ô (2 cột, ô đầu là "Tự động"). Chặn phím để YouTube không tua hay đổi âm lượng. */
     keyPopKey(e) {
@@ -407,12 +414,14 @@
     },
 
     show(state) {
+      if (state !== "ready") this.toggleKeyPop(false);   // đang tải, lỗi, ẩn: đóng danh sách chọn giọng
       this.state = state;
       this.el.hidden = state === "hidden" || !CT.settings.enabled;
       this.el.dataset.state = state;
     },
 
     setSong(song) {
+      this.toggleKeyPop(false);                          // bài mới hoặc dựng lại bài: danh sách cũ không còn đúng
       this.sawSeparation = false;
       this.labelSig = labelSig(CT.settings);
       this.song = song;
