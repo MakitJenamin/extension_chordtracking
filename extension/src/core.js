@@ -74,7 +74,7 @@
     showMelody: true,         // dòng giai điệu dưới dải hợp âm (khi bài đã dò giai điệu)
     fx: true,                 // hiệu ứng ánh sáng của dải (vạch đỏ sáng theo phách, hợp âm/nốt sáng dần khi tới gần)
     melodyModel: "yourmt3",   // cách dò giai điệu: "yourmt3" ("Bình thường", mặc định) | "combo" ("Kỹ": YourMT3+ ghép MuScriptor)
-    settingsRev: 4,           // phiên bản cài đặt, dùng để chuyển đổi một lần
+    settingsRev: 5,           // phiên bản cài đặt, dùng để chuyển đổi một lần
     autoShowCached: false,    // bài đã có kết quả thì hiện luôn, không cần bấm nút (không bao giờ tự phân tích bài mới)
     serverUrl: "http://127.0.0.1:8765",
   };
@@ -93,13 +93,15 @@
         CT.settings = { ...DEFAULTS, ...(s.settings || {}) };
         // Một lần (settingsRev < 2): bật lại "Khớp phách" cho người đã lỡ tắt, theo yêu cầu mặc định ON.
         const rev = CT.settings.settingsRev || 0;
-        if (rev < 4) {
+        if (rev < 5) {
           if (rev < 2) CT.settings = { ...CT.settings, snapToBeats: true };
           // Một lần (settingsRev < 3): mặc định giai điệu đổi sang "yourmt3" (người dùng chốt 2026-11-11). setSettings
           // lưu cả object nên người đã đổi cài đặt bất kỳ đều có sẵn "combo" cũ, ghi đè mặc định mới.
           if (rev < 3) CT.settings = { ...CT.settings, melodyModel: "yourmt3" };
           // settingsRev 4: tách giọng và nốt khớp phách luôn bật, bỏ hai cài đặt cũ.
-          CT.settings = { ...CT.settings, settingsRev: 4 };
+          // Một lần (settingsRev < 5): bật lại "Hiệu ứng" cho người đã lỡ tắt, theo yêu cầu mặc định ON (2026-11-18).
+          if (rev < 5) CT.settings = { ...CT.settings, fx: true };
+          CT.settings = { ...CT.settings, settingsRev: 5 };
           delete CT.settings.melodyVocals;
           delete CT.settings.melodySnap;
           try { await chrome.storage.sync.set({ settings: CT.settings }); } catch {}
