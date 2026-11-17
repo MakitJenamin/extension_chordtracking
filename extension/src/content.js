@@ -150,8 +150,9 @@
   function emitSong(c) {
     if (!c.visible || c !== cur) return;
     if (c.status === "ready") {
-      CT.state.result = c.result;
-      CT.bus.emit("song:ready", { videoId: c.id, result: c.result });
+      // Giọng người dùng tự chọn (CT.keyOverrides) áp lên kết quả server; c.result giữ nguyên bản gốc.
+      CT.state.result = CT.theory.withKeyOverride(c.result, CT.keyOverrides[c.id]);
+      CT.bus.emit("song:ready", { videoId: c.id, result: CT.state.result });
       emitMelody(c);
       probeMelody(c);
     }
@@ -344,6 +345,13 @@
           if (cur.visible && cur.status === "ready") probeMelody(cur);
         }
       }
+    });
+    // Người dùng chọn giọng khác: dựng lại bài đang hiện (hợp âm, bậc, phím trắng, giai điệu theo giọng mới).
+    CT.bus.on("keyOverride", ({ videoId }) => {
+      if (!cur || cur.id !== videoId || !cur.visible || cur.status !== "ready") return;
+      CT.state.result = CT.theory.withKeyOverride(cur.result, CT.keyOverrides[cur.id]);
+      CT.bus.emit("song:ready", { videoId: cur.id, result: CT.state.result });
+      emitMelody(cur);
     });
     window.addEventListener("yt-navigate-finish", check);
     window.addEventListener("popstate", check);

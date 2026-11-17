@@ -242,18 +242,21 @@
   store.settings = { ...(store.settings || {}), serverUrl: location.origin + (down ? "/api-down" : "/api") };
   const changeFns = [], msgFns = [];
   window.chrome = window.chrome || {};
-  chrome.storage = {
-    sync: {
-      async get(k) { return k == null ? { ...store } : { [k]: store[k] }; },
-      async set(obj) {
-        const changes = {};
-        for (const [k, nv] of Object.entries(obj)) changes[k] = { oldValue: store[k], newValue: nv };
-        Object.assign(store, obj);
-        try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {}
-        // chrome.storage.onChanged chỉ báo cho các trang/khung khác; trang đổi cũng nhận, nên mô phỏng y vậy.
-        setTimeout(() => changeFns.forEach((fn) => fn(changes, "sync")), 0);
-      },
+  // sync và local dùng chung một kho (khóa không trùng nhau: settings ở sync, keyOverrides ở local).
+  const area = (name) => ({
+    async get(k) { return k == null ? { ...store } : { [k]: store[k] }; },
+    async set(obj) {
+      const changes = {};
+      for (const [k, nv] of Object.entries(obj)) changes[k] = { oldValue: store[k], newValue: nv };
+      Object.assign(store, obj);
+      try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {}
+      // chrome.storage.onChanged chỉ báo cho các trang/khung khác; trang đổi cũng nhận, nên mô phỏng y vậy.
+      setTimeout(() => changeFns.forEach((fn) => fn(changes, name)), 0);
     },
+  });
+  chrome.storage = {
+    sync: area("sync"),
+    local: area("local"),
     onChanged: { addListener: (fn) => changeFns.push(fn) },
   };
   chrome.runtime = {

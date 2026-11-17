@@ -41,6 +41,11 @@
  *   không có công tắc (người dùng chốt 2026-11-11). Server thiếu gói tách giọng thì tự dùng bản không tách giọng
  *   (CT.theory.melodyEffective theo `melody_models` của GET /health).
  *   CT.app.detectMelody(force)       bấm "Dò giai điệu": POST /melody và theo dõi job
+ *
+ * GIỌNG NGƯỜI DÙNG CHỌN (khi bộ đoán giọng sai):
+ *   CT.keyOverrides                  {videoId: {chỉ số vùng giọng: "D major"}}, lưu chrome.storage.local "keyOverrides"
+ *   CT.setKeyOverride(id, i, text)   chọn giọng cho vùng i của video id (text null: về giọng tự đoán), phát
+ *   "keyOverride" {videoId}          content.js áp vào kết quả (CT.theory.withKeyOverride) và phát lại song:ready
  */
 (() => {
   const listeners = {};
@@ -77,6 +82,7 @@
     DEFAULTS,
     settings: { ...DEFAULTS },
     state: { videoId: null, result: null, video: null, melody: null },
+    keyOverrides: {},
     seekTo: () => {},
     log: (...a) => console.debug("[ChordTrack]", ...a),
     async loadSettings() {
@@ -97,7 +103,24 @@
           try { await chrome.storage.sync.set({ settings: CT.settings }); } catch {}
         }
       } catch { CT.settings = { ...DEFAULTS }; }
+      try {
+        const o = await chrome.storage.local.get("keyOverrides");
+        CT.keyOverrides = (o.keyOverrides && typeof o.keyOverrides === "object") ? o.keyOverrides : {};
+      } catch { CT.keyOverrides = {}; }
       bus.emit("settings", CT.settings);
+    },
+    async setKeyOverride(videoId, index, text) {
+      if (!videoId) return;
+      const cur = { ...(CT.keyOverrides[videoId] || {}) };
+      if (text) cur[index] = text; else delete cur[index];
+      const all = { ...CT.keyOverrides };
+      delete all[videoId];                                   // xóa rồi thêm: video vừa sửa về cuối
+      if (Object.keys(cur).length) all[videoId] = cur;
+      const ids = Object.keys(all);
+      for (const id of ids.slice(0, Math.max(0, ids.length - 500))) delete all[id];   // giữ 500 video gần nhất
+      CT.keyOverrides = all;
+      bus.emit("keyOverride", { videoId });
+      try { await chrome.storage.local.set({ keyOverrides: all }); } catch {}
     },
     async setSettings(patch) {
       CT.settings = { ...CT.settings, ...patch };
@@ -111,6 +134,14 @@
       if (area === "sync" && changes.settings) {
         CT.settings = { ...DEFAULTS, ...changes.settings.newValue };
         bus.emit("settings", CT.settings);
+      }
+      // Tab khác chọn giọng: áp luôn cho tab này (cùng video thì content.js dựng lại bài).
+      if (area === "local" && changes.keyOverrides) {
+        const old = CT.keyOverrides;
+        CT.keyOverrides = changes.keyOverrides.newValue || {};
+        for (const id of new Set([...Object.keys(old), ...Object.keys(CT.keyOverrides)])) {
+          if (JSON.stringify(old[id]) !== JSON.stringify(CT.keyOverrides[id])) bus.emit("keyOverride", { videoId: id });
+        }
       }
     });
   } catch {}

@@ -414,3 +414,54 @@ test("tên cách dò cho người dùng: Bình thường | Kỹ, không dùng t�
   assert.equal(T.MELODY_MODELS.combo.short, "Kỹ");
   for (const v of Object.values(T.MELODY_MODELS)) assert.ok(!/__/.test(v.tip), v.tip);
 });
+
+test("rekeyRoman: đổi bậc theo giọng mới, giữ hoa/thường, hậu tố và bass", () => {
+  assert.equal(T.rekeyRoman("Imaj7", 7, K("D")), "IVmaj7");
+  assert.equal(T.rekeyRoman("vii7", 6, K("D")), "iii7");
+  assert.equal(T.rekeyRoman("I/5", 7, K("D")), "IV/5");
+  assert.equal(T.rekeyRoman("V7", 9, K("B", "minor")), "VII7");
+  assert.equal(T.rekeyRoman("iii", 11, K("B", "minor")), "i");
+  assert.equal(T.rekeyRoman("vii°", 1, K("D")), "vii°");
+  assert.equal(T.rekeyRoman("N.C.", null, K("D")), "N.C.");
+});
+
+test("withKeyOverride: giọng người dùng chọn thay giọng server đoán", () => {
+  const r = {
+    duration: 20, key: { tonic: "G", mode: "major", confidence: 0.9 },
+    keys: [{ start: 0, end: 20, tonic: "G", mode: "major", confidence: 0.9, white_key_transpose: -5 }],
+    chords: [
+      { start: 0, end: 2, label: "G:maj7", symbol: "Gmaj7", roman: "Imaj7", white_key_symbol: "Cmaj7", key_index: 0 },
+      { start: 2, end: 4, label: "F#:min7", symbol: "F#m7", roman: "vii7", white_key_symbol: "Bm7", key_index: 0 },
+      { start: 4, end: 6, label: "N", symbol: "N.C.", roman: null, white_key_symbol: "N.C.", key_index: 0 },
+    ],
+    sections: [{ start: 0, end: 6, label: "A", progression: ["Gmaj7", "F#m7"], roman: ["Imaj7", "vii7"], key_index: 0 }],
+    modulations: [],
+  };
+  const o = T.withKeyOverride(r, { 0: "D major" });
+  assert.notEqual(o, r);
+  assert.deepEqual([o.keys[0].tonic, o.keys[0].mode, o.keys[0].white_key_transpose], ["D", "major", 2]);
+  assert.deepEqual(o.keys[0].auto, { tonic: "G", mode: "major" });
+  assert.equal(o.key.tonic, "D");
+  assert.deepEqual(o.chords.map((c) => c.roman), ["IVmaj7", "iii7", null]);
+  assert.deepEqual(o.sections[0].roman, ["IVmaj7", "iii7"]);
+  const song = T.buildSong(o, { snapToBeats: false });
+  assert.deepEqual(o.chords.slice(0, 2).map((c) => T.chordLabels(song, c, { mode: "white" }).main), ["Fmaj7", "Em7"]);
+  assert.equal(r.keys[0].tonic, "G");                               // không đổi kết quả gốc
+  assert.equal(T.withKeyOverride(r, { 0: "G major" }), r);          // trùng giọng đoán: giữ nguyên
+  assert.equal(T.withKeyOverride(r, { 0: "H major" }), r);          // chuỗi lạ: bỏ qua
+  assert.equal(T.withKeyOverride(r, null), r);
+});
+
+test("withKeyOverride: chỗ đổi giọng tính lại theo vùng đã chọn", () => {
+  const r = {
+    duration: 40, key: { tonic: "C", mode: "major" },
+    keys: [{ start: 0, end: 20, tonic: "C", mode: "major", white_key_transpose: 0 },
+           { start: 20, end: 40, tonic: "D", mode: "major", white_key_transpose: 2 }],
+    chords: [], sections: [],
+    modulations: [{ time: 20, from: "C major", to: "D major", semitones: 2, transpose_from: 0, transpose_to: 2 }],
+  };
+  const o = T.withKeyOverride(r, { 1: "Eb major" });
+  assert.deepEqual(o.modulations[0], { time: 20, from: "C major", to: "Eb major", semitones: 3, transpose_from: 0, transpose_to: 3 });
+  assert.equal(o.key.tonic, "C");
+  assert.equal(T.withKeyOverride(r, { 1: "C major" }).modulations.length, 0);   // hai vùng thành cùng giọng
+});
