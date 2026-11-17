@@ -460,8 +460,17 @@ test("withKeyOverride: chỗ đổi giọng tính lại theo vùng đã chọn",
     chords: [], sections: [],
     modulations: [{ time: 20, from: "C major", to: "D major", semitones: 2, transpose_from: 0, transpose_to: 2 }],
   };
+  // Chọn Eb cho vùng sau (đoán D): cả bài dời +1, chỗ lên tông vẫn +2
   const o = T.withKeyOverride(r, { 1: "Eb major" });
-  assert.deepEqual(o.modulations[0], { time: 20, from: "C major", to: "Eb major", semitones: 3, transpose_from: 0, transpose_to: 3 });
-  assert.equal(o.key.tonic, "C");
-  assert.equal(T.withKeyOverride(r, { 1: "C major" }).modulations.length, 0);   // hai vùng thành cùng giọng
+  assert.deepEqual(o.keys.map((k) => [k.tonic, k.white_key_transpose]), [["Db", 1], ["Eb", 3]]);
+  assert.deepEqual(o.modulations[0], { time: 20, from: "Db major", to: "Eb major", semitones: 2, transpose_from: 1, transpose_to: 3 });
+  assert.equal(o.key.tonic, "Db");
+  // Chọn cho vùng đầu: vùng sau dời theo
+  const o2 = T.withKeyOverride(r, { 0: "Bb major" });
+  assert.deepEqual(o2.keys.map((k) => k.tonic), ["Bb", "C"]);
+  // Đổi sang giọng tương đối: mọi vùng cùng đổi
+  const o3 = T.withKeyOverride(r, { 0: "A minor" });
+  assert.deepEqual(o3.keys.map((k) => `${k.tonic} ${k.mode}`), ["A minor", "B minor"]);
+  assert.deepEqual(o3.keys.map((k) => k.white_key_transpose), [0, 2]);
+  assert.equal(T.withKeyOverride(r, { 1: "D major" }), r);                     // trùng giọng đoán: giữ nguyên
 });
