@@ -596,26 +596,32 @@ html.ct-fx-on .ct-beats i {
 html.ct-fx-on .ct-beats i.ct-on { box-shadow: 0 0 8px color-mix(in srgb, var(--ct-text) 30%, transparent); }
 html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 0 14px color-mix(in srgb, var(--ct-red) 45%, transparent); }
 
-/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát sáng lên thành viên đỏ.
- * Màu viên (và nền nhãn) là oklch(--ct-nL --ct-nC --ct-nH), ba biến đăng ký bằng @property nên chuyển mượt được.
- * Xanh ngọc và đỏ gần đối nhau: trộn hai màu theo bất kỳ cách nào (chuyển background-color, lớp đỏ mờ dần đè lên
- * nền xanh) đều đi qua màu nâu xám đục; còn bỏ nền xanh cho đỏ tắt trên nền tối thì viên tối hẳn, mất chữ rồi mới
- * hiện lại. Nên ở đây chuyển theo vòng sắc độ: đỏ (H 23,6 + 360) -> hồng tím -> tím -> xanh dương -> xanh ngọc
- * (H 186), độ rực và độ sáng giảm dần, viên luôn có màu, chữ luôn hiện, như ánh sáng nguội dần.
+/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát sáng lên thành viên đỏ, nốt đã hát nguội thành đỏ sẫm.
+ * Xanh ngọc (nốt sắp tới) và đỏ gần đối nhau: trộn hai màu theo bất kỳ cách nào (chuyển background-color, lớp đỏ mờ
+ * dần đè lên nền xanh, xoay sắc độ) đều đi qua màu nâu xám đục hoặc màu lạ (tím, xanh dương). Nên:
+ * - Vào nốt: lớp đỏ (::after) QUÉT từ trái sang phải trong 0,25 s (mask có mép mềm trượt qua viên), quầng sáng hiện
+ *   dần; mỗi điểm trên viên chỉ là xanh hoặc đỏ, không pha. Quét xong, màu nền viên (ba biến @property --ct-nL/C/H,
+ *   oklch) đổi ngay sang đỏ, nằm khuất dưới lớp đỏ.
+ * - Rời nốt: lớp đỏ tắt ngay (nền bên dưới đã đỏ y hệt nên không thấy), nền chuyển đỏ -> đỏ sẫm trong 0,9 s cùng sắc
+ *   độ, viên lặn xuống (opacity của ct-past). Nốt đã qua giữ đỏ sẫm mờ, không quay về xanh ngọc.
  * - Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near.
- * - Nốt đang hát: viên đỏ kèm quầng cùng màu; phần đã hát (--np) phủ thêm một lớp sáng hồng nhạt, mép phải tan dần,
- *   nên viên "đầy ánh sáng" dần từ trái sang phải mà không chia thành hai mảng màu.
- * - Đã qua: nguội dần về xanh ngọc rồi lặn xuống (opacity của ct-past). */
+ * - Phần đã hát (--np): lớp sáng hồng nhạt, mép phải tan dần, nằm trên lớp đỏ. */
 @property --ct-nL { syntax: "<number>"; inherits: true; initial-value: 0.437; }
 @property --ct-nC { syntax: "<number>"; inherits: true; initial-value: 0.071; }
 @property --ct-nH { syntax: "<number>"; inherits: true; initial-value: 188.2; }
 .ct-strip-wrap { --ct-mel-on: var(--ct-red); }
 html.ct-fx-on .ct-note {
   --ct-nL: 0.437; --ct-nC: 0.071; --ct-nH: 188.2;   /* = --ct-mel #115e59 */
-  transition: opacity 1s var(--ct-fade), --ct-nL 0.9s var(--ct-fade), --ct-nC 0.9s var(--ct-fade), --ct-nH 0.9s var(--ct-fade);
+  /* --ct-nH không transition: sắc độ đổi ngay, chỉ độ sáng/độ rực chuyển. Nốt ngắn hơn 0,25 s rời vạch khi nền còn
+   * xanh: đi hồng xỉn -> đỏ sẫm (vẫn gam đỏ), không xoay qua xanh dương/tím. */
+  transition: opacity 1s var(--ct-fade), --ct-nL 0.9s var(--ct-fade), --ct-nC 0.9s var(--ct-fade);
 }
 html.ct-fx-on[dark] .ct-note { --ct-nL: 0.511; --ct-nC: 0.086; --ct-nH: 186.4; }   /* = --ct-mel #0f766e */
-html.ct-fx-on .ct-note.ct-cur { --ct-nL: 0.631; --ct-nC: 0.255; --ct-nH: 383.6; }   /* = --ct-red #f03 (23,6 + 360) */
+html.ct-fx-on .ct-note.ct-past { --ct-nL: 0.45; --ct-nC: 0.15; --ct-nH: 23.6; }     /* đỏ sẫm: cùng sắc độ với --ct-red */
+html.ct-fx-on .ct-note.ct-cur {
+  --ct-nL: 0.631; --ct-nC: 0.255; --ct-nH: 23.6;                                    /* = --ct-red #f03 */
+  transition: opacity 0.25s var(--ct-ease), --ct-nL 0s linear 0.25s, --ct-nC 0s linear 0.25s, --ct-nH 0s linear 0.25s;
+}
 html.ct-fx-on .ct-note .ct-nbar, html.ct-fx-on .ct-note .ct-nl { background: oklch(var(--ct-nL) var(--ct-nC) var(--ct-nH)); }
 html.ct-fx-on .ct-note.ct-nunc:not(.ct-cur) .ct-nbar, html.ct-fx-on .ct-note.ct-nunc:not(.ct-cur) .ct-nl { background: none; }
 html.ct-fx-on .ct-note .ct-nbar, html.ct-fx-on .ct-note .ct-nl {
@@ -632,28 +638,42 @@ html.ct-fx-on .ct-note.ct-cur .ct-nbar {
   border-color: transparent;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-light) 45%, transparent),
     0 0 12px color-mix(in srgb, var(--ct-mel-on) 50%, transparent);
+  transition: color 0.3s var(--ct-ease), border-color 0.3s var(--ct-ease), box-shadow 0.35s var(--ct-ease),
+    opacity 0.25s var(--ct-ease), text-shadow 0.3s var(--ct-ease);
 }
-/* Nhãn trong suốt khi đang hát để thấy lớp phần đã hát bên dưới. Rời nốt thì nền nhãn hiện lại ngay, nhưng cùng màu
- * với viên ở đúng lúc đó (cùng ba biến) nên không thấy chỗ nối. */
+/* Nhãn trong suốt khi đang hát để thấy lớp đỏ quét qua và phần đã hát bên dưới. Rời nốt thì nền nhãn hiện lại ngay,
+ * cùng màu với viên ở đúng lúc đó (cùng ba biến) nên không thấy chỗ nối. */
 html.ct-fx-on .ct-note.ct-cur .ct-nl {
   background: transparent; color: #fff; box-shadow: none; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  transition: color 0.3s var(--ct-ease), opacity 0.25s var(--ct-ease), text-shadow 0.3s var(--ct-ease);
 }
-/* Phần đã hát: lớp sáng hồng nhạt rộng --np, mép phải tan dần (mask); hiện/tắt mờ dần. */
+/* Lớp đỏ quét. mask rộng 300%: một phần ba đầu đen (hiện), mép mềm, phần sau trong suốt; trượt mask-position 100% -> 0%
+ * thì phần hiện lan từ trái sang phải. Không đang hát: về vị trí đầu ngay (không transition). */
+html.ct-fx-on .ct-note .ct-nbar { isolation: isolate; }
+html.ct-fx-on .ct-note .ct-nbar::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: var(--ct-mel-on);
+  -webkit-mask-image: linear-gradient(90deg, #000 0 33.4%, transparent 40%); mask-image: linear-gradient(90deg, #000 0 33.4%, transparent 40%);
+  -webkit-mask-size: 300% 100%; mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: 100% 0; mask-position: 100% 0;
+  opacity: 0;
+}
+html.ct-fx-on .ct-note.ct-nunc .ct-nbar::after { inset: -1.5px; }   /* phủ cả viền gạch đứt (viền trong suốt khi đang hát) */
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::after {
+  opacity: 1; -webkit-mask-position: 0 0; mask-position: 0 0;
+  transition: -webkit-mask-position 0.25s var(--ct-fade), mask-position 0.25s var(--ct-fade);
+}
+/* Phần đã hát: lớp sáng hồng nhạt rộng --np, mép phải tan dần; nằm trên lớp đỏ; hiện/tắt mờ dần. */
 html.ct-fx-on .ct-note .ct-nbar::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--np, 0) * 100%);
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--np, 0) * 100%); z-index: 1;
   border-radius: inherit; opacity: 0; transition: opacity 0.45s var(--ct-fade);
   background: linear-gradient(90deg, color-mix(in srgb, var(--ct-mel-light) 10%, transparent),
     color-mix(in srgb, #fff 22%, transparent));
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
   mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
 }
-html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { opacity: 1; }
-/* Vào nốt: sáng lên nhanh (0,15 s, ra êm) để nốt ngắn vẫn kịp sáng. Rời nốt: nguội dần 0,9 s theo các transition ở
- * trên, đường cong êm hai đầu (--ct-fade); với --ct-ease màu mất nửa trong 0,1 s đầu nên nhìn như tắt phụt. */
-html.ct-fx-on .ct-note.ct-cur, html.ct-fx-on .ct-note.ct-cur .ct-nbar, html.ct-fx-on .ct-note.ct-cur .ct-nl,
-html.ct-fx-on .ct-note.ct-cur .ct-nbar::before {
-  transition-duration: 0.15s; transition-timing-function: var(--ct-ease);
-}
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { opacity: 1; transition-duration: 0.3s; }
 /* Nốt lặp chỉ hiện tên khi đang hát: tên hiện/ẩn mờ dần thay vì bật tắt (bản gốc dùng visibility). */
 html.ct-fx-on .ct-note.ct-nrep:not(.ct-nbare) .ct-nl { visibility: visible; opacity: 0; }
 html.ct-fx-on .ct-note.ct-cur.ct-nrep:not(.ct-nbare) .ct-nl { opacity: 1; }
@@ -680,18 +700,26 @@ html.ct-fx-on .ct-playing .ct-bloom.ct-long::before { animation-duration: 1.1s; 
 @keyframes ct-bloom-a { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 @keyframes ct-bloom-b { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 
-/* Ô "đang hát": tên nốt đỏ như viên đang hát. Chữ đổi ngay, không hoạt ảnh: giai điệu nhanh (~0,2 s/nốt)
- * mà cho chữ hiện mờ dần thì nhấp nháy liên tục. Chỉ màu (đang hát / nghỉ) chuyển mờ dần. */
+/* Ô "đang hát": tên nốt đỏ như viên đang hát; màu (đang hát / nghỉ) chuyển mờ dần. */
 html.ct-fx-on .ct-mel-now b { color: var(--ct-mel-on); transition: color 0.5s var(--ct-ease), opacity 0.5s var(--ct-ease); }
 html.ct-fx-on .ct-mel-now.ct-rest b { color: var(--ct-text2); }
-/* Đổi chữ kiểu chuyển chồng (strip.js swapText): chữ cũ mờ đi và thu nhỏ tại chỗ, chữ mới hiện lên từ hơi to.
+/* Đổi chữ kiểu cuộn (strip.js swapText): nốt mới cao hơn thì chữ mới trồi từ dưới lên, chữ cũ bay lên rồi mờ; thấp
+ * hơn thì ngược lại; vào/ra chỗ nghỉ thì phóng to/thu nhỏ. Ô cắt phần tràn để chữ trượt ra như qua khung cửa.
  * Keyframes không ghi opacity đích để chữ trở về đúng opacity của trạng thái (nghỉ, nốt không chắc). */
-html.ct-fx-on .ct-mel-now .ct-now-ghost { position: absolute; margin: 0; pointer-events: none; animation: ct-now-out 0.3s var(--ct-fade) forwards; }
-html.ct-fx-on .ct-mel-now .ct-now-in-a { animation: ct-now-in-a 0.3s var(--ct-ease); }
-html.ct-fx-on .ct-mel-now .ct-now-in-b { animation: ct-now-in-b 0.3s var(--ct-ease); }
-@keyframes ct-now-out { to { opacity: 0; transform: scale(0.8); } }
-@keyframes ct-now-in-a { from { opacity: 0; transform: scale(1.2); } }
-@keyframes ct-now-in-b { from { opacity: 0; transform: scale(1.2); } }
+html.ct-fx-on .ct-mel-now { overflow: hidden; }
+html.ct-fx-on .ct-mel-now .ct-now-ghost { position: absolute; margin: 0; pointer-events: none; animation: 0.32s var(--ct-fade) forwards; }
+html.ct-fx-on .ct-mel-now .ct-now-out-up { animation-name: ct-now-out-up; }
+html.ct-fx-on .ct-mel-now .ct-now-out-down { animation-name: ct-now-out-down; }
+html.ct-fx-on .ct-mel-now .ct-now-out-fade { animation-name: ct-now-out-fade; }
+html.ct-fx-on .ct-mel-now .ct-now-in-up { animation: ct-now-in-up 0.32s var(--ct-ease); }
+html.ct-fx-on .ct-mel-now .ct-now-in-down { animation: ct-now-in-down 0.32s var(--ct-ease); }
+html.ct-fx-on .ct-mel-now .ct-now-in-fade { animation: ct-now-in-fade 0.32s var(--ct-ease); }
+@keyframes ct-now-in-up { from { opacity: 0; transform: translateY(70%) scale(0.9); } }
+@keyframes ct-now-in-down { from { opacity: 0; transform: translateY(-70%) scale(0.9); } }
+@keyframes ct-now-in-fade { from { opacity: 0; transform: scale(0.6); } }
+@keyframes ct-now-out-up { to { opacity: 0; transform: translateY(-70%) scale(0.9); } }
+@keyframes ct-now-out-down { to { opacity: 0; transform: translateY(70%) scale(0.9); } }
+@keyframes ct-now-out-fade { to { opacity: 0; transform: scale(1.3); } }
 html:not([dark]) .ct-root:not(.ct-fs) .ct-strip-wrap { --ct-mel-light: var(--ct-red); }
 
 /* Người dùng bật "giảm chuyển động" trong hệ điều hành: giữ ánh sáng tĩnh, bỏ mọi hoạt ảnh. */

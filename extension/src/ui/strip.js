@@ -286,28 +286,35 @@
       const key = `${cur}|${next}|${j >= 0 && ns[j].uncertain ? 1 : 0}`;
       if (key === this.nowKey) return;
       this.nowKey = key;
-      this.swapText(this.nowName, cur || "–", "nowNameIn");
-      this.swapText(this.nowNext, next ? `→ ${next}` : "", "nowNextIn");
+      // Hướng hoạt ảnh theo cao độ: nốt mới cao hơn thì chữ trồi lên, thấp hơn thì chìm xuống; vào/ra chỗ nghỉ thì phóng.
+      const pitch = cur ? ns[j].pitch : null, prevPitch = this.nowPitch ?? null;
+      const dir = pitch != null && prevPitch != null && pitch !== prevPitch ? (pitch > prevPitch ? "up" : "down") : "fade";
+      this.nowPitch = pitch;
+      this.swapText(this.nowName, cur || "–", dir);
+      this.swapText(this.nowNext, next ? `→ ${next}` : "", dir);
       this.now.classList.toggle("ct-rest", !cur);
       this.now.classList.toggle("ct-nunc", j >= 0 && !!ns[j].uncertain);
     }
 
-    /** Đổi chữ trong ô "đang hát" kiểu chuyển chồng: chữ cũ (bản sao đặt đè đúng chỗ) mờ đi và thu nhỏ, chữ mới hiện
-     * lên, nên lúc nào cũng có chữ, không nhấp nháy dù giai điệu nhanh. Chỉ khi bật hiệu ứng và đang phát; tua/dừng thì
-     * đổi ngay. Đọc layout (offsetLeft...) chỉ lúc đổi nốt, không phải mỗi khung hình. */
-    swapText(e, text, key) {
+    /** Đổi chữ trong ô "đang hát" kiểu cuộn: chữ cũ (bản sao đặt đè đúng chỗ) trượt đi và mờ, chữ mới trượt vào theo
+     * hướng dir ("up" | "down" | "fade"), nên lúc nào cũng có chữ và thấy rõ là đổi nốt. Chỉ khi bật hiệu ứng và đang
+     * phát; tua/dừng thì đổi ngay. Đọc layout (offsetLeft...) chỉ lúc đổi nốt, không phải mỗi khung hình. */
+    swapText(e, text, dir) {
       if (e.textContent === text) return;
+      const IN = ["ct-now-in-up", "ct-now-in-down", "ct-now-in-fade"];
       if (this.playing && e.textContent && document.documentElement.classList.contains("ct-fx-on")) {
         const g = e.cloneNode(true);
-        g.classList.remove("ct-now-in-a", "ct-now-in-b");
-        g.classList.add("ct-now-ghost");
+        g.classList.remove(...IN);
+        g.classList.add("ct-now-ghost", `ct-now-out-${dir}`);
         g.style.left = `${e.offsetLeft}px`;
         g.style.top = `${e.offsetTop}px`;
         g.style.width = `${e.offsetWidth}px`;
         g.style.color = getComputedStyle(e).color;
         this.now.append(g);
-        setTimeout(() => g.remove(), 400);
-        this.retrigger(e, key, "ct-now-in-a", "ct-now-in-b");
+        setTimeout(() => g.remove(), 450);
+        e.classList.remove(...IN);
+        void e.offsetWidth;   // bỏ class rồi gắn lại trong cùng khung thì trình duyệt không chạy lại hoạt ảnh
+        e.classList.add(`ct-now-in-${dir}`);
       }
       e.textContent = text;
     }
