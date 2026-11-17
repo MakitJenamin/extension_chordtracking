@@ -532,24 +532,35 @@ html.ct-fx-on {
 .ct-strip-wrap {
   --ct-light: color-mix(in srgb, var(--ct-accent) 55%, #fff);   /* ánh sáng của ô hợp âm */
   --ct-mel-light: #7ff0dc;                                      /* ánh sáng của nốt sắp tới (cùng họ màu viên nốt) */
-  --ct-beat-o: 0.45;
 }
-.ct-strip-wrap.ct-down { --ct-beat-o: 0.75; }
 
-/* Vạch đỏ: lõi đỏ, quầng tỏa nhiều lớp. Lúc phát có cột sáng mềm hai bên; mỗi phách sáng lên rồi lắng. */
-html.ct-fx-on .ct-playhead {
-  box-shadow: 0 0 6px color-mix(in srgb, var(--ct-red) 40%, transparent);
+/* Vạch đỏ kiểu kim chỉ: dây mảnh, đậm ở hàng hợp âm rồi nhạt dần qua làn nốt (nốt đỏ đang hát vẫn rõ khi vạch đi
+ * qua); đầu trên là chấm tròn có viền màu nền thay cho tam giác, đầu dưới một chấm nhỏ. Mỗi phách chấm trên nảy nhẹ
+ * và tỏa sáng rồi lắng (phách 1 rõ hơn). */
+html.ct-fx-on .ct-has-melody .ct-playhead {
+  background: linear-gradient(to bottom, var(--ct-red) 0, var(--ct-red) 45%,
+    color-mix(in srgb, var(--ct-red) 45%, transparent) 75%, color-mix(in srgb, var(--ct-red) 70%, transparent) 100%);
+}
+html.ct-fx-on .ct-playhead::before {
+  top: 3px; left: -3.5px; width: 9px; height: 9px; border: 0; border-radius: 50%; background: var(--ct-red);
+  box-shadow: 0 0 0 2px var(--ct-bg), 0 0 8px color-mix(in srgb, var(--ct-red) 55%, transparent);
 }
 html.ct-fx-on .ct-playhead::after {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 40px; margin-left: -20px; opacity: 0;
-  pointer-events: none; background: radial-gradient(closest-side, color-mix(in srgb, var(--ct-red) 26%, transparent), transparent);
-  transition: opacity 0.8s var(--ct-ease);
+  content: ""; position: absolute; bottom: 2px; left: -1.5px; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--ct-red); box-shadow: 0 0 0 2px var(--ct-bg); pointer-events: none;
 }
-html.ct-fx-on .ct-playing .ct-playhead::after { opacity: 0.2; }
-html.ct-fx-on .ct-playing .ct-playhead.ct-pa::after { animation: ct-pulse-a 0.9s var(--ct-ease); }
-html.ct-fx-on .ct-playing .ct-playhead.ct-pb::after { animation: ct-pulse-b 0.9s var(--ct-ease); }
-@keyframes ct-pulse-a { from { opacity: var(--ct-beat-o); } to { opacity: 0.2; } }
-@keyframes ct-pulse-b { from { opacity: var(--ct-beat-o); } to { opacity: 0.2; } }
+.ct-strip-wrap { --ct-beat-s: 1.2; }
+.ct-strip-wrap.ct-down { --ct-beat-s: 1.45; }
+html.ct-fx-on .ct-playing .ct-playhead.ct-pa::before { animation: ct-pulse-a 0.7s var(--ct-ease); }
+html.ct-fx-on .ct-playing .ct-playhead.ct-pb::before { animation: ct-pulse-b 0.7s var(--ct-ease); }
+@keyframes ct-pulse-a {
+  from { transform: scale(var(--ct-beat-s)); box-shadow: 0 0 0 2px var(--ct-bg), 0 0 14px var(--ct-red); }
+  to { transform: none; box-shadow: 0 0 0 2px var(--ct-bg), 0 0 8px color-mix(in srgb, var(--ct-red) 55%, transparent); }
+}
+@keyframes ct-pulse-b {
+  from { transform: scale(var(--ct-beat-s)); box-shadow: 0 0 0 2px var(--ct-bg), 0 0 14px var(--ct-red); }
+  to { transform: none; box-shadow: 0 0 0 2px var(--ct-bg), 0 0 8px color-mix(in srgb, var(--ct-red) 55%, transparent); }
+}
 
 /* Mép dải mờ dần: hợp âm hiện ra từ bóng tối bên phải và lặn đi bên trái. */
 html.ct-fx-on .ct-strip-wrap::before, html.ct-fx-on .ct-strip-wrap::after {
@@ -595,13 +606,13 @@ html.ct-fx-on .ct-beats i {
 html.ct-fx-on .ct-beats i.ct-on { box-shadow: 0 0 8px color-mix(in srgb, var(--ct-text) 30%, transparent); }
 html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 0 14px color-mix(in srgb, var(--ct-red) 45%, transparent); }
 
-/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát không đổi sang màu khác mà sáng lên trong chính tông xanh ngọc của nó
- * (màu đỏ để dành cho vạch đỏ). Mọi thay đổi chỉ là background-color/opacity có transition nên mờ dần, không giật.
+/* Nốt. Kiểu "viên tự phát sáng": nốt đang hát chuyển cả viên sang đỏ (không chia hai khúc), kèm quầng đỏ nhẹ.
+ * Mọi thay đổi chỉ là background-color/opacity có transition nên mờ dần, không giật.
  * - Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near.
- * - Nốt đang hát: viên sáng lên (--ct-mel-on) kèm quầng cùng màu; phần đã hát (--np) phủ thêm một lớp sáng trắng
+ * - Nốt đang hát: cả viên đỏ (--ct-mel-on) kèm quầng cùng màu; phần đã hát (--np) phủ thêm một lớp sáng trắng
  *   nhạt, nên viên "đầy ánh sáng" dần từ trái sang phải; tên nốt không có nền riêng, nằm trên viên, luôn trắng.
  * - Đã qua: lặn dần. */
-.ct-strip-wrap { --ct-mel-on: #14b8a6; }
+.ct-strip-wrap { --ct-mel-on: var(--ct-red); }
 html.ct-fx-on .ct-note { transition: opacity 0.8s var(--ct-ease); }
 html.ct-fx-on .ct-note .ct-nbar, html.ct-fx-on .ct-note .ct-nl {
   transition: background-color 0.45s var(--ct-ease), color 0.45s var(--ct-ease), border-color 0.45s var(--ct-ease),
@@ -615,8 +626,7 @@ html.ct-fx-on .ct-note::after {
 html.ct-fx-on .ct-note.ct-cur::after { opacity: 0; }
 html.ct-fx-on .ct-note.ct-cur .ct-nbar {
   background: var(--ct-mel-on); border-color: transparent;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-light) 45%, transparent),
-    0 0 12px color-mix(in srgb, var(--ct-mel-on) 50%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ct-mel-on) 45%, transparent);
 }
 html.ct-fx-on .ct-note.ct-cur .ct-nl {
   background: transparent; color: #fff; box-shadow: none; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
@@ -625,7 +635,7 @@ html.ct-fx-on .ct-note.ct-cur .ct-nl {
 html.ct-fx-on .ct-note .ct-nbar::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--np, 0) * 100%);
   border-radius: inherit; opacity: 0; transition: opacity 0.45s var(--ct-ease);
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.3));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.22));
 }
 html.ct-fx-on .ct-note.ct-cur .ct-nbar::before { opacity: 1; }
 /* Vào nốt: sáng lên nhanh (0,12 s) để nốt ngắn vẫn kịp sáng; rời nốt: tắt chậm theo các transition ở trên. */
@@ -636,7 +646,7 @@ html.ct-fx-on .ct-note.ct-nrep:not(.ct-nbare) .ct-nl { visibility: visible; opac
 html.ct-fx-on .ct-note.ct-cur.ct-nrep:not(.ct-nbare) .ct-nl { opacity: 1; }
 
 /* Đóa sáng khi vào nốt mới: lớp nằm trong .ct-mel-lane, trước các viên (vẽ bên dưới, không che tên nốt); strip.js
- * dịch nó tới vạch đỏ mỗi khung hình. Chỉ là một vầng xanh ngọc nhạt nở ra rồi tan.
+ * dịch nó tới vạch đỏ mỗi khung hình. Chỉ là một vầng đỏ nhạt nở ra rồi tan.
  * --by: cao độ nốt (strip.js bloomAt). Tâm viên = 3px + y * (cao làn - cao viên - 6px) + cao viên / 2 (như top của .ct-note). */
 .ct-hitzone { display: none; }
 html.ct-fx-on .ct-hitzone {
@@ -648,7 +658,7 @@ html.ct-fx-on .ct-hitzone {
 }
 .ct-bloom::before {
   content: ""; position: absolute; left: -20px; top: -20px; width: 40px; height: 40px; border-radius: 50%; opacity: 0;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--ct-mel-light) 40%, transparent), transparent);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ct-red) 40%, transparent), transparent);
 }
 .ct-bloom.ct-long { --ct-bloom-s: 1.8; }
 html.ct-fx-on .ct-playing .ct-bloom.ct-ba::before { animation: ct-bloom-a 0.8s var(--ct-ease); }
@@ -657,10 +667,9 @@ html.ct-fx-on .ct-playing .ct-bloom.ct-long::before { animation-duration: 1.1s; 
 @keyframes ct-bloom-a { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 @keyframes ct-bloom-b { from { opacity: 0.6; transform: scale(0.5); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.4)); } }
 
-/* Ô "đang hát": cùng tông xanh ngọc với viên đang hát. Chữ đổi ngay, không hoạt ảnh: giai điệu nhanh (~0,2 s/nốt)
+/* Ô "đang hát": tên nốt đỏ như viên đang hát. Chữ đổi ngay, không hoạt ảnh: giai điệu nhanh (~0,2 s/nốt)
  * mà cho chữ hiện mờ dần thì nhấp nháy liên tục. Chỉ màu (đang hát / nghỉ) chuyển mờ dần. */
-html.ct-fx-on .ct-mel-now b { color: var(--ct-mel-light); transition: color 0.5s var(--ct-ease), opacity 0.5s var(--ct-ease); }
-html.ct-fx-on .ct-mel-now.ct-rest b { color: var(--ct-text2); }
+html.ct-fx-on .ct-mel-now b { transition: color 0.5s var(--ct-ease), opacity 0.5s var(--ct-ease); }
 html:not([dark]) .ct-root:not(.ct-fs) .ct-strip-wrap { --ct-mel-light: #0d9488; }
 
 /* Người dùng bật "giảm chuyển động" trong hệ điều hành: giữ ánh sáng tĩnh, bỏ mọi hoạt ảnh. */
