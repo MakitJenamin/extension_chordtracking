@@ -600,8 +600,7 @@ html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 
  * Xanh ngọc và đỏ gần đối nhau: trộn hai màu theo bất kỳ cách nào (chuyển background-color, lớp đỏ mờ dần, xoay sắc
  * độ) đều đi qua màu nâu xám đục hoặc màu lạ (tím, xanh dương); bỏ nền xanh cho đỏ tắt trên nền tối thì viên tối hẳn,
  * mất chữ rồi mới hiện lại. Nền viên lúc nào cũng là xanh gốc, màu đỏ là lớp ::after phủ lên.
- * - Vào nốt (ct-cur): đỏ QUÉT từ trái sang phải trong 0,25 s (mask mép mềm trượt qua viên, mỗi điểm chỉ xanh hoặc
- *   đỏ), quầng sáng hiện dần.
+ * - Vào nốt (ct-cur): lớp đỏ hiện dần 0,3 s cùng quầng sáng (0,4 s), không quét.
  * - Rời nốt (ct-out, strip.js coolDown, 0,7 s): lớp đỏ mờ dần 0,65 s về xanh gốc (người dùng muốn mờ dần bình
  *   thường, không quét); cùng lúc quầng tắt dần và viên lặn xuống (opacity của ct-past) nên phần pha màu ít lộ.
  * - Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near.
@@ -623,7 +622,7 @@ html.ct-fx-on .ct-note.ct-cur .ct-nbar {
   background: var(--ct-mel); border-color: transparent;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-light) 45%, transparent),
     0 0 12px color-mix(in srgb, var(--ct-mel-on) 50%, transparent);
-  transition: color 0.3s var(--ct-ease), border-color 0.3s var(--ct-ease), box-shadow 0.35s var(--ct-ease),
+  transition: color 0.3s var(--ct-ease), border-color 0.3s var(--ct-ease), box-shadow 0.4s var(--ct-fade),
     opacity 0.25s var(--ct-ease), text-shadow 0.3s var(--ct-ease);
 }
 html.ct-fx-on .ct-note.ct-nunc.ct-cur .ct-nbar { background: none; }
@@ -632,27 +631,15 @@ html.ct-fx-on .ct-note.ct-cur .ct-nl, html.ct-fx-on .ct-note.ct-out .ct-nl {
   background: transparent; color: #fff; box-shadow: none; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
 }
 html.ct-fx-on .ct-note.ct-cur .ct-nl { transition: color 0.3s var(--ct-ease), opacity 0.25s var(--ct-ease), text-shadow 0.3s var(--ct-ease); }
-/* Lớp đỏ. mask rộng 300%: một phần ba đầu đen (hiện), mép mềm, phần sau trong suốt; mask-position 100% -> 0% thì
- * phần đỏ lan từ trái sang phải. Lúc rời nốt giữ mask phủ kín, chỉ mờ opacity. Còn lại: ẩn ngay. */
+/* Lớp đỏ: hiện dần khi vào nốt (0,3 s), mờ dần khi rời nốt (ct-note-out); còn lại ẩn. */
 html.ct-fx-on .ct-note .ct-nbar { isolation: isolate; }
 html.ct-fx-on .ct-note .ct-nbar::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: var(--ct-mel-on);
-  -webkit-mask-image: linear-gradient(90deg, #000 0 33.4%, transparent 40%); mask-image: linear-gradient(90deg, #000 0 33.4%, transparent 40%);
-  -webkit-mask-size: 300% 100%; mask-size: 300% 100%;
-  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-  -webkit-mask-position: 100% 0; mask-position: 100% 0;
-  opacity: 0;
+  background: var(--ct-mel-on); opacity: 0;
 }
 html.ct-fx-on .ct-note.ct-nunc .ct-nbar::after { inset: -1.5px; }   /* phủ cả viền gạch đứt (viền trong suốt khi đang hát) */
-html.ct-fx-on .ct-note.ct-cur .ct-nbar::after {
-  opacity: 1; -webkit-mask-position: 0 0; mask-position: 0 0;
-  transition: -webkit-mask-position 0.25s var(--ct-fade), mask-position 0.25s var(--ct-fade);
-}
-html.ct-fx-on .ct-note.ct-out:not(.ct-cur) .ct-nbar::after {
-  -webkit-mask-position: 0 0; mask-position: 0 0;
-  animation: ct-note-out 0.65s var(--ct-fade) forwards;
-}
+html.ct-fx-on .ct-note.ct-cur .ct-nbar::after { opacity: 1; transition: opacity 0.3s var(--ct-fade); }
+html.ct-fx-on .ct-note.ct-out:not(.ct-cur) .ct-nbar::after { animation: ct-note-out 0.65s var(--ct-fade) forwards; }
 @keyframes ct-note-out { from { opacity: 1; } to { opacity: 0; } }
 /* Phần đã hát: lớp sáng hồng nhạt rộng --np, mép phải tan dần; nằm trên lớp đỏ; hiện/tắt mờ dần. */
 html.ct-fx-on .ct-note .ct-nbar::before {
