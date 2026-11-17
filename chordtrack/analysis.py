@@ -41,10 +41,10 @@ W_TONIC_DUR = 2.0     # tỉ lệ thời lượng hợp âm chủ (đúng nốt 
 W_FIRST = 0.3         # hợp âm đầu bài là hợp âm chủ
 W_LAST = 0.25         # hợp âm cuối bài là hợp âm chủ
 W_CADENCE = 0.5       # tỉ lệ bước chuyển hợp âm là V(trưởng) -> I
-# Ba tham số dưới (thêm 2026-11-17): hai thành phần "âm giai" của `estimate_key` và hệ số maj7. Thiếu chúng, giọng bậc IV hay thắng ở nhạc
-# anime/J-pop: bài ngân lâu và mở đầu ở IV (Gmaj7 trong D trưởng) nên IV ăn trọn W_TONIC_DUR và W_FIRST, còn
-# nốt ngoài âm giai (C# khi đoán G) gần như không bị phạt. Đổi lại Isophonics giảm 0.870 -> 0.836 (bài
-# rock/blues có bVII), bộ Kajiura (17 bài) đúng giá trị transpose phím trắng 53% -> 65%.
+# Ba tham số dưới (thêm 2026-11-17): hai thành phần "âm giai" của `estimate_key` và hệ số maj7. Thiếu chúng, giọng
+# bậc IV hay thắng ở nhạc anime/J-pop: bài ngân lâu và mở đầu ở IV (Gmaj7 trong D trưởng) nên IV ăn trọn
+# W_TONIC_DUR và W_FIRST, còn nốt ngoài âm giai (C# khi đoán G) gần như không bị phạt. Đổi lại Isophonics giảm
+# 0.870 -> 0.836 (bài rock/blues có bVII), bộ Kajiura (17 bài) đúng giá trị transpose phím trắng 53% -> 65%.
 W_KEY_FIT = 1.0       # tỉ lệ thời lượng hợp âm có mọi nốt nằm trong âm giai
 W_KEY_OUT = 4.0       # phạt tỉ lệ nốt (gia trọng thời lượng) nằm ngoài âm giai
 TONIC_MAJ7_FACTOR = 0.5   # hợp âm maj7 chỉ tính nửa thời lượng khi làm hợp âm chủ trưởng (IVmaj7 hay được ngân lâu)
