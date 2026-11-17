@@ -70,7 +70,7 @@ html[dark] .ct-root {
 .ct-keypop {
   position: absolute; top: calc(100% + 6px); left: -8px; z-index: 2100; width: 320px; max-height: min(470px, 70vh);
   display: grid; grid-template-columns: 1fr 1fr; column-gap: 4px; align-content: start;
-  overflow-y: auto; overscroll-behavior: contain; padding: 6px; border-radius: 12px;
+  overflow-y: auto; padding: 6px; border-radius: 12px;   /* lăn chuột trên danh sách vẫn cuộn trang (không chặn cuộn lan) */
   background: var(--ct-bg); color: var(--ct-text); line-height: normal;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--ct-layer);
   scrollbar-width: thin; scrollbar-color: var(--ct-layer) transparent;
