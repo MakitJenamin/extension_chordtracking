@@ -50,6 +50,17 @@
       this.nowKey = null;
       this.labels = [];
       this.range = null;
+      // Hiệu ứng (CT.settings.fx, CSS trong khối "Hiệu ứng" của styles.css): vạch đỏ là nguồn sáng, thứ gì tiến lại gần
+      // nó thì sáng dần lên. Lớp điểm chạm nằm TRONG làn nốt, đứng trước các viên trong DOM nên được vẽ bên dưới, không
+      // che tên nốt (track có will-change nên z-index chỉ có nghĩa trong track); update() dịch nó theo vạch đỏ.
+      // Quầng (ct-halo) đứng ở cao độ nốt đang ngân; đóa sáng (ct-bloom) nở ra khi vào nốt mới, vài đóa xoay vòng.
+      this.hitZone = el("div", "ct-hitzone");
+      this.halo = el("div", "ct-halo");
+      this.blooms = [];
+      for (let k = 0; k < Strip.BLOOMS; k++) this.blooms.push(el("div", "ct-bloom"));
+      this.hitZone.append(this.halo, ...this.blooms);
+      this.fx = { beat: -1, flip: false, pop: false, playing: null, bloom: 0, np: -1,
+                  nearChord: null, nearChordV: -1, nearNote: null, nearNoteV: -1 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
       this.scale = Strip.BASE_SCALE;
@@ -111,6 +122,8 @@
       this.lastX = null;
       this.viewOff = 0;
       this.returnAt = 0;
+      this.fx.beat = -1;
+      this.fx.nearChord = null;
       this.notes = this.melodyLine();     // lưới phách của bài mới
       if (!song) { this.buildMelody(false); return; }
       const frag = document.createDocumentFragment();
@@ -192,7 +205,8 @@
         frag.append(e);
         this.noteEls.push(e);
       });
-      lane.append(frag);
+      this.fx.nearNote = null;
+      lane.append(this.hitZone, frag);   // lớp điểm chạm trước các viên: vẽ bên dưới
       this.track.append(lane);
       if (full) {
         this.layoutMelody();
@@ -273,6 +287,7 @@
       const key = `${cur}|${next}|${j >= 0 && ns[j].uncertain ? 1 : 0}`;
       if (key === this.nowKey) return;
       this.nowKey = key;
+      if (cur) this.retrigger(this.now, "pop", "ct-pop-a", "ct-pop-b");
       this.nowName.textContent = cur || "–";
       this.nowNext.textContent = next ? `→ ${next}` : "";
       this.now.classList.toggle("ct-rest", !cur);
@@ -285,15 +300,107 @@
       const ns = this.notes, els = this.noteEls;
       const j = T().noteIndexAt(ns, t, this.nIdx);
       const past = j >= 0 ? j : T().lastLE(ns, t, (n) => n.start) + 1;
+      this.noteFill(j, t);
+      this.nearNote(j >= 0 ? j + 1 : past, t);
       if (j === this.nIdx && past === this.nPast && !force) return;
-      if (this.nIdx >= 0 && els[this.nIdx]) els[this.nIdx].classList.remove("ct-cur");
+      if (this.nIdx >= 0 && els[this.nIdx]) { els[this.nIdx].classList.remove("ct-cur"); els[this.nIdx].style.removeProperty("--np"); }
       const prev = this.nPast;
       if (past > prev) for (let k = prev; k < past; k++) els[k].classList.add("ct-past");
       else for (let k = past; k < prev; k++) els[k].classList.remove("ct-past");
       this.nPast = past;
       if (j >= 0) els[j].classList.add("ct-cur");
+      const fresh = j >= 0 && j !== this.nIdx;
       this.nIdx = j;
       this.showNow(j, past);
+      this.moveHalo(j, fresh && !force);
+    }
+
+    /* ---------------- Hiệu ứng (CT.settings.fx) ----------------
+     * Chỉ đổi biến CSS / class, không đọc layout, nên không làm chậm vòng rAF. Biến liên tục (--ct-near, --np) được
+     * lượng tử hóa để chỉ ghi khi giá trị đổi. Hoạt ảnh một lần chạy lại nhờ đổi qua lại hai class -a/-b có keyframes
+     * giống hệt nhau (đổi tên animation thì trình duyệt chạy lại từ đầu). */
+
+    get playing() { const v = CT.state.video; return !!(v && !v.paused); }
+
+    /** Đổi qua lại class a/b trên e để chạy lại hoạt ảnh. key: ô nhớ trạng thái trong this.fx. */
+    retrigger(e, key, a, b) {
+      this.fx[key] = !this.fx[key];
+      e.classList.remove(this.fx[key] ? b : a);
+      e.classList.add(this.fx[key] ? a : b);
+    }
+
+    /** Đặt --ct-near (0–1, độ "sáng dần") lên đúng một phần tử; phần tử trước đó bị xóa biến. */
+    setNear(slot, e, v) {
+      const f = this.fx;
+      if (f[slot] !== e) {
+        f[slot]?.style.removeProperty("--ct-near");
+        f[slot] = e;
+        f[slot + "V"] = -1;
+      }
+      if (!e || v === f[slot + "V"]) return;
+      f[slot + "V"] = v;
+      e.style.setProperty("--ct-near", v);
+    }
+
+    /** Hợp âm kế tiếp sáng dần khi hợp âm hiện tại qua nửa sau (p 0.5 → 1, đường cong êm), nên lúc chuyển
+     * hợp âm ánh sáng đã nằm sẵn ở ô mới thay vì bật đột ngột. */
+    nearChord(p) {
+      const e = this.idx >= 0 ? this.chordEls[this.idx + 1] || null : null;
+      const k = Math.max(0, Math.min(1, (p - 0.5) / 0.5));
+      this.setNear("nearChord", e, Math.round(k * k * (3 - 2 * k) * 50) / 50);
+    }
+
+    /** Nốt kế tiếp (chỉ số i) sáng dần trong 0,6 giây cuối trước khi chạm vạch đỏ. */
+    nearNote(i, t) {
+      const n = this.notes[i];
+      const e = n ? this.noteEls[i] : null;
+      const k = n ? Math.max(0, Math.min(1, 1 - (n.start - t) / 0.6)) : 0;
+      this.setNear("nearNote", e, Math.round(k * k * 25) / 25);
+    }
+
+    /** Tô karaoke cho nốt đang phát: --np (0–1) là phần đã hát của viên. */
+    noteFill(j, t) {
+      const e = j >= 0 ? this.noteEls[j] : null;
+      if (!e) { this.fx.np = -1; return; }
+      const n = this.notes[j];
+      const p = Math.round(Math.max(0, Math.min(1, (t - n.start) / Math.max(1e-3, n.end - n.start))) * 100) / 100;
+      if (p === this.fx.np && j === this.nIdx) return;
+      this.fx.np = p;
+      e.style.setProperty("--np", p);
+    }
+
+    /** Quầng sáng ở điểm nốt j chạm vạch đỏ (nghỉ thì tắt), trượt mềm theo cao độ. hit: vừa vào nốt mới khi đang
+     * phát thì một đóa sáng nở ra từ điểm chạm (lấy đóa kế tiếp trong vòng xoay). */
+    moveHalo(j, hit) {
+      const z = this.hitZone;
+      z.classList.toggle("ct-rest", j < 0);
+      if (j < 0) return;
+      const n = this.notes[j];
+      const y = T().pitchY(n.pitch, this.range).toFixed(3);
+      z.style.setProperty("--oy", y);
+      z.classList.toggle("ct-unc", !!n.uncertain);
+      if (!hit || !this.playing || CT.settings.fx === false) return;
+      const b = this.blooms[this.fx.bloom = (this.fx.bloom + 1) % this.blooms.length];
+      b.style.setProperty("--by", y);
+      b.classList.toggle("ct-long", n.end - n.start >= 0.35);   // nốt ngân dài: đóa nở rộng và chậm hơn
+      const on = b.classList.contains("ct-ba");
+      b.classList.remove("ct-ba", "ct-bb");
+      b.classList.add(on ? "ct-bb" : "ct-ba");
+    }
+
+    /** Mỗi khung hình: trạng thái phát/dừng, và vạch đỏ sáng lên theo phách (phách 1 rõ hơn). Chỉ khi phách tăng
+     * đúng 1 (phát bình thường); tua hay kéo thì không. */
+    beatFx(t) {
+      const playing = this.playing;
+      if (playing !== this.fx.playing) { this.fx.playing = playing; this.el.classList.toggle("ct-playing", playing); }
+      const s = this.song;
+      const b = T().lastLE(s.beats, t);
+      if (b === this.fx.beat) return;
+      const step = b === this.fx.beat + 1;
+      this.fx.beat = b;
+      if (!step || !playing || b < 0) return;
+      this.el.classList.toggle("ct-down", s.beatPos[b] === 1);
+      this.retrigger(this.head, "flip", "ct-pa", "ct-pb");
     }
 
     layout() {
@@ -455,11 +562,13 @@
       const x = this.width * PLAYHEAD - t * this.px + this.panOffset();
       if (force || x !== this.lastX) {
         this.track.style.transform = `translate3d(${x}px,0,0)`;
+        this.hitZone.style.transform = `translate3d(${this.width * PLAYHEAD - x}px,0,0)`;   // đứng yên ở vạch đỏ
         this.lastX = x;
       }
       const j = this.indexAt(t);
       if (j !== this.idx || force) this.setCurrent(j);
       this.updateMelody(t, force);
+      this.beatFx(t);
       this.progress(t);
       this.stickLabel(x);
       this.panBar(x);
@@ -519,7 +628,7 @@
       if (!e) return;
       const c = this.song.chords[this.idx];
       const p = Math.round(Math.max(0, Math.min(1, (t - c.start) / Math.max(1e-3, c.end - c.start))) * 200) / 200;
-      if (p !== this.curP) { e.style.setProperty("--ct-p", p); this.curP = p; }
+      if (p !== this.curP) { e.style.setProperty("--ct-p", p); this.curP = p; this.nearChord(p); }
     }
 
     setCurrent(j) {
@@ -540,6 +649,7 @@
         els[j].classList.add("ct-cur");
       }
       this.idx = j;
+      this.nearChord(0);   // ô kế tiếp của hợp âm mới bắt đầu tối, sáng dần theo progress()
       // Cho harness đo độ lệch đồng bộ (t hiển thị và currentTime thật lúc đổi hợp âm).
       const v = CT.state.video;
       CT.ui.debugLastChange = { idx: j, t: this.t, ct: v ? v.currentTime : this.t };
@@ -562,7 +672,13 @@
   Strip.FS_SCALE = 2;
   Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua
   Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
+  Strip.BLOOMS = 3;        // số đóa sáng dùng xoay vòng (nốt nhanh vẫn mỗi nốt một đóa)
   CT.ui = CT.ui || {};
   CT.ui.Strip = Strip;
   CT.ui.strip = new Strip();
+  // Bật/tắt hiệu ứng (công tắc "Hiệu ứng" của panel). Class đặt trên <html> để áp cho cả panel, dải và lớp phủ
+  // toàn màn hình; mọi hiệu ứng trong styles.css đều nằm dưới html.ct-fx-on.
+  const fxClass = (s) => document.documentElement.classList.toggle("ct-fx-on", s.fx !== false);
+  fxClass(CT.settings);
+  CT.bus.on("settings", fxClass);
 })();

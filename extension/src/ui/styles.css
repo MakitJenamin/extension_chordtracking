@@ -519,3 +519,149 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 .ct-root .ct-seg .ct-dis:hover { background: transparent; }
 /* Job của cách dò kia vẫn chạy ở nền. */
 .ct-mel-other { font-size: 11px; opacity: 0.85; }
+
+/* ---------------- Hiệu ứng (CT.settings.fx, công tắc "Hiệu ứng"; strip.js đặt html.ct-fx-on) ----------------
+ * Ý tưởng: vạch đỏ là nguồn sáng. Thứ gì tiến lại gần nó thì sáng dần lên (--ct-near do strip.js đặt liên tục), nên
+ * không có gì bật/tắt đột ngột: lúc chuyển hợp âm, ánh sáng đã nằm sẵn ở ô mới. Chữ hợp âm và tên nốt luôn sắc nét
+ * (người dùng vừa xem vừa đàn): ánh sáng chỉ tỏa quanh chữ. Chỉ hoạt ảnh transform/opacity trên vài phần tử nhỏ.
+ * Hoạt ảnh một lần chạy lại nhờ đổi qua lại hai class -a/-b có keyframes giống nhau (strip.js retrigger). */
+html.ct-fx-on {
+  --ct-ease: cubic-bezier(0.22, 1, 0.36, 1);   /* ra êm: mọi chuyển trạng thái */
+  --ct-sine: cubic-bezier(0.37, 0, 0.63, 1);   /* hình sin: nhịp thở */
+}
+.ct-strip-wrap {
+  --ct-light: color-mix(in srgb, var(--ct-accent) 55%, #fff);   /* ánh sáng của ô hợp âm */
+  --ct-mel-light: #7ff0dc;                                      /* ánh sáng của nốt sắp tới (cùng họ màu viên nốt) */
+  --ct-beat-o: 0.6;
+}
+.ct-strip-wrap.ct-down { --ct-beat-o: 1; }
+
+/* Vạch đỏ: lõi đỏ, quầng tỏa nhiều lớp. Lúc phát có cột sáng mềm hai bên; mỗi phách sáng lên rồi lắng. */
+html.ct-fx-on .ct-playhead {
+  box-shadow: 0 0 2px var(--ct-red), 0 0 8px color-mix(in srgb, var(--ct-red) 55%, transparent),
+    0 0 20px color-mix(in srgb, var(--ct-red) 22%, transparent);
+}
+html.ct-fx-on .ct-playhead::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 40px; margin-left: -20px; opacity: 0;
+  pointer-events: none; background: radial-gradient(closest-side, color-mix(in srgb, var(--ct-red) 26%, transparent), transparent);
+  transition: opacity 0.8s var(--ct-ease);
+}
+html.ct-fx-on .ct-playing .ct-playhead::after { opacity: 0.3; }
+html.ct-fx-on .ct-playing .ct-playhead.ct-pa::after { animation: ct-pulse-a 0.9s var(--ct-ease); }
+html.ct-fx-on .ct-playing .ct-playhead.ct-pb::after { animation: ct-pulse-b 0.9s var(--ct-ease); }
+@keyframes ct-pulse-a { from { opacity: var(--ct-beat-o); } to { opacity: 0.3; } }
+@keyframes ct-pulse-b { from { opacity: var(--ct-beat-o); } to { opacity: 0.3; } }
+
+/* Mép dải mờ dần: hợp âm hiện ra từ bóng tối bên phải và lặn đi bên trái. */
+html.ct-fx-on .ct-strip-wrap::before, html.ct-fx-on .ct-strip-wrap::after {
+  content: ""; position: absolute; top: 0; bottom: 0; z-index: 8; pointer-events: none;
+}
+html.ct-fx-on .ct-strip-wrap::before { left: 0; width: 28px; background: linear-gradient(to right, var(--ct-bg), transparent); }
+html.ct-fx-on .ct-strip-wrap::after { right: 0; width: 96px; background: linear-gradient(to left, var(--ct-bg), transparent); }
+
+/* Ô hợp âm. Lớp sáng ::before: ánh sáng dâng từ đáy ô kèm viền mảnh; độ sáng theo --ct-near (ô kế tiếp sáng dần),
+ * ô hiện tại sáng hẳn rồi thở chậm. Viền và nền của ô hiện tại cũng chuyển mềm. */
+html.ct-fx-on .ct-chord {
+  transition: opacity 1s var(--ct-ease), background-color 0.8s var(--ct-ease), box-shadow 0.8s var(--ct-ease);
+}
+html.ct-fx-on .ct-chord::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(130% 110% at 50% 118%, color-mix(in srgb, var(--ct-light) 26%, transparent), transparent 72%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ct-cur-border) 70%, transparent);
+  opacity: calc(var(--ct-near, 0) * 0.75);
+  transition: opacity 0.5s var(--ct-ease);
+}
+html.ct-fx-on .ct-chord.ct-cur::before { opacity: 1; }
+html.ct-fx-on .ct-playing .ct-chord.ct-cur::before { animation: ct-breathe 3.2s var(--ct-sine) 0.6s infinite alternate; }
+@keyframes ct-breathe { from { opacity: 1; } to { opacity: 0.6; } }
+html.ct-fx-on .ct-chord.ct-cur {
+  box-shadow: inset 0 0 0 1px var(--ct-cur-border), 0 0 26px -8px color-mix(in srgb, var(--ct-light) 45%, transparent);
+}
+/* Tên hợp âm: ánh sáng nhẹ quanh chữ, chuyển cùng ô. */
+html.ct-fx-on .ct-chord .ct-sym { transition: text-shadow 0.9s var(--ct-ease); }
+html.ct-fx-on .ct-chord.ct-cur .ct-sym { text-shadow: 0 0 14px color-mix(in srgb, var(--ct-light) 40%, transparent); }
+/* Thanh tiến độ: dải sáng mảnh, đậm dần về phía vạch đỏ. */
+html.ct-fx-on .ct-chord.ct-cur::after {
+  height: 2px; border-radius: 0 1px 1px 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ct-red) 30%, transparent), var(--ct-red));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ct-red) 70%, transparent), 0 0 14px color-mix(in srgb, var(--ct-red) 30%, transparent);
+}
+
+/* Chấm phách trên panel: sáng/tắt mềm, chấm đang sáng có quầng. */
+html.ct-fx-on .ct-beats i {
+  transition: background-color 0.3s var(--ct-ease), color 0.3s var(--ct-ease), box-shadow 0.6s var(--ct-ease), transform 0.3s var(--ct-ease);
+}
+html.ct-fx-on .ct-beats i.ct-on { box-shadow: 0 0 8px color-mix(in srgb, var(--ct-text) 30%, transparent); }
+html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 0 14px color-mix(in srgb, var(--ct-red) 45%, transparent); }
+
+/* Nốt. Đã qua lặn dần. Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near. Nốt đang hát: tô dần kiểu karaoke (--np)
+ * và tỏa sáng đỏ. */
+html.ct-fx-on .ct-note { transition: opacity 0.8s var(--ct-ease); }
+html.ct-fx-on .ct-note::after {
+  content: ""; position: absolute; inset: 0 1px 0 0; border-radius: 5px; pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ct-mel-light) 70%, transparent), 0 0 10px color-mix(in srgb, var(--ct-mel-light) 45%, transparent);
+  opacity: var(--ct-near, 0);
+}
+html.ct-fx-on .ct-note.ct-cur::after { opacity: 0; transition: opacity 0.4s var(--ct-ease); }
+html.ct-fx-on .ct-note.ct-cur .ct-nbar {
+  background: linear-gradient(90deg, #ff4d73, var(--ct-red) calc(var(--np, 0) * 100%),
+    color-mix(in srgb, var(--ct-red) 45%, var(--ct-mel)) calc(var(--np, 0) * 100% + 1px));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ct-red) 70%, transparent), 0 0 16px color-mix(in srgb, var(--ct-red) 30%, transparent);
+}
+html.ct-fx-on .ct-note.ct-cur .ct-nl { background: transparent; box-shadow: none; text-shadow: 0 0 6px rgba(255, 255, 255, 0.45); }
+
+/* Điểm chạm: lớp nằm trong .ct-mel-lane, trước các viên (vẽ bên dưới), strip.js dịch tới vạch đỏ mỗi khung hình.
+ * --oy: cao độ nốt đang ngân (moveHalo), --by: cao độ lúc đóa nở.
+ * Tâm viên nốt = 3px + y * (cao làn - cao viên - 6px) + cao viên / 2 (cùng công thức top của .ct-note). */
+.ct-hitzone { display: none; }
+html.ct-fx-on .ct-hitzone {
+  display: block; position: absolute; left: 0; top: 0; width: 0; height: 100%; z-index: 0; pointer-events: none;
+}
+.ct-halo, .ct-bloom { position: absolute; left: 0; top: 0; }
+/* Quầng lúc nốt ngân: lõi sáng hồng, viền đỏ tan dần; thở chậm, trượt mềm khi đổi cao độ. */
+.ct-halo {
+  transform: translateY(calc(3px + var(--oy, 0.5) * (var(--ct-mel-h) - var(--ct-pill-h) - 6px) + var(--ct-pill-h) / 2));
+  transition: transform 0.45s var(--ct-ease);
+}
+.ct-halo::before {
+  content: ""; position: absolute; left: -34px; top: -20px; width: 68px; height: 40px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, rgba(255, 214, 224, 0.7), color-mix(in srgb, var(--ct-red) 40%, transparent) 42%, transparent);
+  transition: opacity 0.6s var(--ct-ease);
+}
+html.ct-fx-on .ct-playing .ct-hitzone:not(.ct-rest) .ct-halo::before { opacity: 0.85; animation: ct-halo 2s var(--ct-sine) infinite alternate; }
+html.ct-fx-on .ct-playing .ct-hitzone.ct-unc:not(.ct-rest) .ct-halo::before { opacity: 0.4; }
+@keyframes ct-halo { from { transform: scale(0.94); } to { transform: scale(1.08); } }
+/* Đóa sáng nở ra rồi tan khi vào nốt mới. */
+.ct-bloom { transform: translateY(calc(3px + var(--by, 0.5) * (var(--ct-mel-h) - var(--ct-pill-h) - 6px) + var(--ct-pill-h) / 2)); }
+.ct-bloom::before {
+  content: ""; position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.9), color-mix(in srgb, var(--ct-red) 50%, transparent) 35%,
+    color-mix(in srgb, var(--ct-red) 12%, transparent) 66%, transparent);
+}
+.ct-bloom.ct-long { --ct-bloom-s: 2.1; }
+html.ct-fx-on .ct-playing .ct-bloom.ct-ba::before { animation: ct-bloom-a 1s var(--ct-ease); }
+html.ct-fx-on .ct-playing .ct-bloom.ct-bb::before { animation: ct-bloom-b 1s var(--ct-ease); }
+html.ct-fx-on .ct-playing .ct-bloom.ct-long::before { animation-duration: 1.4s; }
+@keyframes ct-bloom-a { from { opacity: 0.75; transform: scale(0.35); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.6)); } }
+@keyframes ct-bloom-b { from { opacity: 0.75; transform: scale(0.35); } to { opacity: 0; transform: scale(var(--ct-bloom-s, 1.6)); } }
+.ct-fs .ct-halo::before { left: -42px; top: -24px; width: 84px; height: 48px; }
+
+/* Ô "đang hát": tên nốt có ánh đỏ nhẹ; nốt mới thì chữ rõ dần, quầng nở rồi lắng. */
+html.ct-fx-on .ct-mel-now b { text-shadow: 0 0 10px color-mix(in srgb, var(--ct-red) 40%, transparent); }
+html.ct-fx-on .ct-mel-now.ct-rest b { text-shadow: none; }
+html.ct-fx-on .ct-mel-now.ct-pop-a b { animation: ct-pop-a 0.6s var(--ct-ease); }
+html.ct-fx-on .ct-mel-now.ct-pop-b b { animation: ct-pop-b 0.6s var(--ct-ease); }
+@keyframes ct-pop-a {
+  from { opacity: 0.35; transform: translateY(2px); text-shadow: 0 0 18px var(--ct-red); }
+  to { opacity: 1; transform: none; text-shadow: 0 0 10px color-mix(in srgb, var(--ct-red) 40%, transparent); }
+}
+@keyframes ct-pop-b {
+  from { opacity: 0.35; transform: translateY(2px); text-shadow: 0 0 18px var(--ct-red); }
+  to { opacity: 1; transform: none; text-shadow: 0 0 10px color-mix(in srgb, var(--ct-red) 40%, transparent); }
+}
+
+/* Người dùng bật "giảm chuyển động" trong hệ điều hành: giữ ánh sáng tĩnh, bỏ mọi hoạt ảnh. */
+@media (prefers-reduced-motion: reduce) {
+  html.ct-fx-on .ct-strip-wrap *, html.ct-fx-on .ct-strip-wrap *::before, html.ct-fx-on .ct-strip-wrap *::after,
+  html.ct-fx-on .ct-beats i, html.ct-fx-on .ct-mel-now b { animation: none !important; transition: none !important; }
+}
