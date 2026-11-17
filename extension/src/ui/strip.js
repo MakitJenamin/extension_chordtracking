@@ -50,8 +50,8 @@
       this.nowKey = null;
       this.labels = [];
       this.range = null;
-      // Hiệu ứng (CT.settings.fx) kiểu video dạy piano: nốt chạm vạch đỏ thì lóe sáng và tóe tia lửa ngay điểm chạm,
-      // lúc nốt ngân có quầng sáng cháy ở điểm tiếp xúc. Lớp này nằm TRONG làn nốt, đứng trước các viên trong DOM nên
+      // Hiệu ứng (CT.settings.fx) kiểu visualizer piano: nốt chạm vạch thì lóe sáng và tuôn bụi kim tuyến ngay điểm
+      // chạm (nốt ngân dài thì tuôn liên tục), lúc nốt ngân có quầng sáng ở điểm tiếp xúc. Lớp này nằm TRONG làn nốt, đứng trước các viên trong DOM nên
       // được vẽ bên dưới, không che tên nốt (track có will-change nên z-index chỉ có nghĩa trong track); update() dịch
       // nó theo vạch đỏ. Cột sáng hợp âm cũng nằm trong track. Vài chùm tia xoay vòng để giai điệu nhanh không bị cắt.
       this.hitZone = el("div", "ct-hitzone");
@@ -66,7 +66,7 @@
       this.hitZone.append(this.flare, ...this.bursts);
       // Hợp âm chạm vạch đỏ: vạch "bắt lửa" theo màu của hợp âm vừa tới (kiểu phím sáng màu nốt của visualizer piano).
       this.chordFlash = el("div", "ct-chordflash");
-      this.fx = { beat: -1, flip: false, pop: false, cf: false, soon: null, np: -1, playing: null, burst: 0 };
+      this.fx = { beat: -1, flip: false, pop: false, cf: false, soon: null, np: -1, playing: null, burst: 0, emit: 0 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
       this.scale = Strip.BASE_SCALE;
@@ -336,6 +336,11 @@
       const e = j >= 0 ? this.noteEls[j] : null;
       if (!e) { this.fx.np = -1; return; }
       const n = this.notes[j];
+      // Nốt ngân: cứ DUST_EVERY giây lại tuôn thêm một chùm bụi nhỏ (dòng bụi sáng sau điểm chạm).
+      if (j === this.nIdx && t - this.fx.emit >= Strip.DUST_EVERY && t < n.end - 0.08 && this.playing && CT.settings.fx !== false) {
+        this.fx.emit = t;
+        this.emitDust(j, false);
+      }
       const p = Math.round(Math.max(0, Math.min(1, (t - n.start) / Math.max(1e-3, n.end - n.start))) * 100) / 100;
       if (p === this.fx.np && j === this.nIdx) return;
       this.fx.np = p;
@@ -344,30 +349,41 @@
 
     get playing() { const v = CT.state.video; return !!(v && !v.paused); }
 
-    /** Quầng sáng ở điểm nốt j chạm vạch đỏ (nghỉ thì tắt). hit: vừa vào nốt mới khi đang phát, thì lóe sáng và
-     * tóe tia lửa: lấy chùm tia kế tiếp trong vòng, đặt ở cao độ của nốt, hướng và tầm bay ngẫu nhiên cho từng tia. */
+    /** Quầng sáng ở điểm nốt j chạm vạch (nghỉ thì tắt), cùng màu với nốt. hit: vừa vào nốt mới khi đang phát thì
+     * lóe sáng và tuôn một chùm bụi kim tuyến. */
     moveFlare(j, hit) {
       const z = this.hitZone;
       z.classList.toggle("ct-rest", j < 0);
       if (j < 0) return;
       const n = this.notes[j];
-      const y = T().pitchY(n.pitch, this.range).toFixed(3);
-      z.style.setProperty("--oy", y);
+      const y = T().pitchY(n.pitch, this.range);
+      z.style.setProperty("--oy", y.toFixed(3));
+      z.style.setProperty("--hh", Strip.noteHue(y));
       z.classList.toggle("ct-unc", !!n.uncertain);
       if (!hit || !this.playing || CT.settings.fx === false) return;
+      this.fx.emit = this.t;
+      this.emitDust(j, true);
+    }
+
+    /** Một chùm bụi kim tuyến ở điểm chạm của nốt j (chùm kế tiếp trong vòng). strong: lúc vào nốt (có lóe sáng, bay
+     * xa); không thì là chùm nhỏ lúc nốt ngân. Bụi bay chủ yếu ra sau (bên trái, phía nốt đã đi qua) và lên/xuống. */
+    emitDust(j, strong) {
+      const n = this.notes[j];
+      const y = T().pitchY(n.pitch, this.range);
       const b = this.bursts[this.fx.burst = (this.fx.burst + 1) % this.bursts.length];
-      b.style.setProperty("--by", y);
-      const big = n.end - n.start >= 0.35;   // nốt ngân dài thì chùm tia to hơn
+      b.style.setProperty("--by", y.toFixed(3));
+      b.style.setProperty("--bh", Strip.noteHue(y));
       for (const s of b.children) {
         if (s.tagName !== "I") continue;
-        // Tia bắn chủ yếu ra sau (bên trái, phía nốt đã đi qua) và lên/xuống, như tóe ra từ phím vừa bấm.
-        const a = Math.PI * (0.5 + Math.random());
-        const r = (big ? 20 : 14) + Math.random() * (big ? 34 : 22);
+        const a = Math.PI * (0.55 + Math.random() * 0.9);
+        const r = strong ? 16 + Math.random() * 58 : 8 + Math.random() * 30;
         s.style.setProperty("--dx", `${(Math.cos(a) * r).toFixed(1)}px`);
-        s.style.setProperty("--dy", `${(Math.sin(a) * r * 0.9).toFixed(1)}px`);
-        s.style.setProperty("--d", `${(0.4 + Math.random() * 0.35).toFixed(2)}s`);
+        s.style.setProperty("--dy", `${(Math.sin(a) * r * 0.75).toFixed(1)}px`);
+        s.style.setProperty("--d", `${(0.7 + Math.random() * 0.7).toFixed(2)}s`);
+        s.style.setProperty("--w", `${(Math.random() * (strong ? 0.08 : 0.2)).toFixed(2)}s`);
+        s.style.setProperty("--s", `${(1.4 + Math.random() * (strong ? 2 : 1.4)).toFixed(1)}px`);
       }
-      b.classList.toggle("ct-big", big);
+      b.classList.toggle("ct-soft", !strong);
       const on = b.classList.contains("ct-ga");
       b.classList.remove("ct-ga", "ct-gb");
       b.classList.add(on ? "ct-gb" : "ct-ga");
@@ -682,13 +698,16 @@
   Strip.FS_SCALE = 2;
   Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua
   Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
-  Strip.BURSTS = 4;        // số chùm tia lửa dùng xoay vòng (nốt nhanh hơn ~0,15 s vẫn mỗi nốt một chùm)
-  Strip.SPARKS = 10;       // số tia mỗi chùm
+  Strip.BURSTS = 8;        // số chùm bụi dùng xoay vòng (bụi sống tới ~1,5 s: vẫn đủ cho nốt nhanh lẫn nốt ngân)
+  Strip.SPARKS = 12;       // số hạt bụi mỗi chùm
+  Strip.DUST_EVERY = 0.3;  // giây: nốt ngân thì cứ chừng này lại tuôn thêm một chùm nhỏ
+  /** Màu nốt theo cao độ (y của pitchY: 0 cao nhất → cyan 182, 1 thấp nhất → tím 264); CSS .ct-note tính cùng công thức. */
+  Strip.noteHue = (y) => Math.round(182 + y * 82);
   /* Màu của hợp âm (hue, dùng trong styles.css: --ch) theo BẬC của nốt gốc trong giọng đang phát, không theo tên:
    * cùng màu ở mọi chế độ hiện (Gốc / Phím trắng / La Mã) và qua các lần đổi giọng; vòng hợp âm nhìn ra ngay bằng
-   * màu. Hợp âm chính của giọng có màu dễ phân biệt: I hổ phách, IV xanh lá, V cyan, vi tím, ii hồng, iii xanh dương,
-   * vii cam đỏ; bậc ngoài giọng màu trung gian. */
-  Strip.DEGREE_HUES = [38, 350, 320, 255, 220, 145, 170, 190, 60, 275, 100, 12];
+   * màu. Mọi màu nằm trong dải neon cyan–tím–hồng của sân khấu: I cyan, IV xanh ngọc, V xanh dương, vi tím,
+   * ii hồng tím, iii chàm, vii hồng; bậc ngoài giọng màu trung gian. */
+  Strip.DEGREE_HUES = [188, 335, 305, 250, 235, 162, 175, 215, 200, 272, 290, 325];
   Strip.chordHue = (song, c) => {
     const p = T().parse(c.symbol);
     const k = T().chordKey(song, c);
