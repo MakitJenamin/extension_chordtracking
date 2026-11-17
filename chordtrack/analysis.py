@@ -6,7 +6,8 @@ Chữ ký ba hàm công khai là hợp đồng với pipeline.py, không đượ
 Tóm tắt thuật toán:
 - `estimate_key`: so phân bố cao độ của các hợp âm (gia trọng theo thời lượng) với profile
   Temperley cho 24 giọng, cộng thêm điểm cho hợp âm chủ (thời lượng, hợp âm đầu và cuối bài)
-  và cho quãng V–I. Độ tin cậy là xác suất softmax của giọng thắng.
+  và cho quãng V–I, cộng điểm hợp âm nằm trong âm giai và trừ điểm nốt nằm ngoài âm giai.
+  Độ tin cậy là xác suất softmax của giọng thắng.
 - `estimate_key_regions`: giọng theo từng vùng (đổi giọng, nâng tông): chấm 24 giọng theo cửa sổ
   trượt rồi giải Viterbi có phạt đổi giọng (xem docstring của hàm).
 - `analyze_structure`: dựng chuỗi hợp âm theo phách, tính "structure features" kiểu
@@ -40,6 +41,13 @@ W_TONIC_DUR = 2.0     # tỉ lệ thời lượng hợp âm chủ (đúng nốt 
 W_FIRST = 0.3         # hợp âm đầu bài là hợp âm chủ
 W_LAST = 0.25         # hợp âm cuối bài là hợp âm chủ
 W_CADENCE = 0.5       # tỉ lệ bước chuyển hợp âm là V(trưởng) -> I
+# Ba tham số dưới (thêm 2026-11-17): hai thành phần "âm giai" của `estimate_key` và hệ số maj7. Thiếu chúng, giọng
+# bậc IV hay thắng ở nhạc anime/J-pop: bài ngân lâu và mở đầu ở IV (Gmaj7 trong D trưởng) nên IV ăn trọn
+# W_TONIC_DUR và W_FIRST, còn nốt ngoài âm giai (C# khi đoán G) gần như không bị phạt. Đổi lại Isophonics giảm
+# 0.870 -> 0.836 (bài rock/blues có bVII), bộ Kajiura (17 bài) đúng giá trị transpose phím trắng 53% -> 65%.
+W_KEY_FIT = 1.0       # tỉ lệ thời lượng hợp âm có mọi nốt nằm trong âm giai
+W_KEY_OUT = 4.0       # phạt tỉ lệ nốt (gia trọng thời lượng) nằm ngoài âm giai
+TONIC_MAJ7_FACTOR = 0.5   # hợp âm maj7 chỉ tính nửa thời lượng khi làm hợp âm chủ trưởng (IVmaj7 hay được ngân lâu)
 KEY_TEMPERATURE = 0.05
 
 
@@ -158,12 +166,14 @@ _MINOR_SCALE[[0, 2, 3, 5, 7, 8, 10, 11]] = True
 _SCALES = np.array([np.roll(_MAJOR_SCALE, t) for t in range(12)] + [np.roll(_MINOR_SCALE, t) for t in range(12)])
 
 
-def _key_scores(segments: list[ChordSegment], edges: bool = True, w_fit: float = 0.0) -> np.ndarray | None:
+def _key_scores(segments: list[ChordSegment], edges: bool = True, w_fit: float = 0.0,
+                w_out: float = 0.0) -> np.ndarray | None:
     """Điểm của 24 giọng: index 0–11 là major (theo nốt chủ), 12–23 là minor.
 
     `edges=False` bỏ điểm cộng cho hợp âm đầu và cuối (dùng cho cửa sổ trượt giữa bài, nơi hợp âm
     đầu và cuối cửa sổ không có ý nghĩa gì). `w_fit` > 0 cộng thêm w_fit x tỉ lệ thời lượng hợp âm có
-    mọi nốt nằm trong âm giai của giọng (chỉ dùng cho giọng theo vùng; `estimate_key` để 0).
+    mọi nốt nằm trong âm giai của giọng. `w_out` > 0 trừ w_out x tỉ lệ nốt nằm ngoài âm giai (mỗi nốt
+    của hợp âm tính theo thời lượng hợp âm, chia cho tổng).
     """
     chords = [(s, _chord(s.label)) for s in segments if s.end > s.start]
     chords = [(s, c) for s, c in chords if c.is_chord]
@@ -183,6 +193,7 @@ def _key_scores(segments: list[ChordSegment], edges: bool = True, w_fit: float =
     roots = np.array([c.root for _, c in chords])
     is_maj = np.array([c.has(4) and not c.has(3) for _, c in chords])
     is_min = np.array([c.has(3) and not c.has(4) for _, c in chords])
+    tonic_w = np.where(is_maj & np.array([c.has(11) for _, c in chords]), TONIC_MAJ7_FACTOR, 1.0)
     # Bước chuyển hợp âm (bỏ hợp âm trùng liên tiếp)
     trans: list[tuple[_Chord, _Chord]] = []
     for (_, a), (_, b) in zip(chords, chords[1:]):
@@ -195,7 +206,7 @@ def _key_scores(segments: list[ChordSegment], edges: bool = True, w_fit: float =
         for t in range(12):
             corr = np.corrcoef(pv, np.roll(profile, t))[0, 1]
             tonic = (roots == t) & third_mask
-            tonic_frac = durs[tonic].sum() / total
+            tonic_frac = (durs * tonic_w)[tonic].sum() / total
 
             def is_tonic(c: _Chord) -> bool:
                 return c.root == t and (c.has(4) if mode_i == 0 else c.has(3)) and not (c.has(3) and c.has(4))
@@ -210,6 +221,9 @@ def _key_scores(segments: list[ChordSegment], edges: bool = True, w_fit: float =
         notes = np.array([np.roll(c.bitmap > 0, c.root) for _, c in chords])      # (n, 12)
         inside = ~(notes[:, None, :] & ~_SCALES[None, :, :]).any(axis=2)          # (n, 24)
         scores += w_fit * (durs @ inside) / total
+    if w_out:
+        mass = durs @ np.array([np.roll(c.bitmap > 0, c.root) for _, c in chords], dtype=float)   # (12,)
+        scores -= w_out * (~_SCALES @ mass) / mass.sum()
     return scores
 
 
@@ -230,7 +244,7 @@ def _softmax_conf(scores: np.ndarray, best: int) -> float:
 
 def estimate_key(segments: list[ChordSegment]) -> KeyEstimate | None:
     """Ước lượng giọng chính của bài từ chuỗi hợp âm. Trả về None nếu không có hợp âm nào."""
-    scores = _key_scores(segments)
+    scores = _key_scores(segments, w_fit=W_KEY_FIT, w_out=W_KEY_OUT)
     if scores is None:
         return None
     best = int(np.argmax(scores))

@@ -668,6 +668,17 @@ Mockup tham chiếu: dải hợp âm trượt ngang kiểu karaoke dưới video
     536 MB trong `third_party_src/YourMT3/.git` chỉ có trên máy đã cài từ thời đầu.
   - Tên cách dò giai điệu "Nhanh" đổi hẳn thành "Bình thường" trong `setup.ps1` và `fetch_models.py`.
 
+- [x] Giọng bậc IV ở nhạc anime/J-pop (2026-11-17, người dùng báo): "Yosuga no Sora - Toui Sora he" (`A1JXvaulbVI`) và
+  Onmyoji (`CQmo_KOcqtw`) đều là D trưởng (Transpose +2) nhưng `estimate_key` ra G trưởng (−5). Nguyên nhân: bài ngân lâu
+  và mở đầu ở IV (G/Gmaj7 chiếm 34% thời lượng, D ~3%), nên G ăn trọn `W_TONIC_DUR` (×2) và `W_FIRST`; phần so profile
+  vẫn nghiêng về D (0,79 so với 0,73) nhưng không bù nổi. Sửa: `estimate_key` cộng `W_KEY_FIT` (hợp âm trong âm giai),
+  trừ `W_KEY_OUT` (tỉ lệ nốt ngoài âm giai), và hợp âm maj7 chỉ tính nửa khi làm hợp âm chủ trưởng. Hai bài ra B thứ
+  (cùng Transpose +2, người dùng chấp nhận).
+  - ⚠️ Đánh đổi (người dùng chọn): Isophonics 0,870 → 0,836 (đúng tuyệt đối 0,848 → 0,815; mất chủ yếu ở bài rock/blues có
+    bVII, ví dụ Get Back, The End nhận thành D). Kajiura (17 bài, nhãn căn thời gian) đúng giá trị transpose 53% → 65%.
+    Bộ Kajiura nhỏ, nên cần thêm bài J-pop có đáp án giọng để chỉnh cho chắc. Giọng theo vùng không đổi.
+  - Lỗi đoán giọng vẫn có thể xảy ra (Yosuga: B thứ 2,07 so với G 2,04 trước khi giảm maj7), nên extension cần nút tự chọn giọng.
+
 ## Kết quả đánh giá đợt 2: kết hợp model và hậu xử lý (2026-11-03)
 
 42 bài Isophonics The Beatles (117 phút), `python -m eval.ablation`. WCSR gia quyền theo thời lượng (%).

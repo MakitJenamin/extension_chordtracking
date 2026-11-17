@@ -112,6 +112,20 @@ def test_key_g_major_with_d7_cadences():
     assert (k.tonic, k.mode) == ("G", "major")
 
 
+@pytest.mark.parametrize("labels", [
+    # Kiểu "Yosuga no Sora - Toui Sora he": mở đầu và ngân lâu ở Gmaj7 (IV), F#m7 (iii) gần như suốt bài
+    ["G:maj7", "G:maj7", "F#:min7", "F#:min7", "B:min7", "E:min7", "F#:min7", "G:maj7", "G:maj7", "A:7"],
+    # Kiểu "Onmyoji": vòng IV - V - vi (G - A - Bm) của nhạc Nhật, D chỉ thoáng qua
+    ["G:maj", "A:maj", "B:min7", "A:maj", "G:maj7", "A:maj", "D:maj", "G:maj", "F#:7", "B:min"],
+])
+def test_key_jpop_held_subdominant_not_chosen(labels):
+    """Bài ở D trưởng ngân ở bậc IV không được nhận thành G trưởng: phải ra giọng có transpose phím
+    trắng +2 (D trưởng hoặc giọng tương đối B thứ)."""
+    from chordtrack.transpose import white_key_offset
+    k = estimate_key(_song(labels, repeat=6))
+    assert white_key_offset(k) == 2, k
+
+
 def test_key_empty():
     assert estimate_key([]) is None
     assert estimate_key([ChordSegment(0, 10, "N")]) is None
