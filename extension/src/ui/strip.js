@@ -58,7 +58,7 @@
       this.blooms = [];
       for (let k = 0; k < Strip.BLOOMS; k++) this.blooms.push(el("div", "ct-bloom"));
       this.hitZone.append(...this.blooms);
-      this.fx = { beat: -1, flip: false, pop: false, playing: null, bloom: 0, np: -1,
+      this.fx = { beat: -1, flip: false, playing: null, bloom: 0, np: -1,
                   nearChord: null, nearChordV: -1, nearNote: null, nearNoteV: -1 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
@@ -286,7 +286,6 @@
       const key = `${cur}|${next}|${j >= 0 && ns[j].uncertain ? 1 : 0}`;
       if (key === this.nowKey) return;
       this.nowKey = key;
-      if (cur) this.retrigger(this.now, "pop", "ct-pop-a", "ct-pop-b");
       this.nowName.textContent = cur || "–";
       this.nowNext.textContent = next ? `→ ${next}` : "";
       this.now.classList.toggle("ct-rest", !cur);
