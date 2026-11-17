@@ -284,8 +284,8 @@
    * thì lấy vùng nhỏ nhất). Giọng chọn cho vùng i dời **cả bài**: mọi vùng dời cùng số nửa cung (giữ các chỗ lên tông),
    * và nếu đổi trưởng/thứ thì mọi vùng cùng đổi theo kiểu đó (giọng tương đối: B thứ → D trưởng thì D thứ → F trưởng).
    * Vùng đổi có tonic/mode, white_key_transpose mới, confidence = null và `auto` (giọng server đoán); hợp âm, đoạn
-   * trong vùng giữ nguyên tên (chế độ Gốc không đổi), tính lại bậc La Mã, bỏ white_key_symbol (chordLabels tự dịch
-   * theo white_key_transpose); chỗ đổi giọng tính lại from/to/semitones/transpose_*. Không đổi `result`.
+   * trong vùng viết lại tên nốt theo giọng mới, tính lại bậc La Mã, bỏ white_key_symbol (chordLabels tự dịch theo
+   * white_key_transpose); chỗ đổi giọng tính lại from/to/semitones/transpose_*. Không đổi `result`.
    * `ov` rỗng, sai hoặc trùng giọng đoán: trả nguyên `result`. */
   function withKeyOverride(result, ov) {
     if (!result || !ov) return result;
@@ -314,15 +314,15 @@
     const chords = (result.chords || []).map((c) => {
       const k = keyOf(c.key_index);
       if (!k) return c;
-      // Giữ nguyên `symbol` (tên hợp âm như AI nghe ra): đổi giọng là sửa cách đọc, hợp âm chế độ Gốc không được đổi,
-      // kể cả cách viết thăng/giáng (F#m không thành Gbm khi chọn giọng giáng).
-      return { ...c, roman: c.roman == null ? c.roman : rekeyRoman(c.roman, harteRootPc(c.label), k), white_key_symbol: null };
+      return { ...c, symbol: shiftSym(c.symbol, 0, k), roman: c.roman == null ? c.roman : rekeyRoman(c.roman, harteRootPc(c.label), k),
+               white_key_symbol: null };
     });
     const sections = (result.sections || []).map((sec) => {
       const k = keyOf(sec.key_index);
       if (!k) return sec;
       const prog = sec.progression || [];
-      return { ...sec, roman: sec.roman ? sec.roman.map((r, j) => rekeyRoman(r, symRootPc(prog[j]), k)) : sec.roman };
+      return { ...sec, progression: prog.map((x) => shiftSym(x, 0, k)),
+               roman: sec.roman ? sec.roman.map((r, j) => rekeyRoman(r, symRootPc(prog[j]), k)) : sec.roman };
     });
     // Chỗ đổi giọng thứ j nằm ở đầu vùng j + 1 (chordtrack/pipeline.py modulations_to_json).
     const modulations = (result.modulations || []).map((m) => {
