@@ -64,10 +64,8 @@
         this.bursts.push(b);
       }
       this.hitZone.append(this.flare, ...this.bursts);
-      // Hợp âm chạm vạch đỏ: sóng xung kích (b) tỏa ngang và tàn lửa (i) bay lên từ đáy hàng hợp âm.
+      // Hợp âm chạm vạch đỏ: vạch "bắt lửa" theo màu của hợp âm vừa tới (kiểu phím sáng màu nốt của visualizer piano).
       this.chordFlash = el("div", "ct-chordflash");
-      this.chordFlash.append(el("b"));
-      for (let i = 0; i < Strip.EMBERS; i++) this.chordFlash.append(el("i"));
       this.fx = { beat: -1, flip: false, pop: false, cf: false, soon: null, np: -1, playing: null, burst: 0 };
       this.el.append(this.track, this.head, this.now, this.bar, this.barTip);
       this.song = null;
@@ -375,17 +373,12 @@
       b.classList.add(on ? "ct-gb" : "ct-ga");
     }
 
-    /** Hợp âm vừa tới lượt (phát bình thường): tàn lửa bay lên với vị trí, độ cao, độ trôi ngẫu nhiên, rồi chạy lại
-     * hoạt ảnh sóng xung kích + tàn lửa. */
-    chordBurst() {
+    /** Hợp âm j vừa tới lượt (phát bình thường): vạch lóe sáng theo màu của hợp âm j. */
+    chordBurst(j) {
       if (CT.settings.fx === false) return;
-      for (const s of this.chordFlash.children) {
-        if (s.tagName !== "I") continue;
-        s.style.setProperty("--x", `${(Math.random() * 36 - 18).toFixed(1)}px`);
-        s.style.setProperty("--dx", `${(Math.random() * 30 - 20).toFixed(1)}px`);
-        s.style.setProperty("--dy", `${(-28 - Math.random() * 48).toFixed(1)}px`);
-        s.style.setProperty("--d", `${(0.6 + Math.random() * 0.5).toFixed(2)}s`);
-      }
+      const h = this.chordEls[j].style.getPropertyValue("--ch");
+      if (h) this.chordFlash.style.setProperty("--ch", h);
+      else this.chordFlash.style.removeProperty("--ch");
       this.retrigger(this.chordFlash, "cf", "ct-fa", "ct-fb");
     }
 
@@ -463,6 +456,8 @@
       s.chords.forEach((c, i) => {
         const e = this.chordEls[i];
         const { main, sub } = T().chordLabels(s, c, st);
+        const hue = Strip.chordHue(s, c);
+        if (hue == null) e.style.removeProperty("--ch"); else e.style.setProperty("--ch", hue);
         const lbl = e.firstChild;
         lbl.firstChild.textContent = main;
         lbl.lastChild.textContent = sub && sub !== main ? sub : "";
@@ -662,7 +657,7 @@
         els[j].classList.remove("ct-past");
         els[j].classList.add("ct-cur");
         // Hợp âm tới lượt khi đang phát bình thường (không phải tua): cột sáng lóe ở vạch đỏ.
-        if (j === old + 1 && old >= 0 && this.playing) this.chordBurst();
+        if (j === old + 1 && old >= 0 && this.playing) this.chordBurst(j);
       }
       this.idx = j;
       // Cho harness đo độ lệch đồng bộ (t hiển thị và currentTime thật lúc đổi hợp âm).
@@ -689,7 +684,18 @@
   Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
   Strip.BURSTS = 4;        // số chùm tia lửa dùng xoay vòng (nốt nhanh hơn ~0,15 s vẫn mỗi nốt một chùm)
   Strip.SPARKS = 10;       // số tia mỗi chùm
-  Strip.EMBERS = 12;       // số tàn lửa khi hợp âm chạm vạch đỏ
+  /* Màu của hợp âm (hue, dùng trong styles.css: --ch) theo BẬC của nốt gốc trong giọng đang phát, không theo tên:
+   * cùng màu ở mọi chế độ hiện (Gốc / Phím trắng / La Mã) và qua các lần đổi giọng; vòng hợp âm nhìn ra ngay bằng
+   * màu. Hợp âm chính của giọng có màu dễ phân biệt: I hổ phách, IV xanh lá, V cyan, vi tím, ii hồng, iii xanh dương,
+   * vii cam đỏ; bậc ngoài giọng màu trung gian. */
+  Strip.DEGREE_HUES = [38, 350, 320, 255, 220, 145, 170, 190, 60, 275, 100, 12];
+  Strip.chordHue = (song, c) => {
+    const p = T().parse(c.symbol);
+    const k = T().chordKey(song, c);
+    if (!p || !k || !k.tonic) return null;
+    const d = T().pcOf(p.root) - T().pcOf(k.tonic);
+    return Number.isFinite(d) ? Strip.DEGREE_HUES[((d % 12) + 12) % 12] : null;
+  };
   CT.ui = CT.ui || {};
   CT.ui.Strip = Strip;
   CT.ui.strip = new Strip();

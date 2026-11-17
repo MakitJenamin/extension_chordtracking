@@ -528,8 +528,9 @@ html[dark] .ct-strip-wrap { --ct-mel: #0f766e; }
 
 /* Vạch đỏ: lõi sáng ở hai đầu, quầng mảnh; mỗi phách lóe một cột sáng, phách 1 rộng và sáng hơn. */
 html.ct-fx-on .ct-playhead {
-  background: linear-gradient(to bottom, #ff7a95, var(--ct-red) 22%, var(--ct-red) 78%, #ff7a95);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--ct-red) 70%, transparent);
+  background: color-mix(in srgb, #fff 72%, var(--ct-red));
+  box-shadow: 0 0 2px 1px var(--ct-red), 0 0 8px 2px color-mix(in srgb, var(--ct-red) 65%, transparent),
+    0 0 20px 4px color-mix(in srgb, var(--ct-red) 25%, transparent);
 }
 html.ct-fx-on .ct-playhead::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 30px; margin-left: -15px; opacity: 0;
@@ -553,33 +554,42 @@ html.ct-fx-on .ct-strip-wrap::before, html.ct-fx-on .ct-strip-wrap::after {
 html.ct-fx-on .ct-strip-wrap::before { left: 0; width: 28px; background: linear-gradient(to right, var(--ct-bg), transparent); }
 html.ct-fx-on .ct-strip-wrap::after { right: 0; width: 64px; background: linear-gradient(to left, var(--ct-bg), transparent); }
 
-/* Ô hợp âm: chuyển trạng thái mềm (đã qua mờ dần thay vì tắt phụt). */
-html.ct-fx-on .ct-chord { transition: opacity 0.45s ease, background-color 0.3s ease, box-shadow 0.3s ease; }
-/* Hợp âm đang vang: ô được "nạp sáng" từ trái sang theo tiến độ (--ct-p, mép sáng trùng vạch đỏ, như tô karaoke
- * của nốt) và tên hợp âm có quầng neon: bùng sáng lúc vào rồi dịu xuống, giữ suốt lúc vang. */
+/* ---- Hợp âm kiểu neon saber (theo các visualizer piano như SeeMusic "Keyboard Saber"): mỗi hợp âm một màu theo bậc
+ * (--ch do strip.js đặt, Strip.chordHue). Mọi ô có vạch màu mảnh ở mép trên (nhìn ra vòng hợp âm từ xa); ô đang vang là
+ * ống neon: viền màu, lõi trắng, quầng tỏa (bloom); tiến độ là thanh saber chạy dọc đáy ô; chạm vạch đỏ thì "bắt lửa"
+ * (lóe trắng rồi về màu). Chữ luôn trắng/đậm, quầng chỉ ở viền và sau chữ. */
+.ct-chord { --chc: hsl(var(--ch, 210) 92% 64%); --chs: hsl(var(--ch, 210) 92% 64% / 0.45); }
+html:not([dark]) .ct-root:not(.ct-fs) .ct-chord { --chc: hsl(var(--ch, 210) 85% 42%); --chs: hsl(var(--ch, 210) 85% 42% / 0.4); }
+.ct-chord.ct-nc { --chc: var(--ct-text2); --chs: transparent; }
+html.ct-fx-on .ct-chord { transition: opacity 0.45s ease, background-color 0.3s ease; }
+html.ct-fx-on .ct-chord::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; border-radius: 6px 6px 0 0;
+  background: var(--chc); opacity: 0.6; pointer-events: none;
+}
+html.ct-fx-on .ct-chord.ct-nc::before { opacity: 0; }
 html.ct-fx-on .ct-chord.ct-cur {
-  box-shadow: inset 0 0 0 1px var(--ct-cur-border), 0 0 22px -6px color-mix(in srgb, var(--ct-accent) 75%, transparent);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--ct-accent) 8%, transparent),
-      color-mix(in srgb, var(--ct-accent) 30%, transparent) calc(var(--ct-p, 0) * 100% - 1px),
-      transparent calc(var(--ct-p, 0) * 100% + 6px)),
-    var(--ct-cur-bg);
+  background: hsl(var(--ch, 210) 90% 60% / 0.13);
+  box-shadow: inset 0 0 0 1.5px var(--chc), inset 0 0 16px var(--chs), 0 0 10px var(--chs), 0 0 26px hsl(var(--ch, 210) 90% 60% / 0.22);
+  animation: ct-ignite 0.5s ease-out;
 }
-html.ct-fx-on .ct-chord.ct-cur .ct-sym { animation: ct-neon 0.8s ease-out both; }
-@keyframes ct-neon {
-  0% { text-shadow: 0 0 2px #fff, 0 0 16px var(--ct-accent), 0 0 32px var(--ct-accent); }
-  100% { text-shadow: 0 0 10px color-mix(in srgb, var(--ct-accent) 55%, transparent); }
+html.ct-fx-on .ct-chord.ct-cur.ct-nc { background: var(--ct-cur-bg); box-shadow: inset 0 0 0 1px var(--ct-cur-border); animation: none; }
+@keyframes ct-ignite {
+  from { box-shadow: inset 0 0 0 2px #fff, inset 0 0 22px var(--chc), 0 0 16px #fff, 0 0 40px var(--chc); }
 }
-/* Thanh tiến độ trong ô: dải đỏ chuyển sắc, đầu thanh phát sáng. */
+html.ct-fx-on .ct-chord.ct-cur::before { opacity: 0; }
+html.ct-fx-on .ct-chord.ct-cur .ct-sym { text-shadow: 0 0 10px var(--chs), 0 0 2px var(--chs); }
+/* Thanh tiến độ: saber màu hợp âm, lõi trắng. */
 html.ct-fx-on .ct-chord.ct-cur::after {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--ct-red) 20%, transparent), var(--ct-red) 75%, #ff8fa6);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--ct-red) 80%, transparent);
+  left: 3px; bottom: 3px; height: 3px; width: calc(var(--ct-p, 0) * (100% - 6px)); border-radius: 2px;
+  background: linear-gradient(#fff, #fff) center / 100% 1px no-repeat, var(--chc);
+  box-shadow: 0 0 5px var(--chc), 0 0 12px var(--chs);
 }
-/* Hợp âm kế tiếp, khi hợp âm hiện tại đã qua 75%: viền sáng nhịp thở báo "sắp vào". */
+html.ct-fx-on .ct-chord.ct-cur.ct-nc::after { background: var(--ct-red); box-shadow: none; }
+/* Hợp âm kế tiếp, khi hợp âm hiện tại đã qua 75%: viền màu của nó thở nhẹ báo "sắp vào". */
 html.ct-fx-on .ct-playing .ct-chord.ct-soon:not(.ct-cur) { animation: ct-soon 0.7s ease-in-out infinite alternate; }
 @keyframes ct-soon {
   from { box-shadow: inset 0 0 0 1px transparent; }
-  to { box-shadow: inset 0 0 0 1px var(--ct-cur-border), 0 0 14px -5px var(--ct-cur-border); }
+  to { box-shadow: inset 0 0 0 1px var(--chc), 0 0 12px -3px var(--chs); }
 }
 
 /* Chấm phách trên panel: nảy khi sáng (dùng thuộc tính scale, không đè transform của phách 1). */
@@ -640,38 +650,19 @@ html.ct-fx-on .ct-playing .ct-burst.ct-gb i { animation: ct-spark-b var(--d, 0.5
 .ct-fs .ct-flare { width: 90px; height: 46px; margin: -23px 0 0 -45px; }
 
 /* Hợp âm chạm vạch đỏ (trong track, strip.js dịch tới vạch đỏ; z 2: sau chữ, ô hiện tại z 3 nền mờ nên vẫn thấy):
- * cột sáng lóe dọc vạch, sóng xung kích tỏa ngang hai bên và tàn lửa bay lên từ đáy hàng như tia lửa từ phím đàn. */
+ * vạch "bắt lửa" theo màu của hợp âm vừa tới, như phím sáng màu nốt trên visualizer piano. */
 html.ct-fx-on .ct-chordflash {
   display: block; position: absolute; left: 0; width: 0; z-index: 2; pointer-events: none;
   top: var(--ct-lane-top); bottom: calc(var(--ct-lane-bottom) + var(--ct-mel-h));
 }
 .ct-chordflash::before {
-  content: ""; position: absolute; top: 0; bottom: 0; left: -22px; width: 44px; opacity: 0;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.8), color-mix(in srgb, var(--ct-accent) 70%, transparent) 45%, transparent);
+  content: ""; position: absolute; top: -4px; bottom: -4px; left: -26px; width: 52px; opacity: 0;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.85), hsl(var(--ch, 210) 92% 62% / 0.75) 40%, transparent);
 }
-.ct-chordflash b {
-  position: absolute; top: 8%; bottom: 8%; left: -16px; width: 32px; border-radius: 50%; opacity: 0;
-  background: radial-gradient(closest-side, transparent 55%, color-mix(in srgb, var(--ct-accent) 85%, transparent) 78%, transparent);
-}
-.ct-chordflash i {
-  position: absolute; top: 100%; left: var(--x, 0px); width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%;
-  opacity: 0; background: #fff;
-  box-shadow: 0 0 4px 1px var(--ct-accent), 0 0 10px 2px color-mix(in srgb, var(--ct-accent) 55%, transparent);
-}
-.ct-chordflash i:nth-of-type(3n) { width: 4px; height: 4px; margin: -2px 0 0 -2px; }
 html.ct-fx-on .ct-playing .ct-chordflash.ct-fa::before { animation: ct-cbeam-a 0.5s ease-out; }
 html.ct-fx-on .ct-playing .ct-chordflash.ct-fb::before { animation: ct-cbeam-b 0.5s ease-out; }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fa b { animation: ct-wave-a 0.65s cubic-bezier(0.15, 0.7, 0.3, 1); }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fb b { animation: ct-wave-b 0.65s cubic-bezier(0.15, 0.7, 0.3, 1); }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fa i { animation: ct-ember-a var(--d, 0.8s) cubic-bezier(0.2, 0.6, 0.4, 1); }
-html.ct-fx-on .ct-playing .ct-chordflash.ct-fb i { animation: ct-ember-b var(--d, 0.8s) cubic-bezier(0.2, 0.6, 0.4, 1); }
-@keyframes ct-cbeam-a { from { opacity: 1; transform: scaleX(0.4); } to { opacity: 0; transform: scaleX(1.6); } }
-@keyframes ct-cbeam-b { from { opacity: 1; transform: scaleX(0.4); } to { opacity: 0; transform: scaleX(1.6); } }
-@keyframes ct-wave-a { from { opacity: 1; transform: scale(0.5, 0.8); } to { opacity: 0; transform: scale(6, 1.1); } }
-@keyframes ct-wave-b { from { opacity: 1; transform: scale(0.5, 0.8); } to { opacity: 0; transform: scale(6, 1.1); } }
-@keyframes ct-ember-a { from { opacity: 1; transform: none; } 60% { opacity: 0.9; } to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.4); } }
-@keyframes ct-ember-b { from { opacity: 1; transform: none; } 60% { opacity: 0.9; } to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.4); } }
-.ct-fs .ct-chordflash i { top: 100%; }
+@keyframes ct-cbeam-a { from { opacity: 1; transform: scaleX(0.5); } to { opacity: 0; transform: scaleX(1.3); } }
+@keyframes ct-cbeam-b { from { opacity: 1; transform: scaleX(0.5); } to { opacity: 0; transform: scaleX(1.3); } }
 
 /* Ô "đang hát": tên nốt mới nảy ra kèm quầng đỏ. */
 html.ct-fx-on .ct-mel-now.ct-pop-a b { animation: ct-pop-a 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.3); }
