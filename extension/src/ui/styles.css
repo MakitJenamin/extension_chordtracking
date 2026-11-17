@@ -57,14 +57,14 @@ html[dark] .ct-root {
 .ct-keywrap { color: var(--ct-text2); }
 .ct-key { color: var(--ct-text); font-weight: 500; }
 .ct-keywrap { position: relative; display: inline-flex; }
-/* Nút giọng cùng kiểu chip với "111 BPM", "Nhịp 3/4" bên cạnh (cao 28px, bo 8px, không lề âm để không dính chip kế). */
+/* Nút giọng: cùng cỡ chip với "111 BPM", "Nhịp 3/4" (cao 28px, bo 8px, không lề âm để nền không dính chip kế), nhưng
+ * không có nền; nền chỉ hiện khi rê chuột, đang mở danh sách hoặc chọn bằng bàn phím. */
 .ct-keybtn {
   display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; margin: 0;
-  border: 0; border-radius: 8px; background: var(--ct-layer); color: var(--ct-text2); font-size: 13px; cursor: pointer;
+  border: 0; border-radius: 8px; background: none; color: var(--ct-text2); font-size: 13px; cursor: pointer;
   white-space: nowrap;
 }
-.ct-keybtn:hover:not(:disabled), .ct-keybtn[aria-expanded="true"] { filter: brightness(1.25); }
-html:not([dark]) .ct-keybtn:hover:not(:disabled), html:not([dark]) .ct-keybtn[aria-expanded="true"] { filter: brightness(0.92); }
+.ct-keybtn:hover:not(:disabled), .ct-keybtn[aria-expanded="true"], .ct-keybtn:focus-visible { background: var(--ct-layer); }
 .ct-keybtn:disabled { cursor: default; }
 .ct-key-mark { font-size: 11px; color: var(--ct-text2); }
 
