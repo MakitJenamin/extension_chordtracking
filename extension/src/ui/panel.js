@@ -312,8 +312,7 @@
         h("span", { class: "ct-opts" },
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
-          check("snapToBeats", "Khớp phách", "Kéo đầu/cuối hợp âm về phách gần nhất (mặc định bật). Model nhận hợp âm theo khung ~0,09 s nên mép ô hay lệch vạch phách"),
-          check("fx", "Hiệu ứng", "Ánh sáng dịu: vạch đỏ sáng lên theo phách, quầng sáng chuyển mềm sang hợp âm mới, nốt chạm vạch đỏ nở một đóa sáng. Tắt nếu thấy rối mắt hoặc máy chậm")));
+          check("snapToBeats", "Khớp phách", "Kéo đầu/cuối hợp âm về phách gần nhất (mặc định bật). Model nhận hợp âm theo khung ~0,09 s nên mép ô hay lệch vạch phách")));
       // Chú thích và phím tắt: gom vào nút "?" (trước đây là một dòng chữ dài dưới dải).
       const item = (sw, text) => h("li", {}, h("span", { class: "ct-sw " + sw }), text);
       this.help = h("div", { class: "ct-help", hidden: true },
