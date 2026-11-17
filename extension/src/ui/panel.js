@@ -144,7 +144,7 @@
     if (i.soonIn == null) return "";
     const to = T().keyName(T().parseKeyText(i.next.to));
     let s = `Sắp đổi giọng sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${to}`;
-    if (withTranspose) s += ` · bấm ${T().transposeLabel(i.next.transpose_from)} → ${T().transposeLabel(i.next.transpose_to)}`;
+    if (withTranspose) s += ` · đổi sang ${T().transposeLabel(i.next.transpose_to)}`;
     return s;
   }
 
@@ -217,7 +217,7 @@
       this.tkey = h("span", { class: "ct-tkey" });
       this.tnext = h("span", { class: "ct-tnext" });
       this.tbox = h("div", { class: "ct-tbox", title: "Giữ nút Transpose của đàn và bấm phím này, rồi chơi hợp âm trên phím trắng. Số trong ngoặc là mức dịch thật của đàn" },
-        h("span", {}, "Giữ Transpose, bấm"), this.tval, this.tkey, this.tnext);
+        h("span", {}, "Transpose"), this.tkey, h("span", {}, "bấm"), this.tval, this.tnext);
 
       this.slot = h("div", { class: "ct-strip-slot" });
       this.fsNote = h("div", { class: "ct-fs-note", text: "Dải hợp âm đang hiện trên video (toàn màn hình)." });
@@ -446,8 +446,8 @@
       const white = CT.settings.mode === "white";
       const nextText = !i.next ? (s.modulations.length ? "Không còn chỗ đổi giọng" : "")
         : i.soonIn != null
-          ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${T().keyName(T().parseKeyText(i.next.to))}: bấm ${T().transposeLabel(i.next.transpose_to)}`
-          : `Kế tiếp ${fmt(i.next.time)}: bấm ${T().transposeLabel(i.next.transpose_to)}`;
+          ? `Đổi sau ${Math.max(1, Math.ceil(i.soonIn))} s → ${T().keyName(T().parseKeyText(i.next.to))}: ${T().transposeLabel(i.next.transpose_to)}`
+          : `Kế tiếp ${fmt(i.next.time)}: ${T().transposeLabel(i.next.transpose_to)}`;
       if (L.next !== nextText) { L.next = nextText; this.tnext.textContent = nextText; }
       const soon = white ? "" : soonText(i, false);
       if (L.soon !== soon) {
