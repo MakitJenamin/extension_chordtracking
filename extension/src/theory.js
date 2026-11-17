@@ -126,11 +126,13 @@
   const shiftWords = (s) => (s ? `${s < 0 ? "hạ" : "nâng"} ${Math.abs(s)} nửa cung` : "giữ nguyên");
   /** "B thứ hạ 2 nửa cung" (giọng của bài và cách dịch về phím trắng) */
   const whiteHint = (key) => (key ? `${keyName(key)} ${shiftWords(whiteShift(key))}` : "");
-  /** "A thứ (↓2)", "C trưởng (↑5)", "C trưởng" khi bài đã ở phím trắng: dạng ngắn cho dải, đoạn, toàn màn hình. */
+  /** Mức Transpose đàn cần đặt (đàn đang để 0) để chơi phím trắng mà vẫn đúng tông bài: B thứ +2, G trưởng −5. */
+  const whiteTranspose = (key) => -whiteShift(key);
+  /** "A thứ (+2)", "C trưởng (−5)", "C trưởng" khi bài đã ở phím trắng. Số trong ngoặc là mức Transpose của đàn. */
   function whiteShort(key) {
     if (!key) return "";
-    const s = whiteShift(key);
-    return whiteKeyName(key) + (s ? ` (${s < 0 ? "↓" : "↑"}${Math.abs(s)})` : "");
+    const w = whiteTranspose(key);
+    return whiteKeyName(key) + (w ? ` (${signed(w)})` : "");
   }
 
   /* ---------------- Tìm kiếm theo thời gian ---------------- */
@@ -642,7 +644,7 @@
 
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
-    keyName, parseKeyText, signed, whiteKeyName, whiteShift, shiftWords, whiteHint, whiteShort, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
+    keyName, parseKeyText, signed, whiteKeyName, whiteShift, shiftWords, whiteHint, whiteShort, whiteTranspose, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
     KEY_CHOICES, keyText, rekeyRoman, withKeyOverride,
     DEGREES, melodyName, melodyArrow, octaveMark, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,

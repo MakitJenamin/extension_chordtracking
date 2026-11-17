@@ -469,12 +469,13 @@ test("withKeyOverride: chỗ đổi giọng tính lại theo vùng đã chọn",
 test("giọng phím trắng: tên giọng đích và số nửa cung dịch từ giọng của bài", () => {
   assert.equal(T.whiteKeyName(K("B", "minor")), "A thứ");
   assert.equal(T.whiteHint(K("B", "minor")), "B thứ hạ 2 nửa cung");
-  assert.equal(T.whiteShort(K("B", "minor")), "A thứ (↓2)");
+  assert.equal(T.whiteShort(K("B", "minor")), "A thứ (+2)");
+  assert.equal(T.whiteTranspose(K("B", "minor")), 2);
   assert.equal(T.whiteHint(K("G")), "G trưởng nâng 5 nửa cung");
-  assert.equal(T.whiteShort(K("G")), "C trưởng (↑5)");
-  assert.equal(T.whiteShort(K("F#")), "C trưởng (↑6)");
+  assert.equal(T.whiteShort(K("G")), "C trưởng (−5)");
+  assert.equal(T.whiteShort(K("F#")), "C trưởng (−6)");
   assert.equal(T.whiteHint(K("C")), "C trưởng giữ nguyên");
   assert.equal(T.whiteShort(K("A", "minor")), "A thứ");
   // Dùng white_key_transpose của vùng giọng nếu có
-  assert.equal(T.whiteShort({ tonic: "D", mode: "major", white_key_transpose: 2 }), "C trưởng (↓2)");
+  assert.equal(T.whiteShort({ tonic: "D", mode: "major", white_key_transpose: 2 }), "C trưởng (+2)");
 });
