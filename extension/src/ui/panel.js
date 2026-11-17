@@ -313,7 +313,7 @@
           check("hideInversions", "Ẩn hợp âm đảo", "Bỏ nốt bass: C/G hiện là C"),
           check("simplify", "Đơn giản hóa", "Chỉ hiện hợp âm ba: Am7 → Am, Csus4 → C"),
           check("snapToBeats", "Khớp phách", "Kéo đầu/cuối hợp âm về phách gần nhất (mặc định bật). Model nhận hợp âm theo khung ~0,09 s nên mép ô hay lệch vạch phách"),
-          check("fx", "Hiệu ứng", "Dải kiểu visualizer piano: nền tối, nốt và hợp âm là ống neon (mỗi bậc hợp âm một sắc), vạch phát sáng nhấp theo phách, nốt chạm vạch thì tuôn bụi kim tuyến. Tắt để về giao diện thường")));
+          check("fx", "Hiệu ứng", "Vạch đỏ nhấp theo phách; nốt giai điệu chạm vạch đỏ thì lóe sáng, tóe tia lửa như video dạy piano; hợp âm chạm vạch đỏ thì tỏa sóng sáng, tàn lửa bay lên và ô sáng dần theo tiến độ. Tắt nếu thấy rối mắt hoặc máy chậm")));
       // Chú thích và phím tắt: gom vào nút "?" (trước đây là một dòng chữ dài dưới dải).
       const item = (sw, text) => h("li", {}, h("span", { class: "ct-sw " + sw }), text);
       this.help = h("div", { class: "ct-help", hidden: true },
