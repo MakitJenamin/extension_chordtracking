@@ -601,7 +601,7 @@ html.ct-fx-on .ct-beats i.ct-on.ct-first { box-shadow: 0 0 6px var(--ct-red), 0 
  * độ) đều đi qua màu nâu xám đục hoặc màu lạ (tím, xanh dương); bỏ nền xanh cho đỏ tắt trên nền tối thì viên tối hẳn,
  * mất chữ rồi mới hiện lại. Nền viên lúc nào cũng là xanh gốc, màu đỏ là lớp ::after phủ lên.
  * - Vào nốt (ct-cur): lớp đỏ sáng nhanh 0,12 s (ra êm) cùng quầng sáng (0,2 s), không quét.
- * - Rời nốt (ct-out, strip.js coolDown, 0,7 s): lớp đỏ mờ dần 0,65 s về xanh gốc (người dùng muốn mờ dần bình
+ * - Rời nốt (ct-out, strip.js coolDown, 0,7 s): lớp đỏ mờ dần 0,5 s về xanh gốc (người dùng muốn mờ dần bình
  *   thường, không quét); cùng lúc quầng tắt dần và viên lặn xuống (opacity của ct-past) nên phần pha màu ít lộ.
  * - Nốt kế tiếp: viền sáng mảnh hiện dần theo --ct-near.
  * - Phần đã hát (--np): lớp sáng hồng nhạt, mép phải tan dần, nằm trên lớp đỏ. */
@@ -639,7 +639,7 @@ html.ct-fx-on .ct-note .ct-nbar::after {
 }
 html.ct-fx-on .ct-note.ct-nunc .ct-nbar::after { inset: -1.5px; }   /* phủ cả viền gạch đứt (viền trong suốt khi đang hát) */
 html.ct-fx-on .ct-note.ct-cur .ct-nbar::after { opacity: 1; transition: opacity 0.12s var(--ct-ease); }
-html.ct-fx-on .ct-note.ct-out:not(.ct-cur) .ct-nbar::after { animation: ct-note-out 0.65s var(--ct-fade) forwards; }
+html.ct-fx-on .ct-note.ct-out:not(.ct-cur) .ct-nbar::after { animation: ct-note-out 0.5s var(--ct-fade) forwards; }
 @keyframes ct-note-out { from { opacity: 1; } to { opacity: 0; } }
 /* Phần đã hát: lớp sáng hồng nhạt rộng --np, mép phải tan dần; nằm trên lớp đỏ; hiện/tắt mờ dần. */
 html.ct-fx-on .ct-note .ct-nbar::before {
