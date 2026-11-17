@@ -296,7 +296,7 @@
       this.now.classList.toggle("ct-nunc", j >= 0 && !!ns[j].uncertain);
     }
 
-    /** Đổi chữ trong ô "đang hát" kiểu cuộn: chữ cũ (bản sao đặt đè đúng chỗ) trượt đi và mờ, chữ mới trượt vào theo
+    /** Đổi chữ trong ô "đang hát" kiểu cuộn: chữ cũ (bản sao đặt đè đúng chỗ) trượt ra khỏi ô, chữ mới trượt vào theo
      * hướng dir ("up" | "down" | "fade"), nên lúc nào cũng có chữ và thấy rõ là đổi nốt. Chỉ khi bật hiệu ứng và đang
      * phát; tua/dừng thì đổi ngay. Đọc layout (offsetLeft...) chỉ lúc đổi nốt, không phải mỗi khung hình. */
     swapText(e, text, dir) {
