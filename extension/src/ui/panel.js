@@ -183,15 +183,19 @@
       const pick = (text) => { CT.setKeyOverride(CT.state.videoId, i.ki, text); this.toggleKeyPop(false); this.keyBtn.focus(); };
       // Như danh sách cũ ("Tự động", rồi Trưởng và Thứ), nhưng Trưởng và Thứ là hai cột cạnh nhau (cùng nốt chủ một hàng);
       // mỗi dòng tên giọng và mức Transpose của đàn.
-      const row = (label, w, on, guess, text) => h("button", { type: "button", role: "option",
+      // Số trong ngoặc: nốt chủ của giọng đó cách giọng ChordTrack đoán bao nhiêu nửa cung (−6..+5). Số Transpose của đàn
+      // đã có ở ô phím trắng bên ngoài, nên chỉ để trong chú thích.
+      const row = (label, w, d, on, guess, text) => h("button", { type: "button", role: "option",
         class: "ct-kc" + (on ? " ct-kc-on" : ""), "aria-selected": on ? "true" : "false",
-        title: (guess ? "ChordTrack đoán · " : "") + `Transpose (${Th.signed(w)}), bấm ${Th.transposeKey(w)}`,
+        title: (guess ? "ChordTrack đoán · " : d != null ? `Cách ${Th.keyName(auto)} ${Th.signed(d)} nửa cung · ` : "")
+          + `Transpose đàn (${Th.signed(w)}), bấm ${Th.transposeKey(w)}`,
         onclick: () => pick(text) },
         h("span", { class: "ct-kc-name" }, label), guess ? h("span", { class: "ct-kc-dot", title: "ChordTrack đoán" }) : null,
-        h("span", { class: "ct-kc-w" }, `(${Th.signed(w)})`));
-      const cell = (c) => row(Th.keyName(c), c.white, !!k.auto && same(c, k), same(c, auto), same(c, auto) ? null : c.text);
+        d != null ? h("span", { class: "ct-kc-w" }, `(${Th.signed(d)})`) : null);
+      const dist = (c) => Th.wrap(Th.pcOf(c.tonic) - Th.pcOf(auto.tonic));
+      const cell = (c) => row(Th.keyName(c), c.white, dist(c), !!k.auto && same(c, k), same(c, auto), same(c, auto) ? null : c.text);
       const maj = Th.KEY_CHOICES.filter((c) => c.mode === "major"), min = Th.KEY_CHOICES.filter((c) => c.mode === "minor");
-      const autoRow = row(`Tự động (${Th.keyName(auto)})`, Th.whiteOffset(auto), !k.auto, false, null);
+      const autoRow = row(`Tự động (${Th.keyName(auto)})`, Th.whiteOffset(auto), null, !k.auto, false, null);
       autoRow.classList.add("ct-kc-auto");
       // Dựng lại khi đang mở (qua chỗ đổi giọng): giữ ô đang được chọn bằng bàn phím và vị trí cuộn.
       const focused = [...this.keyPop.querySelectorAll(".ct-kc")].indexOf(document.activeElement);
