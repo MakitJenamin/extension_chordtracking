@@ -350,9 +350,13 @@
     return (c.key_index != null && song.keys[c.key_index]) || song.result.key || null;
   }
 
-  /** Giọng của một chỗ đổi giọng sắp tới (thời điểm > t), hoặc null. */
-  function nextModulation(song, t) {
-    for (const m of song.modulations) if (m.time > t) return m;
+  /** Chỗ đổi giọng không đổi mức transpose phím trắng (C trưởng <-> A thứ, giọng song song): chơi phím trắng thì
+   * không phải bấm gì. */
+  const sameTranspose = (m) => (m.transpose_from | 0) === (m.transpose_to | 0);
+
+  /** Chỗ đổi giọng sắp tới (thời điểm > t), hoặc null. transposeOnly: bỏ qua chỗ không đổi mức transpose. */
+  function nextModulation(song, t, transposeOnly = false) {
+    for (const m of song.modulations) if (m.time > t && !(transposeOnly && sameTranspose(m))) return m;
     return null;
   }
 
@@ -645,7 +649,7 @@
   const theory = {
     FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
-    keyIndexAt, keyAt, chordKey, nextModulation, chordLabels, sectionLabels, whiteOffset,
+    keyIndexAt, keyAt, chordKey, nextModulation, sameTranspose, chordLabels, sectionLabels, whiteOffset,
     KEY_CHOICES, keyText, rekeyRoman, withKeyOverride,
     DEGREES, melodyName, melodyArrow, octaveMark, melodyLabels, melodyNotes, noteIndexAt, pitchRange, pitchY, beatSubdivisions, snapNotes, autoSnapDiv,
     MELODY_MODELS, MELODY_DEFAULT, melodyVariant, melodyModelOk, melodyKey, melodyParts, MELODY_KEYS,

@@ -474,3 +474,15 @@ test("withKeyOverride: chỗ đổi giọng tính lại theo vùng đã chọn",
   assert.deepEqual(o3.keys.map((k) => k.white_key_transpose), [0, 2]);
   assert.equal(T.withKeyOverride(r, { 1: "D major" }), r);                     // trùng giọng đoán: giữ nguyên
 });
+
+test("nextModulation: phím trắng bỏ qua chỗ đổi giọng không đổi mức transpose", () => {
+  const song = { modulations: [
+    { time: 10, from: "C major", to: "A minor", transpose_from: 0, transpose_to: 0 },   // giọng song song: vẫn bấm C
+    { time: 20, from: "A minor", to: "D major", transpose_from: 0, transpose_to: 2 },
+  ] };
+  assert.equal(T.sameTranspose(song.modulations[0]), true);
+  assert.equal(T.sameTranspose(song.modulations[1]), false);
+  assert.equal(T.nextModulation(song, 5).time, 10);
+  assert.equal(T.nextModulation(song, 5, true).time, 20);
+  assert.equal(T.nextModulation(song, 25, true), null);
+});

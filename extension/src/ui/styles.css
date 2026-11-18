@@ -309,6 +309,7 @@ html[dark] .ct-btn:hover { filter: brightness(1.25); }
 
 /* Vạch đổi giọng: mảnh, đứt nét, nằm SAU ô hợp âm (z 0); vạch đỏ đang phát nằm trên, nên khi trùng nhau
  * vẫn phân biệt được. Nhãn nằm ở làn trên cùng, không đè lên ô. */
+.ct-modmark.ct-mod-same { opacity: 0.55; }   /* đổi giọng nhưng phím trắng vẫn bấm như cũ */
 .ct-modmark { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--ct-mod); z-index: 0; pointer-events: none; }
 .ct-modmark span {
   position: absolute; top: 2px; left: 6px; padding: 0 6px; border-radius: 4px; white-space: nowrap;

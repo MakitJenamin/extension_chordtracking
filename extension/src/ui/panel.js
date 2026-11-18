@@ -135,7 +135,9 @@
   function info(song, t) {
     const ki = T().keyIndexAt(song, t);
     const key = song.keys[ki] || null;
-    const next = T().nextModulation(song, t);
+    // Phím trắng: chỉ báo chỗ phải đổi transpose (C trưởng -> A thứ vẫn bấm C, không đếm ngược).
+    const white = CT.settings.mode === "white";
+    const next = T().nextModulation(song, t, white);
     const warn = CT.settings.modulationWarnSeconds || 8;
     const soonIn = next && next.time - t <= warn ? next.time - t : null;
     const bi = T().lastLE(song.beats, t);
@@ -520,7 +522,7 @@
       // Chế độ phím trắng: cảnh báo nằm trong ô transpose (đếm ngược), không lặp lại ở hàng đầu.
       const white = CT.settings.mode === "white";
       const isSoon = i.soonIn != null;
-      const nextText = !i.next ? (s.modulations.length ? "Không còn chỗ đổi giọng" : "")
+      const nextText = !i.next ? (s.modulations.length ? (white ? "Không còn chỗ đổi transpose" : "Không còn chỗ đổi giọng") : "")
         : isSoon ? `→ ${T().keyName(T().parseKeyText(i.next.to))}`
           : `Kế tiếp ${fmt(i.next.time)}: ${T().transposeLabel(i.next.transpose_to)}`;
       if (L.next !== nextText) { L.next = nextText; this.tnext.textContent = nextText; }

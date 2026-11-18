@@ -499,10 +499,16 @@
         const to = T().parseKeyText(m.to);
         // ↑ ↓ → có trong Roboto; ⬆ ⬇ ⇄ không có nên toàn màn hình hiện thành ký tự lạ.
         const arrow = m.semitones > 0 ? "↑" : m.semitones < 0 ? "↓" : "→";
-        const label = st.mode === "white"
-          ? `${arrow} ${T().keyName(to)} · ${T().transposeLabel(m.transpose_to)}`
-          : `${arrow} ${T().keyName(to)}${m.semitones ? ` (${T().signed(m.semitones)})` : ""}`;
+        // Phím trắng mà mức transpose không đổi (C trưởng -> A thứ): vẫn đánh dấu đổi giọng nhưng mờ, ghi rõ vẫn bấm
+        // phím cũ, để không bị hiểu là phải thao tác.
+        const same = st.mode === "white" && T().sameTranspose(m);
+        const label = same
+          ? `→ ${T().keyName(to)} · vẫn bấm ${T().transposeKey(m.transpose_to)}`
+          : st.mode === "white"
+            ? `${arrow} ${T().keyName(to)} · ${T().transposeLabel(m.transpose_to)}`
+            : `${arrow} ${T().keyName(to)}${m.semitones ? ` (${T().signed(m.semitones)})` : ""}`;
         this.modEls[i].firstChild.textContent = label;
+        this.modEls[i].classList.toggle("ct-mod-same", same);
         this.modEls[i].title = `Đổi giọng lúc ${fmt(m.time)}: ${T().keyName(T().parseKeyText(m.from))} → ${T().keyName(to)}`;
       });
       this.relabelMelody(false);
