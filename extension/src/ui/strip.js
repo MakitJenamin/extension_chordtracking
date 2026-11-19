@@ -75,6 +75,7 @@
       this.viewOff = 0;     // độ lệch khung nhìn do người dùng kéo (px, dương = xem lùi về trước)
       this.returnAt = 0;    // performance.now() lúc bắt đầu trượt về vạch đỏ
       this.drag = null;
+      this.scrubT = null;   // thời điểm đang kéo tới (null: không kéo)
       this.track.addEventListener("click", (e) => {
         const n = e.target.closest(".ct-note");
         if (n && this.song) {
@@ -121,6 +122,8 @@
       this.lastX = null;
       this.viewOff = 0;
       this.returnAt = 0;
+      this.drag = null;
+      this.scrubT = null;
       this.fx.beat = -1;
       this.fx.nearChord = null;
       this.notes = this.melodyLine();     // lưới phách của bài mới
@@ -530,8 +533,10 @@
       return j >= 0 && t < ch[j].end ? j : -1;
     }
 
-    /** Kéo ngang (chuột, cảm ứng, bút) hoặc cuộn ngang (trackpad, Shift + lăn chuột) để xem trước/sau.
-     * Thả tay RETURN_MS thì dải tự trượt về vạch đỏ. Kéo dưới DRAG_MIN px vẫn tính là bấm (tua). */
+    /** Kéo ngang (chuột, cảm ứng, bút) để tua video: thời điểm nằm dưới vạch đỏ là chỗ video tới. Trong lúc kéo
+     * dải đi theo tay ngay (scrubT), video được tua thưa hơn (SEEK_MS) cho đỡ giật; thả tay thì tua lần cuối.
+     * Cuộn ngang (trackpad, Shift + lăn chuột) chỉ xem trước/sau, thả RETURN_MS thì dải tự trượt về vạch đỏ.
+     * Kéo dưới DRAG_MIN px vẫn tính là bấm (tua tới hợp âm/nốt). */
     bindPan() {
       const host = this.el;
       // Click ngay sau khi kéo: không tua và không cho nổi lên player YouTube (toàn màn hình nằm trong #movie_player).
@@ -540,7 +545,8 @@
       }, true);
       host.addEventListener("pointerdown", (e) => {
         if (!this.song || (e.pointerType === "mouse" && e.button !== 0)) return;
-        this.drag = { id: e.pointerId, x0: e.clientX, off0: this.viewOff, moved: false };
+        // Đang xem lệch (cuộn ngang) thì kéo tiếp từ chỗ đang xem.
+        this.drag = { id: e.pointerId, x0: e.clientX, t0: this.t - this.viewOff / this.px, moved: false, seekAt: 0 };
       });
       host.addEventListener("pointermove", (e) => {
         const d = this.drag;
@@ -551,8 +557,15 @@
           d.moved = true;
           try { host.setPointerCapture(e.pointerId); } catch (_) { /* con trỏ đã nhả */ }
           host.classList.add("ct-dragging");
+          this.viewOff = 0;
+          this.returnAt = 0;
         }
-        this.setViewOff(d.off0 + dx);
+        // Kéo sang phải = lùi về trước (dải đi theo tay).
+        const tv = Math.max(0, Math.min(this.song.duration, d.t0 - dx / this.px));
+        this.scrubT = tv;
+        this.update(tv, true);
+        const now = performance.now();
+        if (now - d.seekAt >= Strip.SEEK_MS) { d.seekAt = now; CT.seekTo(tv); }
       });
       const end = (e) => {
         const d = this.drag;
@@ -562,8 +575,9 @@
         if (d.moved) {
           this.justDragged = true;
           setTimeout(() => { this.justDragged = false; }, 0); // click (nếu có) tới ngay sau pointerup
-          this.scheduleReturn();
+          if (this.scrubT != null) CT.seekTo(this.scrubT);
         }
+        this.scrubT = null;
       };
       host.addEventListener("pointerup", end);
       host.addEventListener("pointercancel", end);
@@ -604,6 +618,7 @@
     }
 
     update(t, force = false) {
+      if (this.scrubT != null) t = this.scrubT;   // đang kéo: hiện theo tay, không theo video (video tua chậm hơn)
       this.t = t;
       if (!this.song || !this.width) return;
       const x = this.width * PLAYHEAD - t * this.px + this.panOffset();
@@ -718,7 +733,8 @@
   Strip.BASE_SCALE = 1.5;
   Strip.FS_SCALE = 2;
   Strip.DRAG_MIN = 5;      // px: kéo ít hơn thì vẫn là bấm để tua
-  Strip.RETURN_MS = 2500;  // thả tay bao lâu thì dải trượt về vạch đỏ
+  Strip.RETURN_MS = 2500;  // cuộn ngang: thả bao lâu thì dải trượt về vạch đỏ
+  Strip.SEEK_MS = 120;     // đang kéo: tua video tối đa mỗi 120 ms
   Strip.BLOOMS = 3;        // số đóa sáng dùng xoay vòng (nốt nhanh vẫn mỗi nốt một đóa)
   CT.ui = CT.ui || {};
   CT.ui.Strip = Strip;
