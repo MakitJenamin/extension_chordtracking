@@ -45,7 +45,7 @@ extension, không đọc hay gửi dữ liệu gì. Lần đầu (bản đang n�
 | ✕ cạnh tiến độ dò giai điệu | Dừng dò (job đang chờ hủy ngay, đang chạy thì dừng sau 1–2 giây kể cả giữa bước tách giọng hay chạy model). Đang dò lại thì giữ dòng nốt cũ | |
 | ▴ / ▾ | Thu gọn khung (chỉ còn hợp âm hiện tại và chấm phách) | Alt+Shift+H |
 | Bấm hợp âm / đoạn | Tua video tới đó | |
-| Kéo ngang dải hợp âm | Xem trước/sau (chuột, cảm ứng, cuộn ngang trackpad hoặc Shift + lăn chuột). Lúc kéo, thanh mỏng ở đáy dải cho biết khung đang xem nằm đâu trong bài (vệt sáng), chỗ đang phát (vạch đỏ) và thời điểm đang xem, lệch bao nhiêu giây. Thả tay 2,5 giây thì dải tự trượt về vạch đỏ; video không bị tua | |
+| Kéo ngang dải hợp âm | Tua video theo tay: thời điểm nằm dưới vạch đỏ là chỗ video tới (chuột, cảm ứng, bút). Cuộn ngang trackpad hoặc Shift + lăn chuột thì chỉ xem trước/sau, video không bị tua: thanh mỏng ở đáy dải cho biết khung đang xem nằm đâu trong bài (vệt sáng), chỗ đang phát (vạch đỏ) và thời điểm đang xem, lệch bao nhiêu giây; thả 2,5 giây thì dải tự trượt về vạch đỏ | |
 
 **Nút ChordTrack trên thanh điều khiển:** trắng là đang tắt; có **chấm xanh** là bài đã có kết quả trên server (bấm là hiện
 ngay, biết nhờ `GET /result/{videoId}` chỉ đọc cache, không tải audio, không dùng GPU); vòng tròn là đang phân tích
