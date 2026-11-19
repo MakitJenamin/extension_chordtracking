@@ -493,7 +493,11 @@
         const lbl = e.firstChild;
         lbl.firstChild.textContent = main;
         lbl.lastChild.textContent = sub && sub !== main ? sub : "";
-        e.title = `${main}${sub && sub !== main ? " (" + sub + ")" : ""} · ${fmt(c.start)}. Bấm để tua tới đây`;
+        // Ngắn gọn: tên hợp âm + 3 nốt bấm. Chế độ bậc La Mã thì lấy nốt theo ký hiệu thật (nhãn phụ).
+        const sym = st.mode === "roman" ? sub : main;
+        const notes = T().chordNotes(sym).join(" ");
+        const name = st.mode === "roman" && sub && sub !== main ? `${main} (${sub})` : main;
+        e.title = notes ? `${name}: ${notes}` : name;
       });
       s.modulations.forEach((m, i) => {
         const to = T().parseKeyText(m.to);

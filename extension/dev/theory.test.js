@@ -47,6 +47,27 @@ test("shiftSym: dịch giọng giữ loại hợp âm và bass", () => {
   assert.equal(T.shiftSym("G7", 3, eb), "Bb7");
 });
 
+test("chordNotes: ba nốt thế bấm, đúng dấu, xếp từ bass", () => {
+  const N = (s) => T.chordNotes(s).join(" ");
+  assert.equal(N("C"), "C E G");
+  assert.equal(N("Am"), "A C E");
+  assert.equal(N("Am7"), "A C E");
+  assert.equal(N("Cmaj7"), "C E G");
+  assert.equal(N("F#m"), "F# A C#");
+  assert.equal(N("Bb"), "Bb D F");
+  assert.equal(N("Ebm"), "Eb Gb Bb");
+  assert.equal(N("Bdim"), "B D F");
+  assert.equal(N("Bm7b5"), "B D F");
+  assert.equal(N("Caug"), "C E G#");
+  assert.equal(N("Dsus4"), "D G A");
+  assert.equal(N("Dsus2"), "D E A");
+  assert.equal(N("C5"), "C G");
+  assert.equal(N("C/G"), "G C E");
+  assert.equal(N("C/E"), "E G C");
+  assert.equal(N("C/Bb"), "Bb C E G");
+  assert.deepEqual(T.chordNotes("N.C."), []);
+});
+
 test("stripBass và simplify", () => {
   assert.equal(T.stripBass("C/G"), "C");
   assert.equal(T.stripBass("Am7/G"), "Am7");

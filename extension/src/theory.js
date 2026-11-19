@@ -106,6 +106,38 @@
     return p.root + triad;
   }
 
+  /** Ba nốt của thế bấm (hợp âm ba, bỏ nốt 7/9...), xếp từ nốt bass: "Am" -> ["A","C","E"], "C/G" -> ["G","C","E"].
+   * Viết tên theo chữ cái (gốc, cách 2 chữ, cách 4 chữ) nên đúng dấu: "F#m" -> F# A C#, "Bb" -> Bb D F.
+   * Bass ngoài hợp âm ba ("C/Bb") thì thêm vào đầu. Không đọc được ký hiệu thì trả []. */
+  const LETTERS = "CDEFGAB";
+  function chordNotes(sym) {
+    const p = parse(sym);
+    if (!p) return [];
+    const r = pcOf(p.root);
+    if (r === null) return [];
+    const q = p.qual;
+    let iv;
+    if (/^(dim|°|m7b5|ø)/.test(q)) iv = [0, 3, 6];
+    else if (/^(aug|\+)/.test(q)) iv = [0, 4, 8];
+    else if (/^5$/.test(q)) iv = [0, 7];
+    else if (/sus2/.test(q)) iv = [0, 2, 7];
+    else if (/sus/.test(q)) iv = [0, 5, 7];
+    else if (/^m(?!aj)/.test(q)) iv = [0, 3, 7];
+    else iv = [0, 4, 7];
+    const li = LETTERS.indexOf(p.root[0]);
+    const STEP = { 0: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 4, 7: 4, 8: 4 }; // nửa cung -> số chữ cái cách gốc
+    const notes = iv.map((d) => {
+      const pc = mod12(r + d);
+      const letter = LETTERS[(li + STEP[d]) % 7];
+      const acc = wrap(pc - LETTER_PC[letter]);
+      return Math.abs(acc) <= 1 ? letter + (acc > 0 ? "#" : acc < 0 ? "b" : "") : FLAT_NAMES[pc];
+    });
+    if (!p.bass) return notes;
+    const b = pcOf(p.bass);
+    const at = notes.findIndex((n) => pcOf(n) === b);
+    return at >= 0 ? [...notes.slice(at), ...notes.slice(0, at)] : [p.bass, ...notes];
+  }
+
   const MODE_VI = { major: "trưởng", minor: "thứ" };
   function keyName(key) {
     if (!key) return "–";
@@ -647,7 +679,7 @@
   }
 
   const theory = {
-    FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse,
+    FLAT_NAMES, pcOf, noteName, shiftKey, shiftSym, stripBass, simplify, parse, chordNotes,
     keyName, parseKeyText, signed, transposeKey, transposeLabel, wrap, lastLE, beatPositions, meterOf, buildSong, snapChords,
     keyIndexAt, keyAt, chordKey, nextModulation, sameTranspose, chordLabels, sectionLabels, whiteOffset,
     KEY_CHOICES, keyText, rekeyRoman, withKeyOverride,
